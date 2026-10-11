@@ -7,6 +7,9 @@
 docs/competition/
 docs/private/
 
+# working files (design briefs, mockups), not part of the submission
+docs/working/
+
 # build output
 node_modules/
 contracts/out/
