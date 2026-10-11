@@ -1,7 +1,9 @@
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
 import { appendAudit, readAudit, refOf, type AuditRecord } from "./audit";
+import { readBills, updateBill } from "./bills";
 import { chainConfig, TOKEN_SYMBOL } from "./config";
+import payeeNames from "../config/payees.json";
 import { defaultBlocklist, evaluate, historyFromAudit, type Action } from "./policy";
 import { getMandates, getOverview, sendAsAgent, toUnits, type AgentCall, type SendOptions } from "./wallet";
 
@@ -15,7 +17,13 @@ const reason = z.string().min(1).describe("One sentence on why you are doing thi
 const schemas = {
   get_wallet_overview: z.object({}),
   list_mandates: z.object({}),
-  pay: z.object({ mandate_id: id, amount, reason }),
+  list_bills: z.object({}),
+  pay: z.object({
+    mandate_id: id,
+    amount,
+    bill_id: z.string().max(40).optional().describe("The id of the bill this pays, from list_bills, when there is one."),
+    reason,
+  }),
   move_funds: z.object({ from_bucket: id, to_bucket: id, amount, reason }),
   request_owner_approval: z.object({ mandate_id: id, amount, reason }),
   propose_payee: z.object({
@@ -35,6 +43,7 @@ const descriptions: Record<ToolName, string> = {
   get_wallet_overview: "Read the wallet: total balance, budget buckets, spending limits and how much is left today.",
   list_mandates:
     "List the payees the owner has approved. Each mandate has an id, a purpose, a cap per period and the bucket it pays from.",
+  list_bills: "List the bills the owner expects to pay: which mandate, how much, the due date and whether it is paid.",
   pay: "Pay the payee of an approved mandate. You pay by mandate id. There is no way to pay an address directly.",
   move_funds:
     "Move money between budget buckets. Bucket 0 is unallocated money. You cannot take money out of a locked bucket.",
@@ -84,6 +93,7 @@ async function write(
       overview,
       mandates,
       history: historyFromAudit(readAudit()),
+      bills: readBills(),
       blocklist: defaultBlocklist(),
       now: new Date(),
       untrusted: ctx.untrusted ?? false,
@@ -122,11 +132,13 @@ async function write(
       ? { ...sent, escalated: true, request_id: requestId, message: `Not paid. ${verdict.explanation} Request ${requestId} is waiting for the owner.` }
       : sent;
     appendAudit({ ref, record, result });
+    if (sent.ok && action.billId) updateBill(action.billId, { status: "requested", tx: sent.hash });
     return { ...result, audit_ref: ref };
   }
 
   const result = await sendAsAgent(build(ref), ctx.send);
   appendAudit({ ref, record, result });
+  if (result.ok && action.kind === "pay" && action.billId) updateBill(action.billId, { status: "paid", tx: result.hash });
   return { ...result, audit_ref: ref };
 }
 
@@ -150,11 +162,15 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
     switch (tool) {
       case "get_wallet_overview":
         return await getOverview();
-      case "list_mandates":
-        return await getMandates();
+      case "list_mandates": {
+        const names = payeeNames.byMandateId as Record<string, string>;
+        return (await getMandates()).map((m) => ({ ...m, payeeName: names[String(m.id)] ?? null }));
+      }
+      case "list_bills":
+        return readBills();
       case "pay": {
         const a = parsed.data as z.infer<typeof schemas.pay>;
-        const action: Action = { kind: "pay", mandateId: a.mandate_id, amount: a.amount };
+        const action: Action = { kind: "pay", mandateId: a.mandate_id, amount: a.amount, billId: a.bill_id };
         return await write(tool, a, a.reason, ctx, action, (ref) => ({
           functionName: "pay",
           args: [BigInt(a.mandate_id), toUnits(a.amount), ref],

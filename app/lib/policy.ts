@@ -1,6 +1,7 @@
 import { parseUnits } from "viem";
 import blocklistFile from "../config/blocklist.json";
 import type { AuditEntry } from "./audit";
+import type { Bill } from "./bills";
 import { TOKEN_DECIMALS, TOKEN_SYMBOL } from "./config";
 import type { Mandate, Overview } from "./wallet";
 
@@ -14,7 +15,7 @@ import type { Mandate, Overview } from "./wallet";
  */
 
 export type Action =
-  | { kind: "pay"; mandateId: number; amount: string }
+  | { kind: "pay"; mandateId: number; amount: string; billId?: string }
   | { kind: "request_approval"; mandateId: number; amount: string }
   | { kind: "propose_payee"; payee: string }
   | { kind: "move_funds"; from: number; to: number; amount: string };
@@ -26,6 +27,8 @@ export type Facts = {
   overview: Overview;
   mandates: Mandate[];
   history: PastPayment[];
+  /** What the owner expects to pay. */
+  bills: Bill[];
   blocklist: BlockEntry[];
   now: Date;
   /** True when the instruction came from a document or message the owner did not write. */
@@ -74,7 +77,11 @@ function screen(address: string, facts: Facts): Check {
     : { id: "screening", outcome: "pass", detail: "The payee is not on the screening list." };
 }
 
-function checkPayment(action: { mandateId: number; amount: string }, facts: Facts, direct: boolean): Check[] {
+function checkPayment(
+  action: { mandateId: number; amount: string; billId?: string },
+  facts: Facts,
+  direct: boolean,
+): Check[] {
   const mandate = facts.mandates.find((m) => m.id === action.mandateId);
   if (!mandate || mandate.status !== "approved") {
     return [{ id: "mandate", outcome: "block", detail: `Mandate ${action.mandateId} is not an approved payee.` }];
@@ -152,11 +159,31 @@ function checkPayment(action: { mandateId: number; amount: string }, facts: Fact
     });
   }
 
-  if (facts.untrusted && direct) {
+  let expected = false;
+  if (action.billId !== undefined) {
+    const bill = facts.bills.find((b) => b.id === action.billId);
+    if (!bill) {
+      checks.push({ id: "bill", outcome: "block", detail: `There is no bill "${action.billId}".` });
+    } else if (bill.status !== "due") {
+      checks.push({ id: "bill", outcome: "block", detail: `"${bill.label}" is already ${bill.status}.` });
+    } else if (bill.mandateId !== mandate.id || units(bill.amount) !== amount) {
+      checks.push({
+        id: "bill",
+        outcome: "block",
+        detail: `"${bill.label}" is for ${money(bill.amount)} under mandate ${bill.mandateId}, which does not match this payment.`,
+      });
+    } else {
+      expected = true;
+      checks.push({ id: "bill", outcome: "pass", detail: `Matches the expected bill "${bill.label}", due ${bill.dueDate}.` });
+    }
+  }
+
+  // The agent may act alone on a document only when it agrees with a bill the owner already expects.
+  if (facts.untrusted && direct && !expected) {
     checks.push({
       id: "source",
       outcome: "escalate",
-      detail: "This payment was triggered by a document, not by the owner, so the owner must confirm it.",
+      detail: "This payment was triggered by a document and matches no expected bill, so the owner must confirm it.",
     });
   }
 

@@ -42,6 +42,10 @@ const facts = (over: Partial<Facts> = {}): Facts => ({
   overview,
   mandates: [mandate({}), mandate({ id: 2, purpose: "Rent", payee: LANDLORD, bucket: 2, capPerPeriod: "800", remainingThisPeriod: "800" })],
   history: [],
+  bills: [
+    { id: "fee", mandateId: 1, label: "Services fee", amount: "250", dueDate: "2026-10-16", status: "due" },
+    { id: "old", mandateId: 1, label: "Instalment 1", amount: "1500", dueDate: "2026-09-20", status: "paid" },
+  ],
   blocklist: [{ address: SCAM, label: "reported scam" }],
   now: NOW,
   untrusted: false,
@@ -133,6 +137,21 @@ test("escalates a payment triggered by a document", () => {
   const v = evaluate({ kind: "pay", mandateId: 1, amount: "100" }, facts({ untrusted: true }));
   assert.equal(v.decision, "escalate");
   assert.equal(outcomeOf(v, "source"), "escalate");
+});
+
+test("a document may trigger a payment alone only when it matches an expected bill", () => {
+  const doc = facts({ untrusted: true });
+  const v = evaluate({ kind: "pay", mandateId: 1, amount: "250", billId: "fee" }, doc);
+  assert.equal(v.decision, "allow");
+  assert.equal(outcomeOf(v, "bill"), "pass");
+  assert.equal(evaluate({ kind: "pay", mandateId: 1, amount: "250" }, doc).decision, "escalate");
+});
+
+test("blocks a bill that is unknown, already paid, or does not match the payment", () => {
+  assert.equal(evaluate({ kind: "pay", mandateId: 1, amount: "250", billId: "nope" }, facts()).decision, "block");
+  assert.equal(evaluate({ kind: "pay", mandateId: 1, amount: "1500", billId: "old" }, facts()).decision, "block");
+  assert.equal(evaluate({ kind: "pay", mandateId: 1, amount: "251", billId: "fee" }, facts()).decision, "block");
+  assert.equal(evaluate({ kind: "pay", mandateId: 2, amount: "250", billId: "fee" }, facts()).decision, "block");
 });
 
 test("an approval request may exceed limits but is still screened", () => {

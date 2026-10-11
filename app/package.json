@@ -11,7 +11,8 @@
     "smoke": "tsx --env-file=../.env scripts/smoke.ts",
     "chat": "tsx --env-file=../.env scripts/chat.ts",
     "ask": "tsx --env-file=../.env scripts/ask.ts",
-    "test": "tsx --test lib/*.test.ts"
+    "test": "tsx --test lib/*.test.ts",
+    "doc": "tsx --env-file=../.env scripts/doc.ts"
   },
   "dependencies": {
     "next": "16.4.0",
