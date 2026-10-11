@@ -18,3 +18,6 @@ contracts/broadcast/**/dry-run/
 .DS_Store
 
 contracts/broadcast/**/*.lock
+
+# local audit log, exported deliberately as evidence later
+app/data/

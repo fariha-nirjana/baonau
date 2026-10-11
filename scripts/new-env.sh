@@ -56,10 +56,15 @@ LOOSEN_DELAY=120
 
 TOKEN_ADDRESS=
 WALLET_ADDRESS=
+
+LLM_API_KEY=
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-flash
 EOF
 
-# forge reads .env from the contracts folder
+# forge reads .env from the contracts folder, Next.js reads .env.local from the app folder
 ln -sf ../.env "$root/contracts/.env"
+if [ -d "$root/app" ]; then ln -sf ../.env "$root/app/.env.local"; fi
 
 echo "Wrote $env_file"
 grep '_ADDRESS=0x' "$env_file"
