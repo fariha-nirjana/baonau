@@ -1,0 +1,20 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# organizer files and registration forms (the filled form holds passport numbers)
+docs/competition/
+docs/private/
+
+# build output
+node_modules/
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+contracts/broadcast/**/dry-run/
+.next/
+
+.DS_Store
+
+contracts/broadcast/**/*.lock
