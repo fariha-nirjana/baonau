@@ -1,4 +1,4 @@
-import { formatUnits, parseUnits, type Address, type Hex } from "viem";
+import { formatUnits, parseEventLogs, parseUnits, type Address, type Hex } from "viem";
 import { policyWalletAbi, testUsdAbi } from "./abi";
 import { getClients, txUrl } from "./chain";
 import { chainConfig, TOKEN_DECIMALS } from "./config";
@@ -142,8 +142,11 @@ export type AgentCall =
       args: readonly [payee: Address, bucket: bigint, cap: bigint, period: bigint, expiry: bigint, purpose: string];
     };
 
+/** A wallet event emitted by the transaction, with its arguments as strings. */
+export type TxEvent = { name: string; args: Record<string, string> };
+
 export type TxResult =
-  | { ok: true; hash: Hex; url: string; block: string }
+  | { ok: true; hash: Hex; url: string; block: string; events: TxEvent[] }
   | {
       ok: false;
       /** preflight: refused in simulation, nothing sent. onchain: sent, mined and reverted by the contract. */
@@ -205,7 +208,11 @@ export async function sendAsAgent(call: AgentCall, opts: SendOptions = {}): Prom
   const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
   await untilNodeHasBlock(receipt.blockNumber);
   if (receipt.status === "success") {
-    return { ok: true, hash, url: txUrl(hash), block: receipt.blockNumber.toString() };
+    const events = parseEventLogs({ abi: policyWalletAbi, logs: receipt.logs }).map((log) => ({
+      name: log.eventName,
+      args: Object.fromEntries(Object.entries(log.args as Record<string, unknown>).map(([k, v]) => [k, String(v)])),
+    }));
+    return { ok: true, hash, url: txUrl(hash), block: receipt.blockNumber.toString(), events };
   }
 
   // The transaction is on-chain and reverted. Replay it to read the contract's reason.

@@ -1,0 +1,8 @@
+{
+  "note": "Mock sanctions and fraud list for the demo. A real deployment would query a screening provider.",
+  "entries": [
+    { "address": "0x000000000000000000000000000000000000dEaD", "label": "Burn address, funds sent here are unrecoverable" },
+    { "address": "0x00000000000000000000000000000000DeaDBeef", "label": "Demo: reported tuition scam" },
+    { "address": "0xBADc0FFee0000000000000000000000000000001", "label": "Demo: sanctioned entity" }
+  ]
+}

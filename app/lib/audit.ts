@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { keccak256, toHex, type Hex } from "viem";
+import type { Verdict } from "./policy";
 
 const LOG_PATH = join(process.cwd(), "data", "audit.jsonl");
 
@@ -12,6 +13,10 @@ export type AuditRecord = {
   reason: string;
   /** Where the instruction came from, e.g. "chat" or "invoice:tuition-fall.pdf". */
   source: string;
+  /** The policy engine's decision and every check behind it. Null when the engine was bypassed. */
+  policy: Verdict | null;
+  /** Who pays whom and why, in the style of travel rule metadata. Only on payments. */
+  transfer?: { from: string; to: string; purpose: string; amount: string; asset: string };
 };
 
 export type AuditEntry = { ref: Hex; record: AuditRecord; result: unknown };

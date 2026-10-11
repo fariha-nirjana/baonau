@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "smoke": "tsx --env-file=../.env scripts/smoke.ts",
     "chat": "tsx --env-file=../.env scripts/chat.ts",
-    "ask": "tsx --env-file=../.env scripts/ask.ts"
+    "ask": "tsx --env-file=../.env scripts/ask.ts",
+    "test": "tsx --test lib/*.test.ts"
   },
   "dependencies": {
     "next": "16.4.0",

@@ -1,6 +1,8 @@
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
-import { appendAudit, refOf, type AuditRecord } from "./audit";
+import { appendAudit, readAudit, refOf, type AuditRecord } from "./audit";
+import { chainConfig, TOKEN_SYMBOL } from "./config";
+import { defaultBlocklist, evaluate, historyFromAudit, type Action } from "./policy";
 import { getMandates, getOverview, sendAsAgent, toUnits, type AgentCall, type SendOptions } from "./wallet";
 
 const amount = z
@@ -52,6 +54,10 @@ export const toolDefs: ChatCompletionFunctionTool[] = (Object.keys(schemas) as T
 export type ToolContext = {
   /** Where the current instruction came from, for the audit log. */
   source: string;
+  /** True when the instruction came from a document or message the owner did not write. */
+  untrusted?: boolean;
+  /** Skip the off-chain policy engine. Only for showing that the contract holds without it. */
+  bypassPolicy?: boolean;
   send?: SendOptions;
 };
 
@@ -60,10 +66,65 @@ async function write(
   args: Record<string, unknown>,
   why: string,
   ctx: ToolContext,
+  action: Action,
   build: (ref: `0x${string}`) => AgentCall,
 ) {
-  const record: AuditRecord = { at: new Date().toISOString(), tool, args, reason: why, source: ctx.source };
+  const record: AuditRecord = {
+    at: new Date().toISOString(),
+    tool,
+    args,
+    reason: why,
+    source: ctx.source,
+    policy: null,
+  };
+
+  if (!ctx.bypassPolicy) {
+    const [overview, mandates] = await Promise.all([getOverview(), getMandates()]);
+    record.policy = evaluate(action, {
+      overview,
+      mandates,
+      history: historyFromAudit(readAudit()),
+      blocklist: defaultBlocklist(),
+      now: new Date(),
+      untrusted: ctx.untrusted ?? false,
+    });
+    if (action.kind === "pay" || action.kind === "request_approval") {
+      const mandate = mandates.find((m) => m.id === action.mandateId);
+      if (mandate) {
+        record.transfer = {
+          from: chainConfig().WALLET_ADDRESS,
+          to: mandate.payee,
+          purpose: mandate.purpose,
+          amount: action.amount,
+          asset: TOKEN_SYMBOL,
+        };
+      }
+    }
+  }
+
+  const verdict = record.policy;
   const ref = refOf(record);
+
+  if (verdict?.decision === "block") {
+    const result = { ok: false, stage: "policy", message: verdict.explanation } as const;
+    appendAudit({ ref, record, result });
+    return { ...result, audit_ref: ref };
+  }
+
+  // A payment the policy engine will not let the agent make alone becomes a request to the owner.
+  if (verdict?.decision === "escalate" && action.kind === "pay") {
+    const sent = await sendAsAgent(
+      { functionName: "requestPayment", args: [BigInt(action.mandateId), toUnits(action.amount), ref] },
+      ctx.send,
+    );
+    const requestId = sent.ok ? sent.events.find((e) => e.name === "PaymentRequested")?.args.requestId : undefined;
+    const result = sent.ok
+      ? { ...sent, escalated: true, request_id: requestId, message: `Not paid. ${verdict.explanation} Request ${requestId} is waiting for the owner.` }
+      : sent;
+    appendAudit({ ref, record, result });
+    return { ...result, audit_ref: ref };
+  }
+
   const result = await sendAsAgent(build(ref), ctx.send);
   appendAudit({ ref, record, result });
   return { ...result, audit_ref: ref };
@@ -93,21 +154,24 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
         return await getMandates();
       case "pay": {
         const a = parsed.data as z.infer<typeof schemas.pay>;
-        return await write(tool, a, a.reason, ctx, (ref) => ({
+        const action: Action = { kind: "pay", mandateId: a.mandate_id, amount: a.amount };
+        return await write(tool, a, a.reason, ctx, action, (ref) => ({
           functionName: "pay",
           args: [BigInt(a.mandate_id), toUnits(a.amount), ref],
         }));
       }
       case "move_funds": {
         const a = parsed.data as z.infer<typeof schemas.move_funds>;
-        return await write(tool, a, a.reason, ctx, () => ({
+        const action: Action = { kind: "move_funds", from: a.from_bucket, to: a.to_bucket, amount: a.amount };
+        return await write(tool, a, a.reason, ctx, action, () => ({
           functionName: "moveFunds",
           args: [BigInt(a.from_bucket), BigInt(a.to_bucket), toUnits(a.amount)],
         }));
       }
       case "request_owner_approval": {
         const a = parsed.data as z.infer<typeof schemas.request_owner_approval>;
-        return await write(tool, a, a.reason, ctx, (ref) => ({
+        const action: Action = { kind: "request_approval", mandateId: a.mandate_id, amount: a.amount };
+        return await write(tool, a, a.reason, ctx, action, (ref) => ({
           functionName: "requestPayment",
           args: [BigInt(a.mandate_id), toUnits(a.amount), ref],
         }));
@@ -115,10 +179,12 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
       case "propose_payee": {
         const a = parsed.data as z.infer<typeof schemas.propose_payee>;
         const expiry = BigInt(Math.floor(Date.now() / 1000) + a.valid_days * 86400);
-        return await write(tool, a, a.reason, ctx, () => ({
+        // lower case sidesteps checksum errors in addresses the model copied from a document
+        const payee = a.payee_address.toLowerCase() as `0x${string}`;
+        return await write(tool, a, a.reason, ctx, { kind: "propose_payee", payee }, () => ({
           functionName: "proposeMandate",
           args: [
-            a.payee_address as `0x${string}`,
+            payee,
             BigInt(a.bucket),
             toUnits(a.cap_per_period),
             BigInt(a.period_days * 86400),
