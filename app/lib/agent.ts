@@ -1,4 +1,5 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { logAbstention } from "./audit";
 import { BRAND } from "./brand";
 import { llmConfig } from "./config";
 import { llm } from "./llm";
@@ -9,14 +10,15 @@ import { executeTool, toolDefs, type ToolContext } from "./tools";
 const LANGUAGE_NAMES: Record<Language, string> = { en: "English", zh: "Simplified Chinese", bn: "Bangla" };
 
 function systemPrompt(language: Language, currency: Currency) {
-  return `You are ${BRAND.agent}, the portfolio agent inside ${BRAND.product}. You manage a small investment portfolio for a first-time investor. It holds test money on a blockchain testnet: cash (tUSD) and simulated tokenized assets (an index fund, a bond fund and gold).
+  return `You are ${BRAND.agent}, the portfolio agent inside ${BRAND.product}. You manage a small investment portfolio for a first-time investor. It holds test money on a blockchain testnet: cash (tUSD) and simulated test assets (an index fund, a bond fund and gold).
 
 How it works:
 - The investor signs a mandate: which assets, how much of each, how much you may trade, and when buying must stop. The mandate is enforced by a smart contract. You cannot change it, and you cannot move money out of the vault.
 - You act only through tools. Read the portfolio before you act on it.
 - When there is no mandate yet, help the investor state their goal in their own words, then use draft_mandate to turn it into terms they can read and sign. Explain each term in one plain line. Choose cautious terms for a cautious investor.
 - When a tool refuses, tell the investor the reason it gave, in plain words. Do not try the same thing another way.
-- If a trade is above your limits, use request_owner_approval.
+- If a trade is above your limits, use request_owner_approval. The owner signs for that one exact trade; you cannot.
+- Whenever you decide not to make a trade you were asked or scheduled to make, call decline with the reason, so there is a record of it. Then tell the investor.
 
 About risk:
 - You never predict prices and never promise returns. You can say what has happened and what the mandate does about it.
@@ -47,14 +49,23 @@ export type RunOptions = {
 export async function runAgent(history: ChatCompletionMessageParam[], opts: RunOptions): Promise<string> {
   const system = systemPrompt(opts.ctx.language ?? "en", opts.ctx.currency ?? "BDT");
   for (let step = 0; step < MAX_STEPS; step++) {
-    const completion = await llm().chat.completions.create({
-      model: llmConfig().LLM_MODEL,
-      messages: [{ role: "system", content: system }, ...history],
-      tools: toolDefs,
-      temperature: 0,
-    });
+    // Fail-safe: if the model errors, times out or returns nothing usable, the agent does nothing and says so.
+    let message;
+    try {
+      const completion = await llm().chat.completions.create({
+        model: llmConfig().LLM_MODEL,
+        messages: [{ role: "system", content: system }, ...history],
+        tools: toolDefs,
+        temperature: 0,
+      });
+      message = completion.choices[0]?.message;
+      if (!message) throw new Error("the model returned no message");
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      logAbstention("continue this request", `The model could not be reached or gave no usable answer (${why}), so nothing was done.`, opts.ctx.source);
+      return "I could not think this through just now, so I have done nothing. Nothing was sent. Please try again in a moment.";
+    }
 
-    const message = completion.choices[0].message;
     history.push(message);
     if (!message.tool_calls?.length) return message.content ?? "";
 
@@ -66,5 +77,6 @@ export async function runAgent(history: ChatCompletionMessageParam[], opts: RunO
       history.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
     }
   }
+  logAbstention("finish this request", `Stopped after ${MAX_STEPS} steps without finishing, so nothing further was done.`, opts.ctx.source);
   return "I stopped because this took too many steps. Nothing further was sent.";
 }

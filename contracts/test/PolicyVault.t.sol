@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity >=0.8.11 <0.9.0;
 
+import {Mandate} from "../src/Mandate.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
+import {AssetRule, Policy} from "../src/Types.sol";
+import {VaultFactory} from "../src/VaultFactory.sol";
 import {MockAsset} from "../src/mocks/MockAsset.sol";
 import {PriceOracle} from "../src/mocks/PriceOracle.sol";
 import {SkimmingExchange} from "./utils/SkimmingExchange.sol";
 import {VaultFixture} from "./utils/VaultFixture.sol";
 
 contract PolicyVaultTest is VaultFixture {
-    function _rule(bool allowed, uint16 capBps, uint256 stopPrice) internal pure returns (PolicyVault.AssetRule memory) {
-        return PolicyVault.AssetRule(allowed, false, capBps, stopPrice);
+    function _rule(bool allowed, uint16 capBps, uint256 stopPrice) internal pure returns (AssetRule memory) {
+        return AssetRule(allowed, false, capBps, stopPrice);
     }
 
     /// Three 10% drops take the index from 100 to 72.9, a 10.84% loss on the day for the portfolio.
@@ -21,14 +24,14 @@ contract PolicyVaultTest is VaultFixture {
 
     function _setStop(uint256 stopPrice) internal {
         vm.prank(owner);
-        vault.proposeAssetRule(address(idx), _rule(true, 5000, stopPrice));
+        mandate.proposeAssetRule(address(idx), _rule(true, 5000, stopPrice));
     }
 
     // ---------------- agent: allowed ----------------
 
     function test_AgentBuysAllowlistedAsset() public {
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.Trade(address(idx), true, 1_000 * USD, 9.97e18, 100 * PRICE, REF, agent);
+        emit Trade(address(idx), true, 1_000 * USD, 9.97e18, 100 * PRICE, REF, agent);
         uint256 out = _buy(idx, 1_000 * USD);
 
         assertEq(out, 9.97e18);
@@ -83,32 +86,32 @@ contract PolicyVaultTest is VaultFixture {
     // ---------------- agent: blocked ----------------
 
     function test_RevertWhen_CallerIsNotAgent() public {
-        vm.expectRevert(PolicyVault.NotAgent.selector);
+        vm.expectRevert(Mandate.NotAgent.selector);
         vm.prank(attacker);
         vault.buy(address(idx), 100 * USD, REF);
 
-        vm.expectRevert(PolicyVault.NotAgent.selector);
+        vm.expectRevert(Mandate.NotAgent.selector);
         vm.prank(attacker);
         vault.sell(address(idx), 1, REF);
     }
 
     function test_RevertWhen_AgentKeyExpired() public {
         vm.warp(START + 60 days);
-        vm.expectRevert(PolicyVault.AgentKeyExpired.selector);
+        vm.expectRevert(Mandate.AgentKeyExpired.selector);
         _buy(idx, 100 * USD);
     }
 
     function test_RevertWhen_AgentRevoked() public {
         vm.prank(guardian);
-        vault.revokeAgent();
-        vm.expectRevert(PolicyVault.NotAgent.selector);
+        mandate.revokeAgent();
+        vm.expectRevert(Mandate.NotAgent.selector);
         _buy(idx, 100 * USD);
     }
 
     function test_RevertWhen_Paused() public {
         vm.prank(guardian);
-        vault.pause();
-        vm.expectRevert(PolicyVault.WalletPaused.selector);
+        mandate.pause();
+        vm.expectRevert(Mandate.AgentPaused.selector);
         _buy(idx, 100 * USD);
     }
 
@@ -184,16 +187,15 @@ contract PolicyVaultTest is VaultFixture {
     }
 
     function test_RevertWhen_NotEnoughCash() public {
-        // an approved request has no size limit, so it can ask for more cash than there is
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(bond), true, 600 * USD, REF);
-        vm.startPrank(owner);
+        // a signed approval has no size limit, so it can ask for more cash than there is
+        vm.prank(owner);
         vault.withdraw(address(usd), FUNDS - 500 * USD);
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 600 * USD, 1, 1 hours, OWNER_KEY);
         vm.expectRevert(
             abi.encodeWithSelector(PolicyVault.InsufficientBalance.selector, address(usd), 600 * USD, 500 * USD)
         );
-        vault.approveRequest(id);
-        vm.stopPrank();
+        vm.prank(agent);
+        vault.tradeWithApproval(a, sig, REF);
     }
 
     function test_RevertWhen_SellingMoreThanHeld() public {
@@ -238,12 +240,12 @@ contract PolicyVaultTest is VaultFixture {
         vault.rebalance(orders, REF);
     }
 
+    /// The agent key has no way to touch the mandate or the funds.
     function test_RevertWhen_AgentCallsOwnerFunctions() public {
-        address[] memory none = new address[](0);
-        PolicyVault.AssetRule[] memory noRules = new PolicyVault.AssetRule[](0);
-        PolicyVault.Policy memory loose = _policy();
+        (address[] memory assets, AssetRule[] memory rules) = _assetRules();
+        Policy memory loose = _policy();
         loose.maxTradeBps = 10_000;
-        bytes32 policyKey = vault.POLICY_CHANGE();
+        bytes32 policyKey = mandate.POLICY_CHANGE();
 
         vm.startPrank(agent);
         vm.expectRevert(PolicyVault.NotOwner.selector);
@@ -253,49 +255,63 @@ contract PolicyVaultTest is VaultFixture {
         vm.expectRevert(PolicyVault.NotOwner.selector);
         vault.sweep(address(usd));
         vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.initialize(loose, none, noRules);
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.proposePolicy(loose);
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.applyPolicy();
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.proposeAssetRule(address(meme), _rule(true, 10_000, 0));
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.applyAssetRule(address(meme));
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.proposeWithdrawalAddress(agent);
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.applyWithdrawalAddress();
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.applyStopLossHalt();
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.approveRequest(1);
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.setAgent(agent, uint64(block.timestamp + 90 days));
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.setGuardian(agent);
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.unpause();
-        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
-        vault.pause();
-        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
-        vault.haltStopLoss();
-        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
-        vault.resumeStopLoss();
-        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
-        vault.cancelChange(policyKey);
-        vm.expectRevert(PolicyVault.NotGuardian.selector);
-        vault.transferGuardian(agent);
+        vault.cancelApproval(1);
+
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.signMandate(loose, assets, rules, agent, AGENT_EXPIRY);
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.proposePolicy(loose);
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyPolicy();
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.proposeAssetRule(address(meme), _rule(true, 10_000, 0));
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyAssetRule(address(meme));
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.proposeWithdrawalAddress(agent);
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyWithdrawalAddress();
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyStopLossHalt();
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.setAgent(agent, uint64(block.timestamp + 90 days));
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyAgent();
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.setGuardian(agent);
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyGuardian();
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.setLoosenDelay(1 minutes);
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyLoosenDelay();
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.applyUnpause();
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        mandate.pause();
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        mandate.unpause();
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        mandate.haltStopLoss();
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        mandate.resumeStopLoss();
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        mandate.revokeAgent();
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        mandate.cancelChange(policyKey);
+        vm.expectRevert(Mandate.NotVault.selector);
+        mandate.terminate();
         vm.stopPrank();
     }
 
     // ---------------- execution quality ----------------
 
+    /// A second vault for the same owner, on a factory whose exchange is the dishonest venue.
     function _vaultOn(SkimmingExchange venue) internal returns (PolicyVault v) {
-        v = new PolicyVault(usd, oracle, venue, owner, guardian, LOOSEN_DELAY, MAX_PRICE_AGE);
+        VaultFactory other = new VaultFactory(usd, oracle, venue, MAX_PRICE_AGE);
         address[] memory assets = new address[](1);
         assets[0] = address(idx);
-        PolicyVault.AssetRule[] memory rules = new PolicyVault.AssetRule[](1);
+        AssetRule[] memory rules = new AssetRule[](1);
         rules[0] = _rule(true, 10_000, 0);
 
         // stock the venue and the owner with index units bought on the honest exchange
@@ -307,8 +323,9 @@ contract PolicyVaultTest is VaultFixture {
 
         usd.mint(owner, FUNDS);
         vm.startPrank(owner);
-        v.initialize(_policy(), assets, rules);
-        v.setAgent(agent, uint64(block.timestamp + 60 days));
+        Mandate m;
+        (m, v) = other.createVault(guardian, LOOSEN_DELAY);
+        m.signMandate(_policy(), assets, rules, agent, uint64(block.timestamp + 60 days));
         usd.approve(address(v), type(uint256).max);
         idx.approve(address(v), type(uint256).max);
         v.deposit(address(usd), FUNDS);
@@ -364,7 +381,7 @@ contract PolicyVaultTest is VaultFixture {
         assertEq(vault.cooldownUntil(), 0);
 
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.ProtectModeEntered(PolicyVault.Trigger.DailyLoss, 1084, uint64(block.timestamp + COOLDOWN));
+        emit ProtectModeEntered(PolicyVault.Trigger.DailyLoss, 1084, uint64(block.timestamp + COOLDOWN));
         vm.prank(stranger);
         vault.poke();
         assertEq(vault.cooldownUntil(), block.timestamp + COOLDOWN);
@@ -452,10 +469,10 @@ contract PolicyVaultTest is VaultFixture {
     // ---------------- minimum defensive share ----------------
 
     function test_RevertWhen_BuyLeavesTooLittleInDefensiveAssets() public {
-        PolicyVault.Policy memory p = _policy();
+        Policy memory p = _policy();
         p.minDefensiveBps = 7000;
         vm.prank(owner);
-        vault.proposePolicy(p);
+        mandate.proposePolicy(p);
 
         _buy(idx, 1_000 * USD);
         _buy(idx, 1_000 * USD);
@@ -481,12 +498,12 @@ contract PolicyVaultTest is VaultFixture {
 
     function test_MarkingAnAssetDefensiveWaits_UnmarkingIsInstant() public {
         vm.startPrank(owner);
-        vault.proposeAssetRule(address(gold), PolicyVault.AssetRule(true, true, 2000, 0));
-        assertFalse(vault.getRule(address(gold)).defensive);
-        assertEq(vault.pendingEta(vault.ruleKey(address(gold))), block.timestamp + LOOSEN_DELAY);
+        mandate.proposeAssetRule(address(gold), AssetRule(true, true, 2000, 0));
+        assertFalse(mandate.getRule(address(gold)).defensive);
+        assertEq(mandate.pendingEta(mandate.ruleKey(address(gold))), block.timestamp + LOOSEN_DELAY);
 
-        vault.proposeAssetRule(address(bond), PolicyVault.AssetRule(true, false, 6000, 0));
-        assertFalse(vault.getRule(address(bond)).defensive);
+        mandate.proposeAssetRule(address(bond), AssetRule(true, false, 6000, 0));
+        assertFalse(mandate.getRule(address(bond)).defensive);
         vm.stopPrank();
     }
 
@@ -501,7 +518,7 @@ contract PolicyVaultTest is VaultFixture {
         assertEq(vault.cooldownUntil(), 0);
 
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.ProtectModeEntered(PolicyVault.Trigger.LossStreak, 0, uint64(block.timestamp + COOLDOWN));
+        emit ProtectModeEntered(PolicyVault.Trigger.LossStreak, 0, uint64(block.timestamp + COOLDOWN));
         _sell(idx, 2e18);
         assertEq(vault.lossStreak(), 0);
 
@@ -542,9 +559,9 @@ contract PolicyVaultTest is VaultFixture {
         uint256 volumeLeft = vault.dailyVolumeRemaining();
 
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.StopLossTriggered(address(idx), 39.88e18, 3_578_432_400, 90 * PRICE, stranger);
+        emit StopLossTriggered(address(idx), 39.88e18, 3_578_432_400, 90 * PRICE, stranger);
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.ProtectModeEntered(PolicyVault.Trigger.StopLoss, 0, uint64(block.timestamp + COOLDOWN));
+        emit ProtectModeEntered(PolicyVault.Trigger.StopLoss, 0, uint64(block.timestamp + COOLDOWN));
         vm.prank(stranger);
         uint256 out = vault.triggerStopLoss(address(idx));
 
@@ -564,7 +581,7 @@ contract PolicyVaultTest is VaultFixture {
         _setStop(90 * PRICE);
         _holdIndex();
         vm.prank(owner);
-        vault.revokeAgent();
+        mandate.revokeAgent();
         _setPrice(idx, 90 * PRICE);
 
         vm.prank(stranger);
@@ -611,7 +628,7 @@ contract PolicyVaultTest is VaultFixture {
         _holdIndex();
         _setPrice(idx, 90 * PRICE);
         vm.prank(owner);
-        vault.pause();
+        mandate.pause();
 
         vm.prank(stranger);
         vault.triggerStopLoss(address(idx));
@@ -625,11 +642,11 @@ contract PolicyVaultTest is VaultFixture {
 
         vm.startPrank(owner);
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.StopLossHaltProposed(uint64(block.timestamp) + LOOSEN_DELAY);
-        vault.haltStopLoss();
-        assertEq(vault.stopLossHaltedUntil(), 0);
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
-        vault.applyStopLossHalt();
+        emit StopLossHaltProposed(uint64(block.timestamp) + LOOSEN_DELAY);
+        mandate.haltStopLoss();
+        assertEq(mandate.stopLossHaltedUntil(), 0);
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        mandate.applyStopLossHalt();
         vm.stopPrank();
 
         // so the stop-loss the owner wanted to stop still fires
@@ -639,24 +656,24 @@ contract PolicyVaultTest is VaultFixture {
     }
 
     function test_OwnerHaltAppliesAfterTheDelay_UnlessTheGuardianVetoes() public {
-        bytes32 key = vault.HALT_CHANGE();
+        bytes32 key = mandate.HALT_CHANGE();
         vm.prank(owner);
-        vault.haltStopLoss();
+        mandate.haltStopLoss();
         uint256 snap = vm.snapshotState();
 
         skip(LOOSEN_DELAY);
         vm.prank(owner);
-        vault.applyStopLossHalt();
-        assertEq(vault.stopLossHaltedUntil(), block.timestamp + 3 days);
+        mandate.applyStopLossHalt();
+        assertEq(mandate.stopLossHaltedUntil(), block.timestamp + 3 days);
 
         vm.revertToState(snap);
         vm.prank(guardian);
-        vault.cancelChange(key);
+        mandate.cancelChange(key);
         skip(LOOSEN_DELAY);
-        vm.expectRevert(PolicyVault.NoPendingChange.selector);
+        vm.expectRevert(Mandate.NoPendingChange.selector);
         vm.prank(owner);
-        vault.applyStopLossHalt();
-        assertEq(vault.stopLossHaltedUntil(), 0);
+        mandate.applyStopLossHalt();
+        assertEq(mandate.stopLossHaltedUntil(), 0);
     }
 
     /// The guardian's emergency brake, for a price feed that has gone wrong.
@@ -666,15 +683,15 @@ contract PolicyVaultTest is VaultFixture {
         _setPrice(idx, 90 * PRICE);
 
         vm.prank(guardian);
-        vault.haltStopLoss();
+        mandate.haltStopLoss();
         uint64 until = uint64(block.timestamp + 3 days);
-        assertEq(vault.stopLossHaltedUntil(), until);
+        assertEq(mandate.stopLossHaltedUntil(), until);
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.StopLossIsHalted.selector, until));
         vault.triggerStopLoss(address(idx));
 
         // resuming makes the vault stricter, so it is instant for either of them
         vm.prank(owner);
-        vault.resumeStopLoss();
+        mandate.resumeStopLoss();
         vault.triggerStopLoss(address(idx));
         assertEq(vault.holdings(address(idx)), 0);
     }
@@ -684,7 +701,7 @@ contract PolicyVaultTest is VaultFixture {
         _holdIndex();
         _setPrice(idx, 90 * PRICE);
         vm.prank(guardian);
-        vault.haltStopLoss();
+        mandate.haltStopLoss();
 
         skip(3 days);
         _refreshPrices();
@@ -693,9 +710,9 @@ contract PolicyVaultTest is VaultFixture {
     }
 
     function test_RevertWhen_StrangerHaltsTheStopLoss() public {
-        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
         vm.prank(stranger);
-        vault.haltStopLoss();
+        mandate.haltStopLoss();
     }
 
     function test_RevertWhen_BuyingAtOrBelowStopPrice() public {
@@ -714,57 +731,57 @@ contract PolicyVaultTest is VaultFixture {
 
     function test_RaisingStopPriceIsInstant_LoweringWaits() public {
         _setStop(90 * PRICE);
-        assertEq(vault.getRule(address(idx)).stopPrice, 90 * PRICE);
+        assertEq(mandate.getRule(address(idx)).stopPrice, 90 * PRICE);
 
         _setStop(95 * PRICE);
-        assertEq(vault.getRule(address(idx)).stopPrice, 95 * PRICE);
+        assertEq(mandate.getRule(address(idx)).stopPrice, 95 * PRICE);
 
         _setStop(50 * PRICE);
-        assertEq(vault.getRule(address(idx)).stopPrice, 95 * PRICE);
-        assertEq(vault.pendingEta(vault.ruleKey(address(idx))), block.timestamp + LOOSEN_DELAY);
-        assertEq(vault.getPendingRule(address(idx)).stopPrice, 50 * PRICE);
+        assertEq(mandate.getRule(address(idx)).stopPrice, 95 * PRICE);
+        assertEq(mandate.pendingEta(mandate.ruleKey(address(idx))), block.timestamp + LOOSEN_DELAY);
+        assertEq(mandate.getPendingRule(address(idx)).stopPrice, 50 * PRICE);
     }
 
     // ---------------- policy changes: stricter is instant, looser waits ----------------
 
     function test_TighteningPolicyIsInstant() public {
-        PolicyVault.Policy memory p = _policy();
+        Policy memory p = _policy();
         p.maxTradeBps = 200;
         p.dailyLossBps = 300;
         p.minDefensiveBps = 5000;
         p.maxLossStreak = 2;
         p.cooldown = 1 days;
         vm.prank(owner);
-        vault.proposePolicy(p);
+        mandate.proposePolicy(p);
 
-        assertEq(keccak256(abi.encode(vault.getPolicy())), keccak256(abi.encode(p)));
+        assertEq(keccak256(abi.encode(mandate.getPolicy())), keccak256(abi.encode(p)));
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsTradeLimit.selector, 201 * USD, 200 * USD));
         _buy(idx, 201 * USD);
     }
 
     function test_LooseningPolicyWaitsForTheDelay() public {
-        bytes32 key = vault.POLICY_CHANGE();
-        PolicyVault.Policy memory p = _policy();
+        bytes32 key = mandate.POLICY_CHANGE();
+        Policy memory p = _policy();
         p.dailyLossBps = 5000;
         vm.startPrank(owner);
-        vault.proposePolicy(p);
-        assertEq(vault.getPolicy().dailyLossBps, DAILY_LOSS_BPS);
+        mandate.proposePolicy(p);
+        assertEq(mandate.getPolicy().dailyLossBps, DAILY_LOSS_BPS);
         uint64 eta = uint64(block.timestamp) + LOOSEN_DELAY;
-        assertEq(vault.pendingEta(key), eta);
-        assertEq(vault.getPendingPolicy().dailyLossBps, 5000);
+        assertEq(mandate.pendingEta(key), eta);
+        assertEq(mandate.getPendingPolicy().dailyLossBps, 5000);
 
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ChangeNotReady.selector, eta));
-        vault.applyPolicy();
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, eta));
+        mandate.applyPolicy();
 
         vm.warp(eta);
-        vault.applyPolicy();
+        mandate.applyPolicy();
         vm.stopPrank();
-        assertEq(vault.getPolicy().dailyLossBps, 5000);
-        assertEq(vault.pendingEta(key), 0);
+        assertEq(mandate.getPolicy().dailyLossBps, 5000);
+        assertEq(mandate.pendingEta(key), 0);
     }
 
     function test_EveryLooseningDirectionWaits() public {
-        PolicyVault.Policy memory p = _policy();
+        Policy memory p = _policy();
         p.maxTradeBps += 1;
         _expectQueued(p);
         p = _policy();
@@ -791,15 +808,15 @@ contract PolicyVaultTest is VaultFixture {
         _expectQueued(p);
     }
 
-    function _expectQueued(PolicyVault.Policy memory p) internal {
+    function _expectQueued(Policy memory p) internal {
         vm.prank(owner);
-        vault.proposePolicy(p);
-        assertEq(keccak256(abi.encode(vault.getPolicy())), keccak256(abi.encode(_policy())));
-        assertEq(vault.pendingEta(vault.POLICY_CHANGE()), block.timestamp + LOOSEN_DELAY);
+        mandate.proposePolicy(p);
+        assertEq(keccak256(abi.encode(mandate.getPolicy())), keccak256(abi.encode(_policy())));
+        assertEq(mandate.pendingEta(mandate.POLICY_CHANGE()), block.timestamp + LOOSEN_DELAY);
     }
 
     function test_MixedPolicyChangeWaitsAsAWhole() public {
-        PolicyVault.Policy memory p = _policy();
+        Policy memory p = _policy();
         p.maxTradeBps = 100;
         p.dailyLossBps = 2000;
         _expectQueued(p);
@@ -807,41 +824,41 @@ contract PolicyVaultTest is VaultFixture {
 
     /// Threat B: after a loss the owner tries to triple the risk limit. The guardian says no.
     function test_GuardianCanVetoLoosening() public {
-        bytes32 key = vault.POLICY_CHANGE();
-        PolicyVault.Policy memory p = _policy();
+        bytes32 key = mandate.POLICY_CHANGE();
+        Policy memory p = _policy();
         p.dailyLossBps = DAILY_LOSS_BPS * 3;
         vm.prank(owner);
-        vault.proposePolicy(p);
+        mandate.proposePolicy(p);
 
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.ChangeCancelled(key, guardian);
+        emit ChangeCancelled(key, guardian);
         vm.prank(guardian);
-        vault.cancelChange(key);
+        mandate.cancelChange(key);
 
         vm.warp(block.timestamp + LOOSEN_DELAY);
-        vm.expectRevert(PolicyVault.NoPendingChange.selector);
+        vm.expectRevert(Mandate.NoPendingChange.selector);
         vm.prank(owner);
-        vault.applyPolicy();
-        assertEq(vault.getPolicy().dailyLossBps, DAILY_LOSS_BPS);
+        mandate.applyPolicy();
+        assertEq(mandate.getPolicy().dailyLossBps, DAILY_LOSS_BPS);
     }
 
     function test_TighteningClearsAPendingLoosening() public {
-        PolicyVault.Policy memory loose = _policy();
+        Policy memory loose = _policy();
         loose.maxTradeBps = 9000;
-        PolicyVault.Policy memory tight = _policy();
+        Policy memory tight = _policy();
         tight.maxTradeBps = 100;
         vm.startPrank(owner);
-        vault.proposePolicy(loose);
-        vault.proposePolicy(tight);
+        mandate.proposePolicy(loose);
+        mandate.proposePolicy(tight);
         vm.warp(block.timestamp + LOOSEN_DELAY);
-        vm.expectRevert(PolicyVault.NoPendingChange.selector);
-        vault.applyPolicy();
+        vm.expectRevert(Mandate.NoPendingChange.selector);
+        mandate.applyPolicy();
         vm.stopPrank();
-        assertEq(vault.getPolicy().maxTradeBps, 100);
+        assertEq(mandate.getPolicy().maxTradeBps, 100);
     }
 
     function test_RevertWhen_PolicyIsInvalid() public {
-        PolicyVault.Policy memory p = _policy();
+        Policy memory p = _policy();
         p.dailyLossBps = 10_001;
         _expectInvalid(p);
         p = _policy();
@@ -858,16 +875,16 @@ contract PolicyVaultTest is VaultFixture {
         _expectInvalid(p);
     }
 
-    function _expectInvalid(PolicyVault.Policy memory p) internal {
-        vm.expectRevert(PolicyVault.InvalidPolicy.selector);
+    function _expectInvalid(Policy memory p) internal {
+        vm.expectRevert(Mandate.InvalidPolicy.selector);
         vm.prank(owner);
-        vault.proposePolicy(p);
+        mandate.proposePolicy(p);
     }
 
     function test_DelistingIsInstant_SellingStillWorks() public {
         _buy(idx, 1_000 * USD);
         vm.prank(owner);
-        vault.proposeAssetRule(address(idx), _rule(false, 5000, 0));
+        mandate.proposeAssetRule(address(idx), _rule(false, 5000, 0));
 
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.AssetNotAllowed.selector, address(idx)));
         _buy(idx, 100 * USD);
@@ -877,46 +894,46 @@ contract PolicyVaultTest is VaultFixture {
 
     function test_RaisingExposureCapWaits() public {
         vm.startPrank(owner);
-        vault.proposeAssetRule(address(gold), _rule(true, 8000, 0));
-        assertEq(vault.getRule(address(gold)).maxExposureBps, 2000);
+        mandate.proposeAssetRule(address(gold), _rule(true, 8000, 0));
+        assertEq(mandate.getRule(address(gold)).maxExposureBps, 2000);
         uint64 eta = uint64(block.timestamp) + LOOSEN_DELAY;
 
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ChangeNotReady.selector, eta));
-        vault.applyAssetRule(address(gold));
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, eta));
+        mandate.applyAssetRule(address(gold));
         vm.warp(eta);
-        vault.applyAssetRule(address(gold));
+        mandate.applyAssetRule(address(gold));
         vm.stopPrank();
-        assertEq(vault.getRule(address(gold)).maxExposureBps, 8000);
+        assertEq(mandate.getRule(address(gold)).maxExposureBps, 8000);
     }
 
     /// The panic scene: the owner tries to allow a coin that is pumping.
     function test_AllowingANewAssetWaits_GuardianCanVeto() public {
         vm.prank(owner);
-        vault.proposeAssetRule(address(meme), _rule(true, 10_000, 0));
+        mandate.proposeAssetRule(address(meme), _rule(true, 10_000, 0));
 
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.AssetNotAllowed.selector, address(meme)));
         _buy(meme, 100 * USD);
 
-        bytes32 key = vault.ruleKey(address(meme));
+        bytes32 key = mandate.ruleKey(address(meme));
         vm.prank(guardian);
-        vault.cancelChange(key);
+        mandate.cancelChange(key);
         vm.warp(block.timestamp + LOOSEN_DELAY);
-        vm.expectRevert(PolicyVault.NoPendingChange.selector);
+        vm.expectRevert(Mandate.NoPendingChange.selector);
         vm.prank(owner);
-        vault.applyAssetRule(address(meme));
-        assertFalse(vault.getRule(address(meme)).allowed);
+        mandate.applyAssetRule(address(meme));
+        assertFalse(mandate.getRule(address(meme)).allowed);
     }
 
     function test_NewAssetIsTradableAfterTheDelay() public {
         vm.startPrank(owner);
-        vault.proposeAssetRule(address(meme), _rule(true, 500, 0));
+        mandate.proposeAssetRule(address(meme), _rule(true, 500, 0));
         vm.warp(block.timestamp + LOOSEN_DELAY);
-        vault.applyAssetRule(address(meme));
+        mandate.applyAssetRule(address(meme));
         vm.stopPrank();
         _refreshPrices();
 
         _buy(meme, 100 * USD);
-        assertEq(vault.getAssets().length, 4);
+        assertEq(mandate.getAssets().length, 4);
         assertGt(vault.holdings(address(meme)), 0);
     }
 
@@ -924,127 +941,408 @@ contract PolicyVaultTest is VaultFixture {
         address unknown = makeAddr("unknown token");
         vm.expectRevert(abi.encodeWithSelector(PriceOracle.NoFeed.selector, unknown));
         vm.prank(owner);
-        vault.proposeAssetRule(unknown, _rule(true, 1000, 0));
+        mandate.proposeAssetRule(unknown, _rule(true, 1000, 0));
     }
 
     function test_RevertWhen_RuleIsForTheStableAsset() public {
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.NotAnAsset.selector, address(usd)));
+        vm.expectRevert(abi.encodeWithSelector(Mandate.NotAnAsset.selector, address(usd)));
         vm.prank(owner);
-        vault.proposeAssetRule(address(usd), _rule(true, 1000, 0));
+        mandate.proposeAssetRule(address(usd), _rule(true, 1000, 0));
     }
 
-    function test_RevertWhen_InitializedTwice() public {
-        address[] memory assets = new address[](1);
-        assets[0] = address(meme);
-        PolicyVault.AssetRule[] memory rules = new PolicyVault.AssetRule[](1);
-        rules[0] = _rule(true, 10_000, 0);
-        vm.expectRevert(PolicyVault.AlreadyInitialized.selector);
+    function test_RevertWhen_MandateSignedTwice() public {
+        (address[] memory assets, AssetRule[] memory rules) = _assetRules();
+        vm.expectRevert(Mandate.AlreadySigned.selector);
         vm.prank(owner);
-        vault.initialize(_policy(), assets, rules);
-    }
-
-    function test_UninitializedVaultIsLocked() public {
-        PolicyVault fresh = new PolicyVault(usd, oracle, exchange, owner, address(0), LOOSEN_DELAY, MAX_PRICE_AGE);
-        usd.mint(owner, 1_000 * USD);
-        vm.startPrank(owner);
-        fresh.setAgent(agent, uint64(block.timestamp + 1 days));
-        usd.approve(address(fresh), 1_000 * USD);
-        fresh.deposit(address(usd), 1_000 * USD);
-        vm.stopPrank();
-
-        assertTrue(fresh.inProtectMode());
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.AssetNotAllowed.selector, address(idx)));
-        vm.prank(agent);
-        fresh.buy(address(idx), 1 * USD, REF);
+        mandate.signMandate(_policy(), assets, rules, agent, AGENT_EXPIRY);
     }
 
     function test_RevertWhen_TooManyAssets() public {
-        PolicyVault fresh = new PolicyVault(usd, oracle, exchange, owner, guardian, LOOSEN_DELAY, MAX_PRICE_AGE);
+        vm.prank(stranger);
+        (Mandate fresh,) = factory.createVault(guardian, LOOSEN_DELAY);
         address[] memory assets = new address[](9);
-        PolicyVault.AssetRule[] memory rules = new PolicyVault.AssetRule[](9);
+        AssetRule[] memory rules = new AssetRule[](9);
         for (uint256 i = 0; i < 9; i++) {
             MockAsset a = new MockAsset("Extra", "EXTRA", address(exchange));
             oracle.addFeed(address(a), 1 * PRICE, 1000);
             assets[i] = address(a);
             rules[i] = _rule(true, 1000, 0);
         }
-        vm.expectRevert(PolicyVault.TooManyAssets.selector);
-        vm.prank(owner);
-        fresh.initialize(_policy(), assets, rules);
+        vm.expectRevert(Mandate.TooManyAssets.selector);
+        vm.prank(stranger);
+        fresh.signMandate(_policy(), assets, rules, agent, AGENT_EXPIRY);
     }
 
-    // ---------------- roles ----------------
+    // ---------------- the factory, and vaults as copies ----------------
+
+    function test_VaultAndMandateAreBoundToEachOther() public view {
+        assertEq(address(vault.mandate()), address(mandate));
+        assertEq(mandate.vault(), address(vault));
+        assertEq(mandate.owner(), owner);
+        assertTrue(factory.isVault(address(vault)));
+        assertEq(address(factory.latestMandate(owner)), address(mandate));
+    }
+
+    function test_RevertWhen_ACopyIsSetUpAgain() public {
+        vm.expectRevert("Initializable: contract is already initialized");
+        mandate.init(attacker, address(0), attacker, address(usd), oracle, LOOSEN_DELAY, 0);
+        vm.expectRevert("Initializable: contract is already initialized");
+        vault.init(Mandate(attacker), usd, oracle, exchange, MAX_PRICE_AGE);
+        // the owner cannot do it either
+        vm.startPrank(owner);
+        vm.expectRevert("Initializable: contract is already initialized");
+        mandate.init(owner, address(0), address(vault), address(usd), oracle, 1 minutes, 0);
+        vm.expectRevert("Initializable: contract is already initialized");
+        vault.init(mandate, usd, oracle, exchange, MAX_PRICE_AGE);
+        vm.stopPrank();
+    }
+
+    function test_RevertWhen_ATemplateIsSetUp() public {
+        Mandate template = Mandate(factory.mandateTemplate());
+        vm.expectRevert("Initializable: contract is already initialized");
+        template.init(attacker, address(0), attacker, address(usd), oracle, LOOSEN_DELAY, 0);
+        PolicyVault vaultTemplate = PolicyVault(factory.vaultTemplate());
+        vm.expectRevert("Initializable: contract is already initialized");
+        vaultTemplate.init(mandate, usd, oracle, exchange, MAX_PRICE_AGE);
+    }
+
+    function test_AVaultWithNoSignedMandateIsLocked() public {
+        usd.mint(stranger, 1_000 * USD);
+        vm.startPrank(stranger);
+        (, PolicyVault fresh) = factory.createVault(address(0), LOOSEN_DELAY);
+        usd.approve(address(fresh), 1_000 * USD);
+        fresh.deposit(address(usd), 1_000 * USD);
+        vm.stopPrank();
+
+        assertTrue(fresh.inProtectMode());
+        (uint256 tradable,) = fresh.agentExposure();
+        assertEq(tradable, 0);
+        vm.expectRevert(Mandate.NotAgent.selector);
+        vm.prank(agent);
+        fresh.buy(address(idx), 1 * USD, REF);
+    }
+
+    /// Leaving a vault and opening a new one is not a way around the wait:
+    /// only an owner's first vault can have its mandate signed at once.
+    function test_ALaterVaultOfTheSameOwnerWaitsBeforeItsFirstMandate() public {
+        (address[] memory assets, AssetRule[] memory rules) = _assetRules();
+        Policy memory loose = _policy();
+        loose.dailyLossBps = 10_000;
+        loose.maxTradeBps = 10_000;
+
+        vm.startPrank(owner);
+        vault.withdraw(address(usd), FUNDS);
+        uint64 activeFrom = uint64(block.timestamp) + LOOSEN_DELAY;
+        vm.expectEmit(true, false, false, false);
+        emit VaultCreated(owner, address(0), address(0), activeFrom);
+        (Mandate second,) = factory.createVault(address(0), 1 minutes);
+        assertEq(second.activeFrom(), activeFrom);
+
+        vm.expectRevert(abi.encodeWithSelector(Mandate.NotActiveYet.selector, activeFrom));
+        second.signMandate(loose, assets, rules, agent, AGENT_EXPIRY);
+
+        vm.warp(activeFrom);
+        second.signMandate(loose, assets, rules, agent, AGENT_EXPIRY);
+        vm.stopPrank();
+        assertTrue(second.signed());
+    }
+
+    function test_AnotherOwnersFirstVaultStartsAtOnce() public {
+        (address[] memory assets, AssetRule[] memory rules) = _assetRules();
+        vm.startPrank(stranger);
+        (Mandate theirs,) = factory.createVault(address(0), LOOSEN_DELAY);
+        assertEq(theirs.activeFrom(), block.timestamp);
+        theirs.signMandate(_policy(), assets, rules, agent, AGENT_EXPIRY);
+        vm.stopPrank();
+        assertEq(factory.vaultCount(), 2);
+    }
+
+    function test_RevertWhen_WaitingPeriodIsOutOfRange() public {
+        vm.startPrank(stranger);
+        vm.expectRevert(Mandate.InvalidDelay.selector);
+        factory.createVault(address(0), 59);
+        vm.expectRevert(Mandate.InvalidDelay.selector);
+        factory.createVault(address(0), 30 days + 1);
+        vm.stopPrank();
+    }
+
+    // ---------------- pausing ----------------
+
+    function test_OwnerUndoesTheirOwnPauseAtOnce() public {
+        vm.startPrank(owner);
+        mandate.pause();
+        vm.stopPrank();
+        vm.expectRevert(Mandate.AgentPaused.selector);
+        _buy(idx, 100 * USD);
+
+        vm.prank(owner);
+        mandate.unpause();
+        assertFalse(mandate.paused());
+        _buy(idx, 100 * USD);
+    }
+
+    /// The guardian's pause holds against the owner. Lifting it is a rise in risk, so it waits.
+    function test_OwnerCannotLiftAGuardianPauseAtOnce() public {
+        vm.prank(guardian);
+        mandate.pause();
+        assertTrue(mandate.pausedByGuardian());
+
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit UnpauseProposed(uint64(block.timestamp) + LOOSEN_DELAY);
+        mandate.unpause();
+        assertTrue(mandate.paused());
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        mandate.applyUnpause();
+
+        skip(LOOSEN_DELAY);
+        mandate.applyUnpause();
+        vm.stopPrank();
+        assertFalse(mandate.paused());
+        assertFalse(mandate.pausedByGuardian());
+    }
+
+    function test_GuardianLiftsTheirOwnPauseAtOnce_AndCanVetoTheOwnersUnpause() public {
+        bytes32 key = mandate.UNPAUSE_CHANGE();
+        vm.prank(guardian);
+        mandate.pause();
+        vm.prank(owner);
+        mandate.unpause();
+
+        vm.prank(guardian);
+        mandate.cancelChange(key);
+        skip(LOOSEN_DELAY);
+        vm.expectRevert(Mandate.NoPendingChange.selector);
+        vm.prank(owner);
+        mandate.applyUnpause();
+        assertTrue(mandate.paused());
+
+        vm.prank(guardian);
+        mandate.unpause();
+        assertFalse(mandate.paused());
+    }
+
+    function test_AGuardianPauseOnTopOfAnOwnerPauseBelongsToTheGuardian() public {
+        vm.prank(owner);
+        mandate.pause();
+        vm.prank(guardian);
+        mandate.pause();
+
+        vm.prank(owner);
+        mandate.unpause();
+        assertTrue(mandate.paused());
+        assertEq(mandate.pendingEta(mandate.UNPAUSE_CHANGE()), block.timestamp + LOOSEN_DELAY);
+    }
+
+    function test_RevertWhen_StrangerPauses() public {
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        vm.prank(stranger);
+        mandate.pause();
+    }
+
+    // ---------------- the guardian ----------------
 
     function test_GuardianCanOnlySayNo() public {
         vm.startPrank(guardian);
         vm.expectRevert(PolicyVault.NotOwner.selector);
         vault.withdraw(address(usd), 1 * USD);
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.proposePolicy(_policy());
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.approveRequest(1);
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.setAgent(attacker, uint64(block.timestamp + 1 days));
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.proposeWithdrawalAddress(guardian);
-        vm.expectRevert(PolicyVault.NotAgent.selector);
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.proposePolicy(_policy());
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.setAgent(attacker, uint64(block.timestamp + 1 days));
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.setGuardian(attacker);
+        vm.expectRevert(Mandate.NotOwner.selector);
+        mandate.proposeWithdrawalAddress(guardian);
+        vm.expectRevert(Mandate.NotAgent.selector);
         vault.buy(address(idx), 1 * USD, REF);
-
-        vault.pause();
-        vm.expectRevert(PolicyVault.NotOwner.selector);
-        vault.unpause();
         vm.stopPrank();
-        assertTrue(vault.paused());
-
-        vm.prank(owner);
-        vault.unpause();
-        _buy(idx, 100 * USD);
     }
 
-    function test_RevertWhen_StrangerPauses() public {
-        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
-        vm.prank(stranger);
-        vault.pause();
-    }
-
-    function test_OnlyGuardianCanPassOnTheGuardianRole() public {
-        vm.expectRevert(PolicyVault.NotGuardian.selector);
-        vm.prank(owner);
-        vault.transferGuardian(stranger);
-        vm.expectRevert(PolicyVault.GuardianAlreadySet.selector);
-        vm.prank(owner);
-        vault.setGuardian(stranger);
-
-        vm.prank(guardian);
-        vault.transferGuardian(stranger);
-        assertEq(vault.guardian(), stranger);
-        vm.prank(stranger);
-        vault.pause();
-        assertTrue(vault.paused());
-    }
-
-    function test_OwnerCanAppointAGuardianWhenThereIsNone() public {
-        PolicyVault fresh = new PolicyVault(usd, oracle, exchange, owner, address(0), LOOSEN_DELAY, MAX_PRICE_AGE);
-        vm.startPrank(owner);
+    function test_AppointingAGuardianWhereThereIsNoneIsInstant() public {
+        vm.startPrank(stranger);
+        (Mandate fresh,) = factory.createVault(address(0), LOOSEN_DELAY);
+        vm.expectRevert(Mandate.ZeroAddress.selector);
+        fresh.setGuardian(address(0));
         fresh.setGuardian(guardian);
-        vm.expectRevert(PolicyVault.GuardianAlreadySet.selector);
-        fresh.setGuardian(stranger);
         vm.stopPrank();
         assertEq(fresh.guardian(), guardian);
     }
 
+    /// Removing or replacing the guardian waits, and the guardian cannot cancel
+    /// that one change, so an owner is never bound to a guardian for good.
+    function test_RemovingTheGuardianWaits_AndTheGuardianCannotVetoIt() public {
+        bytes32 key = mandate.GUARDIAN_CHANGE();
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit GuardianProposed(address(0), uint64(block.timestamp) + LOOSEN_DELAY);
+        mandate.setGuardian(address(0));
+        vm.stopPrank();
+        assertEq(mandate.guardian(), guardian);
+
+        vm.expectRevert(Mandate.NotVetoable.selector);
+        vm.prank(guardian);
+        mandate.cancelChange(key);
+
+        vm.startPrank(owner);
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        mandate.applyGuardian();
+        skip(LOOSEN_DELAY);
+        mandate.applyGuardian();
+        vm.stopPrank();
+        assertEq(mandate.guardian(), address(0));
+    }
+
+    /// An owner in a hurry faces two waits: one to remove the guardian, another to loosen anything.
+    function test_LooseningAfterRemovingTheGuardianTakesAnotherFullWait() public {
+        vm.startPrank(owner);
+        mandate.setGuardian(address(0));
+        skip(LOOSEN_DELAY);
+        mandate.applyGuardian();
+
+        Policy memory p = _policy();
+        p.dailyLossBps = DAILY_LOSS_BPS * 3;
+        mandate.proposePolicy(p);
+        assertEq(mandate.getPolicy().dailyLossBps, DAILY_LOSS_BPS);
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        mandate.applyPolicy();
+        vm.stopPrank();
+    }
+
+    function test_ReplacingTheGuardianWaits_AndTheOwnerCanDropTheRequest() public {
+        bytes32 key = mandate.GUARDIAN_CHANGE();
+        vm.startPrank(owner);
+        mandate.setGuardian(stranger);
+        assertEq(mandate.guardian(), guardian);
+        mandate.cancelChange(key);
+        skip(LOOSEN_DELAY);
+        vm.expectRevert(Mandate.NoPendingChange.selector);
+        mandate.applyGuardian();
+
+        mandate.setGuardian(stranger);
+        skip(LOOSEN_DELAY);
+        mandate.applyGuardian();
+        vm.stopPrank();
+        assertEq(mandate.guardian(), stranger);
+        // the old guardian has no say any more, the new one does
+        vm.expectRevert(Mandate.NotOwnerOrGuardian.selector);
+        vm.prank(guardian);
+        mandate.pause();
+        vm.prank(stranger);
+        mandate.pause();
+    }
+
+    function test_RevertWhen_GuardianIsInvalid() public {
+        vm.startPrank(owner);
+        vm.expectRevert(Mandate.InvalidAddress.selector);
+        mandate.setGuardian(owner);
+        vm.expectRevert(Mandate.InvalidAddress.selector);
+        mandate.setGuardian(agent);
+        vm.stopPrank();
+    }
+
+    // ---------------- the agent key ----------------
+
+    function test_ANewAgentKeyWaits() public {
+        uint64 expiry = uint64(block.timestamp + 30 days);
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit AgentProposed(attacker, expiry, uint64(block.timestamp) + LOOSEN_DELAY);
+        mandate.setAgent(attacker, expiry);
+        assertEq(mandate.agent(), agent);
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        mandate.applyAgent();
+
+        skip(LOOSEN_DELAY);
+        mandate.applyAgent();
+        vm.stopPrank();
+        assertEq(mandate.agent(), attacker);
+        assertEq(mandate.agentExpiry(), expiry);
+        // the old key is dead
+        vm.expectRevert(Mandate.NotAgent.selector);
+        _buy(idx, 100 * USD);
+    }
+
+    function test_ExtendingTheAgentKeyWaits_ShorteningIsInstant() public {
+        vm.startPrank(owner);
+        mandate.setAgent(agent, AGENT_EXPIRY + 1);
+        assertEq(mandate.agentExpiry(), AGENT_EXPIRY);
+        assertEq(mandate.pendingEta(mandate.AGENT_CHANGE()), block.timestamp + LOOSEN_DELAY);
+
+        mandate.setAgent(agent, uint64(START + 1 days));
+        vm.stopPrank();
+        assertEq(mandate.agentExpiry(), START + 1 days);
+        // shortening also drops the extension that was waiting
+        assertEq(mandate.pendingEta(mandate.AGENT_CHANGE()), 0);
+    }
+
+    function test_GuardianCanVetoANewAgentKey() public {
+        bytes32 key = mandate.AGENT_CHANGE();
+        vm.prank(owner);
+        mandate.setAgent(attacker, uint64(block.timestamp + 30 days));
+        vm.prank(guardian);
+        mandate.cancelChange(key);
+        skip(LOOSEN_DELAY);
+        vm.expectRevert(Mandate.NoPendingChange.selector);
+        vm.prank(owner);
+        mandate.applyAgent();
+        assertEq(mandate.agent(), agent);
+    }
+
+    function test_RevokingIsInstant_AndDropsAKeyThatWasWaiting() public {
+        vm.prank(owner);
+        mandate.setAgent(attacker, uint64(block.timestamp + 30 days));
+        vm.prank(guardian);
+        mandate.revokeAgent();
+        assertEq(mandate.agent(), address(0));
+        assertEq(mandate.pendingEta(mandate.AGENT_CHANGE()), 0);
+        vm.expectRevert(Mandate.NotAgent.selector);
+        _buy(idx, 100 * USD);
+    }
+
     function test_RevertWhen_AgentKeyIsInvalid() public {
         vm.startPrank(owner);
-        vm.expectRevert(PolicyVault.InvalidAgent.selector);
-        vault.setAgent(address(0), uint64(block.timestamp + 1 days));
-        vm.expectRevert(PolicyVault.InvalidAgent.selector);
-        vault.setAgent(owner, uint64(block.timestamp + 1 days));
-        vm.expectRevert(PolicyVault.InvalidAgent.selector);
-        vault.setAgent(guardian, uint64(block.timestamp + 1 days));
-        vm.expectRevert(PolicyVault.InvalidExpiry.selector);
-        vault.setAgent(attacker, uint64(block.timestamp));
-        vm.expectRevert(PolicyVault.InvalidExpiry.selector);
-        vault.setAgent(attacker, uint64(block.timestamp + 90 days + 1));
+        vm.expectRevert(Mandate.ZeroAddress.selector);
+        mandate.setAgent(address(0), uint64(block.timestamp + 1 days));
+        vm.expectRevert(Mandate.InvalidAddress.selector);
+        mandate.setAgent(owner, uint64(block.timestamp + 1 days));
+        vm.expectRevert(Mandate.InvalidAddress.selector);
+        mandate.setAgent(guardian, uint64(block.timestamp + 1 days));
+        vm.expectRevert(Mandate.InvalidAddress.selector);
+        mandate.setAgent(address(vault), uint64(block.timestamp + 1 days));
+        vm.expectRevert(Mandate.InvalidExpiry.selector);
+        mandate.setAgent(attacker, uint64(block.timestamp));
+        vm.expectRevert(Mandate.InvalidExpiry.selector);
+        mandate.setAgent(attacker, uint64(block.timestamp + 90 days + 1));
+        vm.stopPrank();
+    }
+
+    // ---------------- the waiting period itself ----------------
+
+    function test_ALongerWaitIsInstant_AShorterOneWaitsOutTheCurrentOne() public {
+        vm.startPrank(owner);
+        mandate.setLoosenDelay(3 days);
+        assertEq(mandate.loosenDelay(), 3 days);
+
+        mandate.setLoosenDelay(1 hours);
+        assertEq(mandate.loosenDelay(), 3 days);
+        // the shorter wait is itself held for the full three days
+        assertEq(mandate.pendingEta(mandate.DELAY_CHANGE()), block.timestamp + 3 days);
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, block.timestamp + 3 days));
+        mandate.applyLoosenDelay();
+
+        skip(3 days);
+        mandate.applyLoosenDelay();
+        vm.stopPrank();
+        assertEq(mandate.loosenDelay(), 1 hours);
+    }
+
+    function test_RevertWhen_NewWaitIsOutOfRange() public {
+        vm.startPrank(owner);
+        vm.expectRevert(Mandate.InvalidDelay.selector);
+        mandate.setLoosenDelay(59);
+        vm.expectRevert(Mandate.InvalidDelay.selector);
+        mandate.setLoosenDelay(30 days + 1);
         vm.stopPrank();
     }
 
@@ -1053,7 +1351,7 @@ contract PolicyVaultTest is VaultFixture {
     function test_WithdrawGoesToTheOwner_EvenWhilePaused() public {
         _buy(idx, 1_000 * USD);
         vm.prank(guardian);
-        vault.pause();
+        mandate.pause();
 
         vm.startPrank(owner);
         vault.withdraw(address(usd), 2_000 * USD);
@@ -1070,47 +1368,47 @@ contract PolicyVaultTest is VaultFixture {
         address elsewhere = makeAddr("new address");
         vm.startPrank(owner);
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.WithdrawalAddressProposed(elsewhere, uint64(block.timestamp) + LOOSEN_DELAY);
-        vault.proposeWithdrawalAddress(elsewhere);
-        assertEq(vault.withdrawalAddress(), owner);
+        emit WithdrawalAddressProposed(elsewhere, uint64(block.timestamp) + LOOSEN_DELAY);
+        mandate.proposeWithdrawalAddress(elsewhere);
+        assertEq(mandate.withdrawalAddress(), owner);
 
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
-        vault.applyWithdrawalAddress();
+        vm.expectRevert(abi.encodeWithSelector(Mandate.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        mandate.applyWithdrawalAddress();
         // until then, money still goes to the old address
         vault.withdraw(address(usd), 100 * USD);
         assertEq(usd.balanceOf(owner), 100 * USD);
         assertEq(usd.balanceOf(elsewhere), 0);
 
         skip(LOOSEN_DELAY);
-        vault.applyWithdrawalAddress();
+        mandate.applyWithdrawalAddress();
         vault.withdraw(address(usd), 100 * USD);
         vm.stopPrank();
-        assertEq(vault.withdrawalAddress(), elsewhere);
+        assertEq(mandate.withdrawalAddress(), elsewhere);
         assertEq(usd.balanceOf(elsewhere), 100 * USD);
     }
 
     function test_GuardianCanVetoAWithdrawalAddressChange() public {
-        bytes32 key = vault.WITHDRAWAL_CHANGE();
+        bytes32 key = mandate.WITHDRAWAL_CHANGE();
         vm.prank(owner);
-        vault.proposeWithdrawalAddress(attacker);
+        mandate.proposeWithdrawalAddress(attacker);
         vm.prank(guardian);
-        vault.cancelChange(key);
+        mandate.cancelChange(key);
 
         skip(LOOSEN_DELAY);
-        vm.expectRevert(PolicyVault.NoPendingChange.selector);
+        vm.expectRevert(Mandate.NoPendingChange.selector);
         vm.prank(owner);
-        vault.applyWithdrawalAddress();
-        assertEq(vault.withdrawalAddress(), owner);
+        mandate.applyWithdrawalAddress();
+        assertEq(mandate.withdrawalAddress(), owner);
     }
 
     function test_RevertWhen_WithdrawalAddressIsInvalid() public {
         vm.startPrank(owner);
         vm.expectRevert(PolicyVault.ZeroAddress.selector);
-        vault.proposeWithdrawalAddress(address(0));
-        vm.expectRevert(PolicyVault.InvalidAgent.selector);
-        vault.proposeWithdrawalAddress(agent);
-        vm.expectRevert(PolicyVault.InvalidAgent.selector);
-        vault.proposeWithdrawalAddress(address(vault));
+        mandate.proposeWithdrawalAddress(address(0));
+        vm.expectRevert(Mandate.InvalidAddress.selector);
+        mandate.proposeWithdrawalAddress(agent);
+        vm.expectRevert(Mandate.InvalidAddress.selector);
+        mandate.proposeWithdrawalAddress(address(vault));
         vm.stopPrank();
     }
 
@@ -1135,92 +1433,232 @@ contract PolicyVaultTest is VaultFixture {
         vault.deposit(address(meme), 1e18);
     }
 
-    // ---------------- escalation ----------------
+    // ---------------- leaving ----------------
 
-    function test_OwnerApprovesATradeAboveTheAgentLimit() public {
+    /// The mandate never holds the owner's money back. Taking out everything ends it.
+    function test_AFullWithdrawalEndsTheMandate() public {
+        _buy(idx, 1_000 * USD);
+        vm.startPrank(owner);
+        vault.withdraw(address(usd), 9_000 * USD);
+        assertEq(mandate.agent(), agent);
+
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.TradeRequested(1, address(bond), true, 2_500 * USD, REF);
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(bond), true, 2_500 * USD, REF);
-        assertEq(vault.holdings(address(bond)), 0);
-
-        vm.prank(owner);
-        vault.approveRequest(id);
-        assertEq(vault.holdings(address(bond)), 24.925e18);
-        assertEq(vault.dailyVolumeRemaining(), MAX_DAILY);
-        assertEq(uint8(vault.getRequest(id).status), uint8(PolicyVault.RequestStatus.Approved));
-
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.RequestNotPending.selector, id));
-        vm.prank(owner);
-        vault.approveRequest(id);
+        emit Terminated();
+        vault.withdraw(address(idx), 9.97e18);
+        vm.stopPrank();
+        assertEq(mandate.agent(), address(0));
+        assertEq(usd.balanceOf(owner), 9_000 * USD);
+        assertEq(idx.balanceOf(owner), 9.97e18);
     }
 
-    function test_OwnerApprovesALargeSell() public {
-        _holdIndex();
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(idx), false, 39.88e18, REF);
+    /// Coming back to the same vault needs a new agent key, and a new key waits.
+    function test_AfterTerminationTheAgentComesBackOnlyAfterTheWait() public {
+        vm.startPrank(owner);
+        vault.withdraw(address(usd), FUNDS);
+        vault.deposit(address(usd), FUNDS);
+        mandate.setAgent(agent, AGENT_EXPIRY);
+        vm.stopPrank();
+        assertEq(mandate.agent(), address(0));
+
+        vm.expectRevert(Mandate.NotAgent.selector);
+        _buy(idx, 100 * USD);
+
+        skip(LOOSEN_DELAY);
+        _refreshPrices();
         vm.prank(owner);
-        vault.approveRequest(id);
+        mandate.applyAgent();
+        _buy(idx, 100 * USD);
+    }
+
+    // ---------------- approvals for one exact trade ----------------
+
+    function _use(PolicyVault.TradeApproval memory a, bytes memory sig) internal returns (uint256) {
+        vm.prank(agent);
+        return vault.tradeWithApproval(a, sig, REF);
+    }
+
+    function test_OwnerSignsForATradeAboveTheAgentLimits() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 2_500 * USD, 7, 1 hours, OWNER_KEY);
+        vm.expectEmit(true, true, true, true);
+        emit ApprovalUsed(7, 0, address(usd), address(bond), 2_500 * USD);
+        _use(a, sig);
+
+        assertEq(vault.holdings(address(bond)), 24.925e18);
+        assertTrue(vault.usedNonce(7));
+        // it does not use the agent's own allowance
+        assertEq(vault.dailyVolumeRemaining(), MAX_DAILY);
+    }
+
+    function test_OwnerSignsForALargeSell() public {
+        _holdIndex();
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(false, idx, 39.88e18, 1, 1 hours, OWNER_KEY);
+        _use(a, sig);
         assertEq(vault.holdings(address(idx)), 0);
     }
 
-    function test_RevertWhen_ApprovedTradeBreaksExposureCap() public {
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(gold), true, 5_000 * USD, REF);
-        vm.expectPartialRevert(PolicyVault.ExceedsExposure.selector);
-        vm.prank(owner);
-        vault.approveRequest(id);
-        assertEq(uint8(vault.getRequest(id).status), uint8(PolicyVault.RequestStatus.Pending));
+    function test_RevertWhen_ApprovalIsUsedTwice() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 500 * USD, 7, 1 hours, OWNER_KEY);
+        _use(a, sig);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ApprovalAlreadyUsed.selector, 7));
+        _use(a, sig);
     }
 
-    function test_RevertWhen_ApprovedBuyIsInProtectMode() public {
+    /// The signature covers every field. Change any of them and it is no longer the owner's.
+    function test_RevertWhen_AnyApprovedFieldIsChanged() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 500 * USD, 7, 30 minutes, OWNER_KEY);
+        PolicyVault.TradeApproval memory b = _copy(a);
+
+        b.amount = 501 * USD;
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(b, sig);
+        b = _copy(a);
+        b.assetOut = address(idx);
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(b, sig);
+        b = _copy(a);
+        b.nonce = 8;
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(b, sig);
+        b = _copy(a);
+        b.expiry += 1;
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(b, sig);
+        b = _copy(a);
+        b.action = 1;
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(b, sig);
+
+        // untouched, it still works
+        _use(a, sig);
+    }
+
+    function _copy(PolicyVault.TradeApproval memory a) internal pure returns (PolicyVault.TradeApproval memory) {
+        return PolicyVault.TradeApproval(a.action, a.assetIn, a.assetOut, a.amount, a.nonce, a.validFrom, a.expiry);
+    }
+
+    function test_RevertWhen_ApprovalIsNotSignedByTheOwner() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 500 * USD, 7, 1 hours, 0xBAD);
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(a, sig);
+        // nor does a malformed signature get through
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(a, hex"1234");
+    }
+
+    function test_RevertWhen_ApprovalHasExpiredOrIsNotValidYet() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 500 * USD, 7, 10 minutes, OWNER_KEY);
+        skip(10 minutes + 1);
+        _refreshPrices();
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ApprovalNotValidNow.selector, a.validFrom, a.expiry));
+        _use(a, sig);
+
+        a.validFrom = uint64(block.timestamp + 5 minutes);
+        a.expiry = uint64(block.timestamp + 15 minutes);
+        sig = _sign(a, OWNER_KEY);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ApprovalNotValidNow.selector, a.validFrom, a.expiry));
+        _use(a, sig);
+    }
+
+    /// An approval is good for an hour at most, so a signature cannot sit around for days.
+    function test_RevertWhen_ApprovalLivesLongerThanAnHour() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 500 * USD, 7, 1 hours + 1, OWNER_KEY);
+        vm.expectRevert(PolicyVault.ApprovalTooLong.selector);
+        _use(a, sig);
+    }
+
+    function test_OwnerCanCancelAnApprovalBeforeItIsUsed() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 500 * USD, 7, 1 hours, OWNER_KEY);
+        vm.prank(owner);
+        vault.cancelApproval(7);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ApprovalAlreadyUsed.selector, 7));
+        _use(a, sig);
+    }
+
+    function test_RevertWhen_SomeoneElseSubmitsTheApproval() public {
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 500 * USD, 7, 1 hours, OWNER_KEY);
+        vm.expectRevert(Mandate.NotAgent.selector);
+        vm.prank(attacker);
+        vault.tradeWithApproval(a, sig, REF);
+
+        vm.prank(guardian);
+        mandate.pause();
+        vm.expectRevert(Mandate.AgentPaused.selector);
+        _use(a, sig);
+    }
+
+    function test_RevertWhen_ApprovalIsForAnotherVault() public {
+        vm.startPrank(stranger);
+        (, PolicyVault other) = factory.createVault(address(0), LOOSEN_DELAY);
+        vm.stopPrank();
+        (PolicyVault.TradeApproval memory a,) = _approval(true, bond, 500 * USD, 7, 1 hours, OWNER_KEY);
+        // signed by the right owner, but for the other vault's address
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(OWNER_KEY, other.approvalDigest(a));
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(a, abi.encodePacked(r, s, v));
+    }
+
+    function test_RevertWhen_ApprovalDoesNotTradeAgainstCash() public {
+        PolicyVault.TradeApproval memory a = PolicyVault.TradeApproval({
+            action: 0,
+            assetIn: address(idx),
+            assetOut: address(bond),
+            amount: 500 * USD,
+            nonce: 7,
+            validFrom: uint64(block.timestamp),
+            expiry: uint64(block.timestamp + 1 hours)
+        });
+        bytes memory sig = _sign(a, OWNER_KEY);
+        vm.expectRevert(PolicyVault.BadApproval.selector);
+        _use(a, sig);
+        assertFalse(vault.usedNonce(7));
+    }
+
+    /// The approval lifts the two size limits and nothing else. Each rule below still refuses the trade.
+    function test_RevertWhen_ApprovedTradeBreaksAnyOtherRule() public {
+        // not in the mandate
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, meme, 100 * USD, 1, 1 hours, OWNER_KEY);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.AssetNotAllowed.selector, address(meme)));
+        _use(a, sig);
+
+        // over the asset's cap
+        (a, sig) = _approval(true, gold, 5_000 * USD, 2, 1 hours, OWNER_KEY);
+        vm.expectPartialRevert(PolicyVault.ExceedsExposure.selector);
+        _use(a, sig);
+
+        // under the defensive floor
+        Policy memory p = _policy();
+        p.minDefensiveBps = 7000;
+        vm.prank(owner);
+        mandate.proposePolicy(p);
+        (a, sig) = _approval(true, idx, 4_000 * USD, 3, 1 hours, OWNER_KEY);
+        vm.expectPartialRevert(PolicyVault.BelowDefensiveFloor.selector);
+        _use(a, sig);
+        // a failed attempt does not burn the approval
+        assertFalse(vault.usedNonce(3));
+    }
+
+    function test_RevertWhen_ApprovedBuyIsInProtectModeOrCooldown() public {
         _holdIndex();
         _crashIndex();
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(bond), true, 100 * USD, REF);
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, bond, 100 * USD, 1, 1 hours, OWNER_KEY);
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsDailyLoss.selector, 1084, DAILY_LOSS_BPS));
-        vm.prank(owner);
-        vault.approveRequest(id);
+        _use(a, sig);
+
+        vault.poke();
+        _setPrice(idx, 8_019_000_000);
+        _setPrice(idx, 8_820_900_000);
+        _setPrice(idx, 9_702_990_000);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.CooldownActive.selector, vault.cooldownUntil()));
+        _use(a, sig);
     }
 
-    function test_GuardianCanRejectARequest() public {
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(bond), true, 2_500 * USD, REF);
-        vm.prank(guardian);
-        vault.rejectRequest(id);
-
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.RequestNotPending.selector, id));
-        vm.prank(owner);
-        vault.approveRequest(id);
-    }
-
-    function test_RevertWhen_RequestExpired() public {
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(bond), true, 2_500 * USD, REF);
-        skip(1 days + 1);
-        _refreshPrices();
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.RequestExpired.selector, id));
-        vm.prank(owner);
-        vault.approveRequest(id);
-    }
-
-    function test_RevertWhen_RequestIsForAnAssetOffTheAllowlist() public {
-        vm.startPrank(agent);
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.AssetNotAllowed.selector, address(meme)));
-        vault.requestTrade(address(meme), true, 100 * USD, REF);
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.UnknownAsset.selector, address(meme)));
-        vault.requestTrade(address(meme), false, 1e18, REF);
-        vm.stopPrank();
-    }
-
-    function test_RevertWhen_ApprovingWhilePaused() public {
-        vm.prank(agent);
-        uint256 id = vault.requestTrade(address(bond), true, 2_500 * USD, REF);
-        vm.startPrank(owner);
-        vault.pause();
-        vm.expectRevert(PolicyVault.WalletPaused.selector);
-        vault.approveRequest(id);
-        vm.stopPrank();
+    function test_RevertWhen_ApprovedBuyIsAtOrBelowTheStopPrice() public {
+        _setStop(100 * PRICE);
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = _approval(true, idx, 100 * USD, 1, 1 hours, OWNER_KEY);
+        vm.expectRevert(
+            abi.encodeWithSelector(PolicyVault.BelowStopPrice.selector, address(idx), 100 * PRICE, 100 * PRICE)
+        );
+        _use(a, sig);
     }
 
     // ---------------- what a compromised agent could still do ----------------
@@ -1240,13 +1678,13 @@ contract PolicyVaultTest is VaultFixture {
         uint256 snap = vm.snapshotState();
 
         vm.prank(guardian);
-        vault.pause();
+        mandate.pause();
         (uint256 tradable, uint256 maxCost) = vault.agentExposure();
         assertEq(tradable + maxCost, 0);
 
         vm.revertToState(snap);
         vm.prank(guardian);
-        vault.revokeAgent();
+        mandate.revokeAgent();
         (tradable, maxCost) = vault.agentExposure();
         assertEq(tradable + maxCost, 0);
 
@@ -1273,8 +1711,8 @@ contract PolicyVaultTest is VaultFixture {
             uint256 limit = vault.portfolioValue() * MAX_TRADE_BPS / 10_000;
             vm.prank(agent);
             try vault.buy(address(asset), amount, REF) {
-                assertTrue(vault.getRule(address(asset)).allowed);
-                assertLe(vault.exposureBps(address(asset)), vault.getRule(address(asset)).maxExposureBps);
+                assertTrue(mandate.getRule(address(asset)).allowed);
+                assertLe(vault.exposureBps(address(asset)), mandate.getRule(address(asset)).maxExposureBps);
                 assertGe(vault.defensiveBps(), MIN_DEFENSIVE_BPS);
                 assertLe(amount, limit);
             } catch {}
@@ -1323,7 +1761,7 @@ contract PolicyVaultTest is VaultFixture {
 
     /// Any mandate the owner proposes either tightens every field and applies now, or changes nothing yet.
     function testFuzz_PolicyChangeIsTighterOrQueued(uint16[5] memory bps, uint8 streak, uint32 cooldown) public {
-        PolicyVault.Policy memory p = PolicyVault.Policy({
+        Policy memory p = Policy({
             maxTradeBps: uint16(bound(bps[0], 0, 10_000)),
             maxDailyVolumeBps: bps[1],
             dailyLossBps: uint16(bound(bps[2], 0, 10_000)),
@@ -1332,12 +1770,12 @@ contract PolicyVaultTest is VaultFixture {
             maxLossStreak: streak,
             cooldown: uint32(bound(cooldown, 0, 30 days))
         });
-        PolicyVault.Policy memory old = _policy();
+        Policy memory old = _policy();
         vm.prank(owner);
-        vault.proposePolicy(p);
+        mandate.proposePolicy(p);
 
-        PolicyVault.Policy memory cur = vault.getPolicy();
-        uint64 eta = vault.pendingEta(vault.POLICY_CHANGE());
+        Policy memory cur = mandate.getPolicy();
+        uint64 eta = mandate.pendingEta(mandate.POLICY_CHANGE());
         if (keccak256(abi.encode(cur)) == keccak256(abi.encode(old))) {
             bool unchanged = keccak256(abi.encode(p)) == keccak256(abi.encode(old));
             assertTrue(unchanged || eta == block.timestamp + LOOSEN_DELAY);

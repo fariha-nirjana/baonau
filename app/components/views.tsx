@@ -140,15 +140,23 @@ function Holdings({ state, settings }: { state: AppState; settings: Settings }) 
 
 function Keys({ state }: { state: AppState }) {
   const p = state.portfolio;
+  const hasGuardian = !/^0x0+$/.test(p.keys.guardian);
   const rows: [string, string, string, ReactNode][] = [
-    ["O", "You (owner)", "Sign the mandate, approve, withdraw", <Chip key="o" tone="good">Active</Chip>],
-    ["G", "Guardian", "Can only say no: pause, cancel, halt", <Chip key="g" tone="good">Active</Chip>],
+    ["O", "You (owner)", "Sign the mandate, sign for single trades, withdraw", <Chip key="o" tone="good">Active</Chip>],
+    [
+      "G",
+      "Guardian",
+      hasGuardian ? "Can only say no: pause, cancel a waiting change, halt the stop-loss" : "Nobody appointed. You can add one at any time",
+      <Chip key="g" tone={hasGuardian ? "good" : "plain"}>
+        {hasGuardian ? "Active" : "None"}
+      </Chip>,
+    ],
     [
       "A",
       `${state.brand.agent} (the AI)`,
-      p.agent.keyExpires ? `Trades inside the mandate until ${shortTime(p.agent.keyExpires)}` : "No key issued",
-      <Chip key="a" tone={p.agent.paused ? "warn" : "info"}>
-        {p.agent.paused ? "Paused" : "Bounded"}
+      p.agent.keyExpires ? `Trades inside the mandate until ${shortTime(p.agent.keyExpires)}` : "No key. A new one waits out the delay",
+      <Chip key="a" tone={p.agent.paused || !p.agent.keyExpires ? "warn" : "info"}>
+        {!p.agent.keyExpires ? "No key" : p.agent.paused ? "Paused" : "Bounded"}
       </Chip>,
     ],
   ];
@@ -207,6 +215,11 @@ export function PortfolioView({ state, settings, mood, speech }: ViewProps & { m
         <p className="mx-auto mt-2 max-w-xl text-lg text-muted">
           Tell {state.brand.agent} your goal in your own words. It will draft a mandate for you to read and sign. Until you sign, it cannot trade.
         </p>
+        {state.portfolio.signableFrom ? (
+          <p className="mx-auto mt-4 max-w-xl rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">
+            This is not your first vault, so its mandate can be signed from {shortTime(state.portfolio.signableFrom)}. Opening a new vault is not a way around the waiting period.
+          </p>
+        ) : null}
       </Card>
     );
   }
@@ -224,7 +237,15 @@ export function PortfolioView({ state, settings, mood, speech }: ViewProps & { m
 
 // ---------------------------------------------------------------- mandate
 
-function Waiting({ label, detail, appliesFrom, vetoKey, applyReady, settings, act, skew }: { label: string; detail: string; appliesFrom: string; vetoKey: string; applyReady?: boolean } & Omit<ViewProps, "state">) {
+function Waiting({
+  label,
+  detail,
+  appliesFrom,
+  vetoKey,
+  settings,
+  act,
+  skew,
+}: { label: string; detail: string; appliesFrom: string; /** null when the guardian may not cancel it */ vetoKey: string | null } & Omit<ViewProps, "state">) {
   const left = useCountdown(appliesFrom, skew);
   const { busy, run } = useBusy(act);
   return (
@@ -238,10 +259,16 @@ function Waiting({ label, detail, appliesFrom, vetoKey, applyReady, settings, ac
         <p className="text-sm text-sun-ink">{left ? "until it can take effect" : "the wait is over"}</p>
       </div>
       {settings.role === "guardian" ? (
-        <Button kind="danger" busy={busy === "veto"} onClick={() => run("veto", "guardian", "veto", vetoKey)}>
-          Cancel it
-        </Button>
-      ) : !left && applyReady !== false ? (
+        vetoKey ? (
+          <Button kind="danger" busy={busy === "veto"} onClick={() => run("veto", "guardian", "veto", vetoKey)}>
+            Cancel it
+          </Button>
+        ) : (
+          <Button kind="ghost" busy={busy === "own"} onClick={() => run("own", "guardian", "veto-own-removal")}>
+            Try to cancel
+          </Button>
+        )
+      ) : !left ? (
         <Button busy={busy === "apply"} onClick={() => run("apply", "owner", "apply")}>
           Apply now
         </Button>
@@ -279,16 +306,28 @@ export function MandateView({ state, settings, act, skew }: ViewProps) {
     ["Pause length", `${Math.round(m.cooldownSeconds / 60)} minutes after a loss trigger`],
     ["Borrowing", "Prohibited. The vault has no way to borrow"],
     ["Withdrawals", `Any time, by you, to ${short(p.keys.withdrawalAddress)}`],
+    ["Waiting period", `${Math.round(p.settings.loosenDelaySeconds / 60)} minutes in this demo`],
+    ["Trades above the limits", "Only with your signature for that one trade, valid 30 minutes"],
   ];
 
-  const waiting = pm || p.stopLoss.haltRequestAppliesFrom || p.pending.withdrawalAddress || p.positions.some((x) => x.pendingRule);
+  const waiting =
+    pm ||
+    p.stopLoss.haltRequestAppliesFrom ||
+    p.pending.withdrawalAddress ||
+    p.pending.agentKey ||
+    p.pending.guardian ||
+    p.pending.waitingPeriod ||
+    p.pending.unpause ||
+    p.positions.some((x) => x.pendingRule);
 
   return (
     <div className="space-y-6">
       {waiting ? (
         <Card>
           <Eyebrow>Waiting to take effect</Eyebrow>
-          <p className="mt-1 text-base text-muted">These would raise the risk, so they wait. The current mandate stays in force. The guardian can cancel any of them.</p>
+          <p className="mt-1 text-base text-muted">
+            These would raise the risk, so they wait. The current mandate stays in force, and the guardian has been alerted and can cancel them. Anything that lowers the risk would have applied at once.
+          </p>
           <div className="mt-4 space-y-3">
             {pm ? <Waiting label="Mandate change" detail={changed} appliesFrom={pm.appliesFrom} vetoKey="mandate" settings={settings} act={act} skew={skew} /> : null}
             {p.stopLoss.haltRequestAppliesFrom ? (
@@ -296,6 +335,26 @@ export function MandateView({ state, settings, act, skew }: ViewProps) {
             ) : null}
             {p.pending.withdrawalAddress ? (
               <Waiting label="New withdrawal address" detail={`To ${short(p.pending.withdrawalAddress.to)}`} appliesFrom={p.pending.withdrawalAddress.appliesFrom} vetoKey="withdrawal-address" settings={settings} act={act} skew={skew} />
+            ) : null}
+            {p.pending.agentKey ? (
+              <Waiting label="New or longer-lived key for the AI" detail={`Key ${short(p.pending.agentKey.address)}, valid until ${shortTime(p.pending.agentKey.expires)}`} appliesFrom={p.pending.agentKey.appliesFrom} vetoKey="agent-key" settings={settings} act={act} skew={skew} />
+            ) : null}
+            {p.pending.unpause ? (
+              <Waiting label="Lift the guardian's pause" detail="The AI stays paused until then" appliesFrom={p.pending.unpause.appliesFrom} vetoKey="unpause" settings={settings} act={act} skew={skew} />
+            ) : null}
+            {p.pending.waitingPeriod ? (
+              <Waiting label="Shorter waiting period" detail={`From ${Math.round(p.settings.loosenDelaySeconds / 60)} to ${Math.round(p.pending.waitingPeriod.seconds / 60)} minutes`} appliesFrom={p.pending.waitingPeriod.appliesFrom} vetoKey="waiting-period" settings={settings} act={act} skew={skew} />
+            ) : null}
+            {p.pending.guardian ? (
+              <Waiting
+                label={/^0x0+$/.test(p.pending.guardian.to) ? "Remove the guardian" : "Replace the guardian"}
+                detail="The one change the guardian cannot cancel. Any loosening after it takes another full wait"
+                appliesFrom={p.pending.guardian.appliesFrom}
+                vetoKey={null}
+                settings={settings}
+                act={act}
+                skew={skew}
+              />
             ) : null}
             {p.positions.map((x) =>
               x.pendingRule ? (
@@ -321,8 +380,8 @@ export function MandateView({ state, settings, act, skew }: ViewProps) {
             <Eyebrow>Investment mandate</Eyebrow>
             <h2 className="mt-1 font-display text-3xl font-semibold">{p.mandateSigned ? "Signed and enforced on-chain" : "Not signed yet"}</h2>
           </div>
-          <a href={`${state.explorer}/address/${state.vault}`} target="_blank" rel="noreferrer" className="text-base font-semibold text-leaf underline">
-            View contract
+          <a href={`${state.explorer}/address/${state.mandate}`} target="_blank" rel="noreferrer" className="text-base font-semibold text-leaf underline">
+            View the mandate contract
           </a>
         </div>
 
@@ -333,7 +392,7 @@ export function MandateView({ state, settings, act, skew }: ViewProps) {
             .map((x) => (
               <div key={x.symbol} className="grid grid-cols-[1fr_8rem_12rem] items-center gap-4 px-5 py-3.5 text-lg">
                 <span>
-                  <span className="font-semibold">{x.name}</span> <span className="text-base text-muted">simulated tokenized asset (testnet)</span>
+                  <span className="font-semibold">{x.name}</span> <span className="text-base text-muted">simulated test asset (testnet)</span>
                 </span>
                 <span>up to {x.rule.maxExposurePct}%</span>
                 <span className="text-base text-muted">{x.rule.stopPrice ? `sold automatically at ${x.rule.stopPrice}` : x.rule.defensive ? "counts as defensive" : "no stop price"}</span>
@@ -358,10 +417,12 @@ export function MandateView({ state, settings, act, skew }: ViewProps) {
           </div>
           <div className="rounded-2xl bg-sun-soft p-5">
             <p className="text-lg font-semibold text-sun-ink">Raising risk: waits {Math.round(p.settings.loosenDelaySeconds / 60)} min in this demo</p>
-            <p className="mt-1 text-base text-muted">Higher limits, new assets, switching off the stop-loss, a new withdrawal address. A real vault would wait a day.</p>
+            <p className="mt-1 text-base text-muted">Higher limits, new assets, switching off the stop-loss, a new withdrawal address, a new key for the AI. A real vault would wait a day.</p>
           </div>
         </div>
       </Card>
+
+      <Keys state={state} />
 
       <Card>
         <div className="flex items-center gap-4">
@@ -447,20 +508,27 @@ export function ApprovalsView({ state, settings, act }: ViewProps) {
         <Card key={r.id} className="slide-in">
           <div className="flex items-center gap-4">
             <div className="flex-1">
-              <Eyebrow>Trade request {r.id}</Eyebrow>
+              <Eyebrow>The AI asks you to sign for one trade</Eyebrow>
               <h3 className="mt-1 font-display text-2xl font-semibold">
-                {r.side === "buy" ? "Buy" : "Sell"} {r.name} for {moneyText(r.usd, settings.currency)}
+                {r.side === "buy" ? "Buy" : "Sell"} {r.symbol} for {moneyText(r.usd, settings.currency)}
               </h3>
-              <p className="mt-1 text-base text-muted">Above what the AI may trade alone. If you approve, every other rule in the mandate still applies. Expires {shortTime(r.expires)}.</p>
+              <p className="mt-1 text-base text-muted">Reason given: {r.reason}</p>
+              <p className="mt-2 text-base text-muted">
+                This is above what the AI may trade alone. Your signature covers exactly this trade, once, for 30 minutes. It lifts the size limits only: the asset caps, the defensive minimum, protect mode and the stop price still apply.
+              </p>
             </div>
             {settings.role === "owner" ? (
-              <Button busy={busy === `a${r.id}`} onClick={() => run(`a${r.id}`, "owner", "approve", String(r.id))}>
-                Approve
-              </Button>
-            ) : null}
-            <Button kind="danger" busy={busy === `r${r.id}`} onClick={() => run(`r${r.id}`, settings.role, "reject", String(r.id))}>
-              Reject
-            </Button>
+              <>
+                <Button busy={busy === `a${r.id}`} onClick={() => run(`a${r.id}`, "owner", "approve", r.id)}>
+                  Sign for this trade
+                </Button>
+                <Button kind="danger" busy={busy === `r${r.id}`} onClick={() => run(`r${r.id}`, "owner", "reject", r.id)}>
+                  No
+                </Button>
+              </>
+            ) : (
+              <Chip tone="plain">Only the owner can sign</Chip>
+            )}
           </div>
         </Card>
       ))}
@@ -476,8 +544,11 @@ const OUTCOME_TONE: Record<Receipt["outcome"], "good" | "warn" | "bad" | "info" 
   "reverted by the contract": "bad",
   "sent to the owner": "info",
   "waiting out the delay": "warn",
+  "decided not to act": "plain",
   failed: "plain",
 };
+
+const GATE_MARK = { pass: ["✓", "text-leaf"], escalate: ["!", "text-sun-ink"], block: ["✕", "text-coral"] } as const;
 
 export function ReceiptRow({ r }: { r: Receipt }) {
   return (
@@ -487,6 +558,31 @@ export function ReceiptRow({ r }: { r: Receipt }) {
         <p className="text-base text-muted">
           {r.actor}. {r.refusal ?? r.why}
         </p>
+        {r.gates.length || r.contract ? (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-base font-semibold text-leaf">
+              Checks: {r.gates.filter((g) => g.outcome === "pass").length} of {r.gates.length} passed{r.contract ? `, contract ${r.contract.verdict}` : ""}
+            </summary>
+            <ul className="mt-2 space-y-1.5 rounded-2xl bg-cream p-4">
+              {r.gates.map((g, i) => (
+                <li key={i} className="flex gap-3 text-base">
+                  <span className={`w-4 shrink-0 font-semibold ${GATE_MARK[g.outcome][1]}`}>{GATE_MARK[g.outcome][0]}</span>
+                  <span>
+                    <span className="font-semibold">{g.label}.</span> <span className="text-muted">{g.detail}</span>
+                  </span>
+                </li>
+              ))}
+              {r.contract ? (
+                <li className="flex gap-3 border-t border-line pt-2 text-base">
+                  <span className={`w-4 shrink-0 font-semibold ${r.contract.verdict === "accepted" ? "text-leaf" : "text-coral"}`}>{r.contract.verdict === "accepted" ? "✓" : "✕"}</span>
+                  <span>
+                    <span className="font-semibold">The contract {r.contract.verdict} it.</span> <span className="text-muted">{r.contract.reason ?? "Every on-chain rule passed."}</span>
+                  </span>
+                </li>
+              ) : null}
+            </ul>
+          </details>
+        ) : null}
       </div>
       <div className="shrink-0 text-right">
         <Chip tone={OUTCOME_TONE[r.outcome]}>{r.outcome}</Chip>

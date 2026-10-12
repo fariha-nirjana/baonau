@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity >=0.8.11 <0.9.0;
 
 interface IExchange {
     /// @notice Spend `stableIn` of the stable asset on `asset`. Reverts if less than `minOut` comes back.

@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity >=0.8.11 <0.9.0;
 
 import {console} from "forge-std/Script.sol";
+import {Mandate} from "../src/Mandate.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 import {TestUSD} from "../src/TestUSD.sol";
+import {VaultFactory} from "../src/VaultFactory.sol";
 import {MockAsset} from "../src/mocks/MockAsset.sol";
 import {MockExchange} from "../src/mocks/MockExchange.sol";
 import {PriceOracle} from "../src/mocks/PriceOracle.sol";
 import {DemoVault} from "./DemoVault.sol";
 
 /// Deploys everything from nothing: the simulated market (test dollars, three
-/// simulated tokenized assets, one token that stays off the allowlist, the
-/// price oracle and the mock exchange) and one vault with the demo mandate.
+/// simulated test assets, one token that stays off every mandate, the mock
+/// price feed and the mock exchange), the vault factory, and one vault with
+/// the demo mandate signed.
 contract Deploy is DemoVault {
     TestUSD usd;
     PriceOracle oracle;
@@ -20,11 +23,13 @@ contract Deploy is DemoVault {
     MockAsset bond;
     MockAsset gold;
     MockAsset meme;
+    VaultFactory factory;
 
     function run() external {
         uint256 ownerKey = vm.envUint("OWNER_PRIVATE_KEY");
         address updater = vm.envAddress("ORACLE_UPDATER_ADDRESS");
         uint64 oracleMinInterval = uint64(vm.envOr("ORACLE_MIN_INTERVAL", uint256(4)));
+        uint64 maxPriceAge = uint64(vm.envOr("MAX_PRICE_AGE", uint256(3600)));
         uint256 gasGift = vm.envOr("GAS_GIFT_WEI", uint256(0.00003 ether));
 
         vm.startBroadcast(ownerKey);
@@ -44,10 +49,9 @@ contract Deploy is DemoVault {
         oracle.addFeed(address(gold), 250 * PRICE, 500);
         oracle.addFeed(address(meme), PRICE / 50, 5000);
 
-        PolicyVault vault = _deployVault(
-            Market(usd, oracle, exchange, address(idx), address(bond), address(gold)),
-            vm.addr(ownerKey),
-            vm.envOr("SIGN_MANDATE", true)
+        factory = new VaultFactory(usd, oracle, exchange, maxPriceAge);
+        (Mandate mandate, PolicyVault vault) = _createVault(
+            factory, usd, [address(idx), address(bond), address(gold)], vm.addr(ownerKey), vm.envOr("SIGN_MANDATE", true)
         );
 
         // the other keys need a little gas of their own
@@ -66,6 +70,8 @@ contract Deploy is DemoVault {
         console.log("BOND_ADDRESS=%s", address(bond));
         console.log("GOLD_ADDRESS=%s", address(gold));
         console.log("MEME_ADDRESS=%s", address(meme));
+        console.log("FACTORY_ADDRESS=%s", address(factory));
+        console.log("MANDATE_ADDRESS=%s", address(mandate));
         console.log("VAULT_ADDRESS=%s", address(vault));
     }
 

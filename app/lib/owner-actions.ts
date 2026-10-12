@@ -1,15 +1,30 @@
-import { parseUnits, type Address } from "viem";
+import { parseUnits, type Address, type Hex } from "viem";
+import { listApprovals, updateApproval } from "./approvals";
 import { assets, SYMBOLS, type AssetSymbol } from "./assets";
 import { appendAudit, refOf, type AuditRecord } from "./audit";
-import { PRICE_DECIMALS } from "./config";
+import { getClients, roleClient } from "./chain";
+import { chainConfig, PRICE_DECIMALS } from "./config";
 import { listDrafts, updateDraft, type Draft } from "./drafts";
 import { readPlan, writePlan } from "./plan";
-import { CHANGE_KEYS, getPortfolio, sendAsRole, type AssetRule, type Mandate, type RawCall, type TxResult } from "./vault";
+import { executeApproved } from "./tools";
+import {
+  APPROVAL_TYPES,
+  approvalDomain,
+  CHANGE_KEYS,
+  getPortfolio,
+  sendAsRole,
+  type AssetRule,
+  type Mandate,
+  type RawCall,
+  type TradeApproval,
+  type TxResult,
+} from "./vault";
 
 /**
  * What the owner and the guardian do with their own keys. In the demo these
  * keys sit on the server so that a button can sign. In a real product each
- * person signs in their own wallet. Nothing the agent runs imports this file.
+ * person signs in their own wallet. Nothing the agent's tools run can reach
+ * these keys.
  */
 
 const policyOf = (m: Mandate) => ({
@@ -29,9 +44,13 @@ const ruleOf = (r: AssetRule) => ({
   stopPrice: r.stopPrice === null ? 0n : parseUnits(r.stopPrice, PRICE_DECIMALS),
 });
 
-async function act(role: "owner" | "guardian", tool: string, reason: string, call: RawCall): Promise<TxResult> {
-  const result = await sendAsRole(role, "vault", call);
-  const args = JSON.parse(JSON.stringify(call.args, (_, v) => (typeof v === "bigint" ? v.toString() : v))) as unknown[];
+const bigintToString = (_: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);
+const AGENT_SESSION_SECONDS = 60 * 24 * 3600;
+const APPROVAL_SECONDS = 30 * 60;
+
+async function act(role: "owner" | "guardian", to: "vault" | "mandate", tool: string, reason: string, call: RawCall): Promise<TxResult> {
+  const result = await sendAsRole(role, to, call);
+  const args = JSON.parse(JSON.stringify(call.args, bigintToString)) as unknown[];
   const record: AuditRecord = { at: new Date().toISOString(), tool, args: { call: call.functionName, args }, reason, source: role, risk: null };
   appendAudit({ ref: refOf(record), record, result });
   return result;
@@ -45,88 +64,165 @@ export async function signDraft(id: string): Promise<{ draft: Draft; results: Tx
   const results: TxResult[] = [];
 
   if (draft.kind === "halt_stop_loss") {
-    results.push(await act("owner", "halt_stop_loss", draft.reason, { functionName: "haltStopLoss", args: [] }));
+    results.push(await act("owner", "mandate", "halt_stop_loss", draft.reason, { functionName: "haltStopLoss", args: [] }));
   } else if (draft.payload) {
     const { mandate, rules, plan } = draft.payload;
     const symbols = SYMBOLS.filter((s) => rules[s]) as AssetSymbol[];
     if (draft.kind === "sign_mandate") {
+      // the first mandate also gives the agent its key
+      const agent = getClients().agentAccount.address;
+      const expiry = BigInt(Math.floor(Date.now() / 1000) + AGENT_SESSION_SECONDS);
       results.push(
-        await act("owner", "sign_mandate", draft.reason, {
-          functionName: "initialize",
-          args: [policyOf(mandate), symbols.map((s) => assets()[s].address), symbols.map((s) => ruleOf(rules[s]!))],
+        await act("owner", "mandate", "sign_mandate", draft.reason, {
+          functionName: "signMandate",
+          args: [policyOf(mandate), symbols.map((s) => assets()[s].address), symbols.map((s) => ruleOf(rules[s]!)), agent, expiry],
         }),
       );
     } else {
       const p = await getPortfolio();
       if (JSON.stringify(policyOf(mandate)) !== JSON.stringify(policyOf(p.mandate))) {
-        results.push(await act("owner", "change_mandate", draft.reason, { functionName: "proposePolicy", args: [policyOf(mandate)] }));
+        results.push(await act("owner", "mandate", "change_mandate", draft.reason, { functionName: "proposePolicy", args: [policyOf(mandate)] }));
       }
       for (const s of symbols) {
         const current = p.positions.find((x) => x.symbol === s)!.rule;
         const same = JSON.stringify(ruleOf(rules[s]!), bigintToString) === JSON.stringify(ruleOf(current), bigintToString);
         if (!same) {
-          results.push(await act("owner", "change_asset_rule", draft.reason, { functionName: "proposeAssetRule", args: [assets()[s].address, ruleOf(rules[s]!)] }));
+          results.push(
+            await act("owner", "mandate", "change_asset_rule", draft.reason, { functionName: "proposeAssetRule", args: [assets()[s].address, ruleOf(rules[s]!)] }),
+          );
         }
       }
     }
     if (results.every((r) => r.ok)) writePlan({ ...readPlan(), ...plan });
   }
 
-  const ok = results.every((r) => r.ok);
-  if (ok) updateDraft(id, { status: "signed", txs: results.flatMap((r) => (r.ok ? [r.hash] : [])) });
+  if (results.every((r) => r.ok)) updateDraft(id, { status: "signed", txs: results.flatMap((r) => (r.ok ? [r.hash] : [])) });
   return { draft, results };
 }
-
-const bigintToString = (_: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);
 
 /** Applies every waiting change whose delay has passed. Returns what it applied and what is still waiting. */
 export async function applyReady() {
   const p = await getPortfolio();
   const now = new Date(p.at).getTime();
-  const ready = (at: string | null | undefined) => !!at && new Date(at).getTime() <= now;
   const applied: { what: string; result: TxResult }[] = [];
   const waiting: { what: string; appliesFrom: string }[] = [];
-  const consider = async (what: string, at: string | null | undefined, call: RawCall) => {
+  const consider = async (what: string, at: string | null | undefined, functionName: string, args: readonly unknown[] = []) => {
     if (!at) return;
-    if (ready(at)) applied.push({ what, result: await act("owner", "apply_change", `Waiting period over: ${what}`, call) });
-    else waiting.push({ what, appliesFrom: at });
+    if (new Date(at).getTime() <= now) {
+      applied.push({ what, result: await act("owner", "mandate", "apply_change", `Waiting period over: ${what}`, { functionName, args }) });
+    } else {
+      waiting.push({ what, appliesFrom: at });
+    }
   };
-  await consider("mandate change", p.pending.mandate?.appliesFrom, { functionName: "applyPolicy", args: [] });
-  for (const pos of p.positions) {
-    await consider(`${pos.name} rule`, pos.pendingRule?.appliesFrom, { functionName: "applyAssetRule", args: [pos.address] });
-  }
-  await consider("stop-loss halt", p.stopLoss.haltRequestAppliesFrom, { functionName: "applyStopLossHalt", args: [] });
-  await consider("withdrawal address", p.pending.withdrawalAddress?.appliesFrom, { functionName: "applyWithdrawalAddress", args: [] });
+  await consider("mandate change", p.pending.mandate?.appliesFrom, "applyPolicy");
+  for (const pos of p.positions) await consider(`${pos.name} rule`, pos.pendingRule?.appliesFrom, "applyAssetRule", [pos.address]);
+  await consider("stop-loss halt", p.stopLoss.haltRequestAppliesFrom, "applyStopLossHalt");
+  await consider("withdrawal address", p.pending.withdrawalAddress?.appliesFrom, "applyWithdrawalAddress");
+  await consider("agent key", p.pending.agentKey?.appliesFrom, "applyAgent");
+  await consider("guardian change", p.pending.guardian?.appliesFrom, "applyGuardian");
+  await consider("waiting period", p.pending.waitingPeriod?.appliesFrom, "applyLoosenDelay");
+  await consider("unpause", p.pending.unpause?.appliesFrom, "applyUnpause");
   return { applied, waiting };
 }
 
+/**
+ * The owner signs for one trade the agent asked for, and the agent then makes
+ * it. The signature is EIP-712 typed data: it names the vault, the chain, the
+ * exact trade, a nonce and a window of half an hour, and the vault accepts it
+ * once.
+ */
+export async function approveRequest(id: string) {
+  const request = listApprovals().find((r) => r.id === id);
+  if (!request) throw new Error(`There is no request ${id}.`);
+  if (request.status !== "waiting") throw new Error(`Request ${id} is already ${request.status}.`);
+  const cfg = chainConfig();
+  const asset = assets()[request.symbol].address;
+  const now = (await getClients().publicClient.getBlock()).timestamp;
+  const approval: TradeApproval = {
+    action: request.side === "buy" ? 0 : 1,
+    assetIn: request.side === "buy" ? cfg.USD_ADDRESS : asset,
+    assetOut: request.side === "buy" ? asset : cfg.USD_ADDRESS,
+    amount: BigInt(request.amount),
+    nonce: BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000)),
+    // a minute of slack for clocks, well inside the one hour the vault allows
+    validFrom: now - 60n,
+    expiry: now + BigInt(APPROVAL_SECONDS),
+  };
+  const signature: Hex = await roleClient("owner").account.signTypedData({
+    domain: approvalDomain(),
+    types: APPROVAL_TYPES,
+    primaryType: "TradeApproval",
+    message: approval,
+  });
+  updateApproval(id, { status: "signed", nonce: approval.nonce.toString(), validFrom: Number(approval.validFrom), expiry: Number(approval.expiry), signature });
+
+  const record: AuditRecord = {
+    at: new Date().toISOString(),
+    tool: "sign_approval",
+    args: { request: id, nonce: approval.nonce.toString(), validForSeconds: APPROVAL_SECONDS },
+    reason: `Owner signed for request ${id}: ${request.side} ${request.symbol}`,
+    source: "owner",
+    risk: null,
+  };
+  appendAudit({ ref: refOf(record), record, result: { ok: true, signed: true } });
+  return executeApproved({ ...request, status: "signed" }, approval, signature, { source: "owner-approved" });
+}
+
+/** The owner says no. If a signature already exists, it is also cancelled on-chain so it can never be used. */
+export async function rejectRequest(id: string, by: "owner" | "guardian" = "owner") {
+  const request = listApprovals().find((r) => r.id === id);
+  if (!request) throw new Error(`There is no request ${id}.`);
+  updateApproval(id, { status: "rejected", note: `Rejected by the ${by}` });
+  if (request.nonce && request.status === "signed") {
+    return act("owner", "vault", "cancel_approval", `Cancelled the signed approval for request ${id}`, { functionName: "cancelApproval", args: [BigInt(request.nonce)] });
+  }
+  const record: AuditRecord = { at: new Date().toISOString(), tool: "reject_request", args: { request: id }, reason: `The ${by} rejected request ${id}`, source: by, risk: null };
+  appendAudit({ ref: refOf(record), record, result: { ok: true } });
+  return { ok: true as const };
+}
+
+function keyOf(what: Vetoable): Hex {
+  return what in VETO_KEYS ? VETO_KEYS[what as keyof typeof VETO_KEYS] : CHANGE_KEYS.rule(assets()[what as AssetSymbol].address);
+}
+
 export const ownerActions = {
-  approveRequest: (id: number) => act("owner", "approve_request", `Owner approved request ${id}`, { functionName: "approveRequest", args: [BigInt(id)] }),
-  rejectRequest: (id: number) => act("owner", "reject_request", `Owner rejected request ${id}`, { functionName: "rejectRequest", args: [BigInt(id)] }),
-  pause: () => act("owner", "pause_agent", "Owner paused the agent", { functionName: "pause", args: [] }),
-  unpause: () => act("owner", "unpause_agent", "Owner unpaused the agent", { functionName: "unpause", args: [] }),
-  resumeStopLoss: () => act("owner", "resume_stop_loss", "Owner switched the stop-loss back on", { functionName: "resumeStopLoss", args: [] }),
+  /** The owner drops one of their own waiting requests. Unlike the guardian, they may drop the guardian change too. */
+  cancel: (what: Vetoable | "guardian") => {
+    const key = what === "guardian" ? CHANGE_KEYS.guardian : keyOf(what);
+    return act("owner", "mandate", "cancel_request", `Owner dropped the waiting change: ${what}`, { functionName: "cancelChange", args: [key] });
+  },
+  pause: () => act("owner", "mandate", "pause_agent", "Owner paused the agent", { functionName: "pause", args: [] }),
+  /** Lifts the owner's own pause at once. A guardian's pause is only queued by this. */
+  unpause: () => act("owner", "mandate", "unpause_agent", "Owner asked to unpause the agent", { functionName: "unpause", args: [] }),
+  resumeStopLoss: () => act("owner", "mandate", "resume_stop_loss", "Owner switched the stop-loss back on", { functionName: "resumeStopLoss", args: [] }),
   proposeWithdrawalAddress: (to: Address) =>
-    act("owner", "change_withdrawal_address", "Owner asked to change the withdrawal address", { functionName: "proposeWithdrawalAddress", args: [to] }),
+    act("owner", "mandate", "change_withdrawal_address", "Owner asked to change the withdrawal address", { functionName: "proposeWithdrawalAddress", args: [to] }),
+  removeGuardian: () =>
+    act("owner", "mandate", "remove_guardian", "Owner asked to remove the guardian", { functionName: "setGuardian", args: ["0x0000000000000000000000000000000000000000"] }),
 };
 
-export type Vetoable = "mandate" | "stop-loss-halt" | "withdrawal-address" | AssetSymbol;
+/** Everything the guardian may cancel. Its own removal is not on the list: the contract refuses that. */
+export type Vetoable = "mandate" | "stop-loss-halt" | "withdrawal-address" | "agent-key" | "waiting-period" | "unpause" | AssetSymbol;
+
+const VETO_KEYS: Record<Exclude<Vetoable, AssetSymbol>, Hex> = {
+  mandate: CHANGE_KEYS.mandate,
+  "stop-loss-halt": CHANGE_KEYS.stopLossHalt,
+  "withdrawal-address": CHANGE_KEYS.withdrawalAddress,
+  "agent-key": CHANGE_KEYS.agentKey,
+  "waiting-period": CHANGE_KEYS.waitingPeriod,
+  unpause: CHANGE_KEYS.unpause,
+};
 
 export const guardianActions = {
   /** The guardian's "no": cancels a change that is waiting. */
-  veto: (what: Vetoable) => {
-    const key =
-      what === "mandate"
-        ? CHANGE_KEYS.mandate
-        : what === "stop-loss-halt"
-          ? CHANGE_KEYS.stopLossHalt
-          : what === "withdrawal-address"
-            ? CHANGE_KEYS.withdrawalAddress
-            : CHANGE_KEYS.rule(assets()[what].address);
-    return act("guardian", "veto", `Guardian cancelled the waiting change: ${what}`, { functionName: "cancelChange", args: [key] });
-  },
-  pause: () => act("guardian", "pause_agent", "Guardian paused the agent", { functionName: "pause", args: [] }),
-  haltStopLoss: () => act("guardian", "halt_stop_loss", "Guardian halted the stop-loss (price feed emergency)", { functionName: "haltStopLoss", args: [] }),
-  resumeStopLoss: () => act("guardian", "resume_stop_loss", "Guardian switched the stop-loss back on", { functionName: "resumeStopLoss", args: [] }),
-  rejectRequest: (id: number) => act("guardian", "reject_request", `Guardian rejected request ${id}`, { functionName: "rejectRequest", args: [BigInt(id)] }),
+  veto: (what: Vetoable) =>
+    act("guardian", "mandate", "veto", `Guardian cancelled the waiting change: ${what}`, { functionName: "cancelChange", args: [keyOf(what)] }),
+  /** Shown in the demo to prove the point: the contract refuses this one. */
+  vetoOwnRemoval: () =>
+    act("guardian", "mandate", "veto", "Guardian tried to cancel its own removal", { functionName: "cancelChange", args: [CHANGE_KEYS.guardian] }),
+  pause: () => act("guardian", "mandate", "pause_agent", "Guardian paused the agent", { functionName: "pause", args: [] }),
+  unpause: () => act("guardian", "mandate", "unpause_agent", "Guardian lifted the pause", { functionName: "unpause", args: [] }),
+  haltStopLoss: () =>
+    act("guardian", "mandate", "halt_stop_loss", "Guardian halted the stop-loss (price feed emergency)", { functionName: "haltStopLoss", args: [] }),
+  resumeStopLoss: () => act("guardian", "mandate", "resume_stop_loss", "Guardian switched the stop-loss back on", { functionName: "resumeStopLoss", args: [] }),
 };

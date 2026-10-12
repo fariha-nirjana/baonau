@@ -1,5 +1,5 @@
 import { BaseError, ContractFunctionRevertedError, decodeErrorResult, formatUnits, type Abi } from "viem";
-import { mockExchangeAbi, policyVaultAbi, priceOracleAbi } from "./abi";
+import { mandateAbi, mockExchangeAbi, policyVaultAbi, priceOracleAbi } from "./abi";
 import { assetByAddress } from "./assets";
 import { PRICE_DECIMALS, USD_DECIMALS, USD_SYMBOL } from "./config";
 
@@ -19,18 +19,24 @@ const asset = (v: unknown) => assetByAddress(String(v))?.name ?? `the token at $
 
 const explain: Record<string, (a: readonly unknown[]) => string> = {
   NotOwner: () => "Only the owner key can do this. The agent key cannot.",
-  NotGuardian: () => "Only the guardian key can do this.",
   NotOwnerOrGuardian: () => "Only the owner or the guardian can do this.",
   NotAgent: () => "This key is not the vault's agent key.",
+  NotVault: () => "Only the vault itself can end its mandate.",
   AgentKeyExpired: () => "The agent's session key has expired. The owner must issue a new one.",
-  WalletPaused: () => "The agent is paused. Only the owner can unpause it.",
-  AlreadyInitialized: () => "The first mandate is already signed. Later changes go through the normal rules.",
+  AgentPaused: () => "The agent is paused.",
+  AlreadySigned: () => "The first mandate is already signed. Later changes go through the normal rules.",
+  NotActiveYet: (a) => `This is not the owner's first vault, so its first mandate can only be signed from ${when(a[0])}.`,
   ZeroAddress: () => "That address is empty.",
   ZeroAmount: () => "The amount must be more than zero.",
-  InvalidAgent: () => "That address cannot be used for this role.",
+  InvalidAddress: () => "That address cannot be used for this role.",
   InvalidExpiry: () => "The agent key's expiry must be in the future and at most 90 days away.",
-  InvalidPolicy: () => "Those mandate values are outside what the vault accepts.",
-  GuardianAlreadySet: () => "There is already a guardian. Only the guardian can pass the role on.",
+  InvalidPolicy: () => "Those mandate values are outside what the mandate accepts.",
+  InvalidDelay: () => "The waiting period must be between one minute and 30 days.",
+  NotVetoable: () => "The guardian cannot cancel its own removal or replacement.",
+  BadApproval: () => "This is not an approval the owner signed for exactly this trade on this vault.",
+  ApprovalAlreadyUsed: (a) => `Approval ${a[0]} has already been used or cancelled. Each approval works once.`,
+  ApprovalNotValidNow: (a) => `This approval is only valid from ${when(a[0])} to ${when(a[1])}.`,
+  ApprovalTooLong: () => "An approval may be valid for one hour at most.",
   TooManyAssets: () => "The vault cannot list more assets.",
   TooManyOrders: () => "That is too many trades for one transaction.",
   NotAnAsset: () => "The cash token cannot be listed as an investment.",
@@ -49,8 +55,6 @@ const explain: Record<string, (a: readonly unknown[]) => string> = {
   NothingToSell: (a) => `The vault holds no ${asset(a[0])}.`,
   InsufficientBalance: (a) => `The vault holds less than this trade needs (asked for ${a[1]}, available ${a[2]}, in the token's smallest units).`,
   SlippageTooHigh: () => "The exchange offered a worse price than the mandate accepts.",
-  RequestNotPending: (a) => `Request ${a[0]} is not waiting for approval.`,
-  RequestExpired: (a) => `Request ${a[0]} has expired.`,
   NoPendingChange: () => "There is no change waiting.",
   ChangeNotReady: (a) => `This change raises the risk, so it waits. It can be applied from ${when(a[0])}, unless the guardian cancels it.`,
   // price oracle
@@ -62,7 +66,7 @@ const explain: Record<string, (a: readonly unknown[]) => string> = {
   InsufficientOutput: () => "The exchange could not fill the trade at the minimum the vault asked for.",
 };
 
-const knownErrors = [...policyVaultAbi, ...priceOracleAbi, ...mockExchangeAbi].filter((x) => x.type === "error") as Abi;
+const knownErrors = [...policyVaultAbi, ...mandateAbi, ...priceOracleAbi, ...mockExchangeAbi].filter((x) => x.type === "error") as Abi;
 
 /** Turns a viem error into the contract's own reason, or null if it was not a contract revert. */
 export function decodePolicyError(err: unknown): PolicyError | null {
@@ -72,7 +76,7 @@ export function decodePolicyError(err: unknown): PolicyError | null {
 
   let name = revert.data?.errorName;
   let args: readonly unknown[] = revert.data?.args ?? [];
-  // an error raised by the oracle or the exchange is not in the vault's own ABI
+  // an error raised by the mandate, the oracle or the exchange is not in the called contract's own ABI
   if (!name && revert.raw) {
     try {
       const decoded = decodeErrorResult({ abi: knownErrors, data: revert.raw });

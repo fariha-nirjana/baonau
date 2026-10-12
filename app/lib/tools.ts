@@ -2,7 +2,8 @@ import type { ChatCompletionFunctionTool } from "openai/resources/chat/completio
 import { parseUnits } from "viem";
 import { z } from "zod";
 import { assetBySymbol, type AssetSymbol } from "./assets";
-import { appendAudit, readAudit, refOf, type AuditRecord } from "./audit";
+import { addApproval, updateApproval, type ApprovalRequest } from "./approvals";
+import { appendAudit, logAbstention, readAudit, refOf, type AuditRecord } from "./audit";
 import { chainConfig, PRICE_DECIMALS, USD_SYMBOL } from "./config";
 import { addDraft, type MandateDraft } from "./drafts";
 import { display, rateNote, toUsd, type Currency } from "./money";
@@ -23,6 +24,7 @@ import {
   type Portfolio,
   type Position,
   type SendOptions,
+  type TradeApproval,
 } from "./vault";
 
 const asset = z.enum(["IDX", "BOND", "GOLD", "MEME"]).describe("IDX is the index fund, BOND the bond fund, GOLD is gold.");
@@ -79,6 +81,10 @@ const schemas = {
     reason,
   }),
   request_stop_loss_halt: z.object({ reason }),
+  decline: z.object({
+    what: z.string().min(1).max(200).describe("The trade or action you are not doing, in a few words."),
+    reason: z.string().min(1).describe("Why not, in one plain sentence. It goes into the receipt."),
+  }),
 } as const;
 
 type ToolName = keyof typeof schemas;
@@ -93,11 +99,14 @@ const descriptions: Record<ToolName, string> = {
   sell: "Sell an asset into cash. Selling is always possible within the size limits, including while buying is paused.",
   rebalance:
     "Move the portfolio towards the plan's target shares in one transaction. The tool works out the trades and keeps them inside the mandate.",
-  request_owner_approval: "Ask the owner to approve one trade that is above your size limits. Nothing is traded until they approve.",
+  request_owner_approval:
+    "Ask the owner to sign for one exact trade that is above your size limits. Nothing is traded until they sign. Their signature lifts the size limits for that trade only; every other rule in the mandate still applies.",
   draft_mandate:
     "Write a mandate for the owner to read and sign: from their goal when there is none yet, or as a change to the current one. You cannot sign it. Give every term each time. Anything that raises the risk only takes effect after a waiting period, and the guardian can cancel it.",
   request_stop_loss_halt:
     "Prepare a request to switch the automatic stop-loss off, for the owner to sign. It does not take effect until a waiting period has passed, and the guardian can cancel it.",
+  decline:
+    "Record that you decided not to make a trade you were asked or scheduled to make, and why. Use it every time you say no to a trade, so the decision has a receipt.",
 };
 
 export const toolDefs: ChatCompletionFunctionTool[] = (Object.keys(schemas) as ToolName[]).map((name) => {
@@ -149,6 +158,7 @@ function portfolioView(p: Portfolio, ctx: ToolContext) {
     buying_paused: p.protect.active,
     buying_paused_until: p.protect.cooldownUntil,
     agent_paused: p.agent.paused,
+    agent_paused_by: p.agent.pausedBy,
     mandate_signed: p.mandateSigned,
     money_note: `${rateNote(ctx.currency ?? "BDT")}. Test money on a testnet, no real value.`,
   };
@@ -182,12 +192,17 @@ function mandateView(p: Portfolio) {
     keys: {
       owner: "sets the mandate, approves requests, deposits and withdraws",
       guardian: "can pause the agent, cancel a waiting change and halt the stop-loss in an emergency. Cannot move funds.",
-      agent: `can trade inside the mandate until ${p.agent.keyExpires ?? "no key is set"}`,
+      agent: p.agent.keyExpires ? `can trade inside the mandate until ${p.agent.keyExpires}` : "has no key. The owner must issue one, and a new key waits out the delay",
     },
+    first_mandate_can_be_signed_from: p.signableFrom,
     changes_waiting: {
       mandate: p.pending.mandate,
       stop_loss_halt_applies_from: p.stopLoss.haltRequestAppliesFrom,
       withdrawal_address: p.pending.withdrawalAddress,
+      agent_key: p.pending.agentKey,
+      guardian: p.pending.guardian,
+      waiting_period: p.pending.waitingPeriod,
+      unpause: p.pending.unpause,
     },
     stop_loss_halted_until: p.stopLoss.haltedUntil,
   };
@@ -240,14 +255,21 @@ function unitsFor(p: Position, usd: string): bigint {
 }
 const usdOf = (p: Position, units: bigint) => Number((units * priceUnits(p)) / 10n ** 20n) / 1e6;
 
-type Prepared = { legs: Leg[]; call: (ref: `0x${string}`) => AgentCall; escalation?: (ref: `0x${string}`) => AgentCall };
+/** What an approval request would cover, when the trade is a single one the owner could sign for. */
+type Ask = { symbol: AssetSymbol; side: "buy" | "sell"; amount: bigint; usd: number };
+type Prepared = { legs: Leg[]; call: (ref: `0x${string}`) => AgentCall; ask?: Ask };
+
+/** Files a request for the owner to sign. Nothing goes on-chain until they do. */
+function askOwner(ask: Ask, why: string) {
+  return addApproval({ symbol: ask.symbol, side: ask.side, amount: ask.amount.toString(), usd: ask.usd, reason: why });
+}
 
 async function trade(
   tool: ToolName,
   args: Record<string, unknown>,
   why: string,
   ctx: ToolContext,
-  kind: Action["kind"],
+  kind: "trade" | "rebalance" | "ask_owner",
   prepare: (p: Portfolio) => Prepared | { error: string },
 ) {
   const portfolio = await getPortfolio();
@@ -264,26 +286,33 @@ async function trade(
     risk: null,
   };
   if (!ctx.bypassRisk) {
+    // a request to the owner is judged as the owner-signed trade it would become: size limits aside, would it pass?
     const action: Action =
-      kind === "rebalance" ? { kind, legs: prepared.legs } : ({ kind, ...prepared.legs[0] } as Action);
+      kind === "rebalance"
+        ? { kind, legs: prepared.legs }
+        : ({ kind: kind === "ask_owner" ? "approved_trade" : "trade", ...prepared.legs[0] } as Action);
     record.risk = evaluate(action, await gatherFacts(portfolio, ctx));
   }
   const verdict = record.risk;
   const ref = refOf(record);
+  const asking = kind === "ask_owner" || verdict?.decision === "escalate";
 
-  if (verdict?.decision === "block" || (verdict?.decision === "escalate" && !prepared.escalation)) {
-    const result = { ok: false, stage: "risk", message: verdict.explanation } as const;
+  if (verdict?.decision === "block" || (asking && !prepared.ask)) {
+    const result = { ok: false, stage: "risk", message: verdict?.explanation ?? "This cannot be sent to the owner as one trade." } as const;
     appendAudit({ ref, record, result });
     return { ...result, audit_ref: ref };
   }
 
-  // A trade the risk engine will not let the agent make alone becomes a request to the owner.
-  if (verdict?.decision === "escalate" && prepared.escalation) {
-    const sent = await sendAsAgent(prepared.escalation(ref), ctx.send);
-    const requestId = sent.ok ? sent.events.find((e) => e.name === "TradeRequested")?.args.requestId : undefined;
-    const result = sent.ok
-      ? { ...sent, escalated: true, request_id: requestId, message: `Not traded. ${verdict.explanation} Request ${requestId} is waiting for the owner.` }
-      : sent;
+  // A trade the agent may not make alone becomes a request for the owner's signature.
+  if (asking && prepared.ask) {
+    const request = askOwner(prepared.ask, why);
+    const lead = verdict?.decision === "escalate" ? `Not traded. ${verdict.explanation}` : "Not traded yet.";
+    const result = {
+      ok: true,
+      escalated: true,
+      request_id: request.id,
+      message: `${lead} Request ${request.id} is waiting for the owner to sign. Their signature covers this one trade only, and every other rule in the mandate still applies to it.`,
+    };
     appendAudit({ ref, record, result });
     return { ...result, audit_ref: ref };
   }
@@ -294,29 +323,59 @@ async function trade(
   return { ...result, audit_ref: ref };
 }
 
+/**
+ * The agent makes a trade the owner has signed for. The risk engine looks at
+ * it again first, since things may have changed since the request, and the
+ * vault checks the signature and every remaining rule itself.
+ */
+export async function executeApproved(request: ApprovalRequest, approval: TradeApproval, signature: `0x${string}`, ctx: ToolContext) {
+  const portfolio = await getPortfolio();
+  const pos = findPosition(portfolio, request.symbol)!;
+  const usd = request.side === "buy" ? Number(approval.amount) / 1e6 : usdOf(pos, approval.amount);
+  const leg: Leg = { symbol: request.symbol, side: request.side, usd };
+  const record: AuditRecord = {
+    at: new Date().toISOString(),
+    tool: "trade_with_approval",
+    args: { request: request.id, nonce: approval.nonce.toString(), expiry: Number(approval.expiry) },
+    reason: request.reason,
+    source: "owner-approved",
+    legs: [leg],
+    risk: ctx.bypassRisk ? null : evaluate({ kind: "approved_trade", ...leg }, await gatherFacts(portfolio, ctx)),
+  };
+  const ref = refOf(record);
+  if (record.risk?.decision === "block") {
+    const result = { ok: false, stage: "risk", message: record.risk.explanation } as const;
+    appendAudit({ ref, record, result });
+    updateApproval(request.id, { status: "failed", note: result.message });
+    return result;
+  }
+  const result = await sendAsAgent({ functionName: "tradeWithApproval", args: [approval, signature, ref] }, ctx.send);
+  appendAudit({ ref, record, result });
+  updateApproval(request.id, result.ok ? { status: "used", tx: result.hash } : { status: "failed", note: result.error?.explanation ?? result.message });
+  return result;
+}
+
 const findPosition = (p: Portfolio, symbol: string) => p.positions.find((x) => x.symbol === symbol);
 
-function prepareSingle(p: Portfolio, symbol: AssetSymbol, side: "buy" | "sell", value: string, approvalOnly: boolean): Prepared | { error: string } {
+function prepareSingle(p: Portfolio, symbol: AssetSymbol, side: "buy" | "sell", value: string): Prepared | { error: string } {
   const pos = findPosition(p, symbol);
   const info = assetBySymbol(symbol);
   if (!pos || !info) return { error: `Unknown asset ${symbol}.` };
 
   if (side === "buy") {
     const usdIn = toUsdUnits(value);
-    const request = (ref: `0x${string}`): AgentCall => ({ functionName: "requestTrade", args: [info.address, true, usdIn, ref] });
     return {
       legs: [{ symbol, side, usd: Number(value) }],
-      call: approvalOnly ? request : (ref) => ({ functionName: "buy", args: [info.address, usdIn, ref] }),
-      escalation: request,
+      call: (ref) => ({ functionName: "buy", args: [info.address, usdIn, ref] }),
+      ask: { symbol, side, amount: usdIn, usd: Number(value) },
     };
   }
   const units = value === "all" ? toAssetUnits(pos.amount) : unitsFor(pos, value);
   if (units === 0n) return { error: `The vault holds no ${pos.name}.` };
-  const request = (ref: `0x${string}`): AgentCall => ({ functionName: "requestTrade", args: [info.address, false, units, ref] });
   return {
     legs: [{ symbol, side, usd: usdOf(pos, units) }],
-    call: approvalOnly ? request : (ref) => ({ functionName: "sell", args: [info.address, units, ref] }),
-    escalation: request,
+    call: (ref) => ({ functionName: "sell", args: [info.address, units, ref] }),
+    ask: { symbol, side, amount: units, usd: usdOf(pos, units) },
   };
 }
 
@@ -463,20 +522,27 @@ function buildDraft(a: DraftArgs, p: Portfolio, ctx: ToolContext) {
   };
 }
 
+const ACTING = new Set<string>(["buy", "sell", "rebalance", "request_owner_approval"]);
+
 /** Runs one tool call from the model. Bad input comes back as an error result, never as a thrown exception. */
 export async function executeTool(name: string, rawArgs: string, ctx: ToolContext): Promise<unknown> {
-  if (!(name in schemas)) return { ok: false, message: `Unknown tool: ${name}` };
+  // Output the code cannot use never becomes an action. For a trade, that is recorded as an abstention.
+  const unusable = (message: string) => {
+    if (ACTING.has(name) || !(name in schemas)) logAbstention(`${name}, as the model wrote it`, `The model's output could not be used (${message}), so nothing was done.`, ctx.source);
+    return { ok: false, message };
+  };
+  if (!(name in schemas)) return unusable(`Unknown tool: ${name}`);
   const tool = name as ToolName;
 
   let json: unknown;
   try {
     json = rawArgs ? JSON.parse(rawArgs) : {};
   } catch {
-    return { ok: false, message: "Tool arguments were not valid JSON." };
+    return unusable("Tool arguments were not valid JSON.");
   }
   const parsed = schemas[tool].safeParse(json);
   if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") };
+    return unusable(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
   }
 
   try {
@@ -494,12 +560,12 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
       case "buy": {
         const a = parsed.data as z.infer<typeof schemas.buy>;
         const usd = toUsd(Number(a.amount), a.currency as Currency | typeof USD_SYMBOL);
-        return await trade(tool, a, a.reason, ctx, "trade", (p) => prepareSingle(p, a.asset, "buy", usd, false));
+        return await trade(tool, a, a.reason, ctx, "trade", (p) => prepareSingle(p, a.asset, "buy", usd));
       }
       case "sell": {
         const a = parsed.data as z.infer<typeof schemas.sell>;
         const value = a.amount === "all" ? "all" : toUsd(Number(a.amount), a.currency as Currency | typeof USD_SYMBOL);
-        return await trade(tool, a, a.reason, ctx, "trade", (p) => prepareSingle(p, a.asset, "sell", value, false));
+        return await trade(tool, a, a.reason, ctx, "trade", (p) => prepareSingle(p, a.asset, "sell", value));
       }
       case "rebalance": {
         const a = parsed.data as z.infer<typeof schemas.rebalance>;
@@ -508,10 +574,15 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
       case "request_owner_approval": {
         const a = parsed.data as z.infer<typeof schemas.request_owner_approval>;
         const usd = toUsd(Number(a.amount), a.currency as Currency | typeof USD_SYMBOL);
-        return await trade(tool, a, a.reason, ctx, "request_approval", (p) => prepareSingle(p, a.asset, a.side, usd, true));
+        return await trade(tool, a, a.reason, ctx, "ask_owner", (p) => prepareSingle(p, a.asset, a.side, usd));
       }
       case "draft_mandate":
         return buildDraft(parsed.data as DraftArgs, await getPortfolio(), ctx);
+      case "decline": {
+        const a = parsed.data as z.infer<typeof schemas.decline>;
+        logAbstention(a.what, a.reason, ctx.source);
+        return { ok: true, recorded: true };
+      }
       case "request_stop_loss_halt": {
         const a = parsed.data as z.infer<typeof schemas.request_stop_loss_halt>;
         const p = await getPortfolio();

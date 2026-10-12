@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity >=0.8.11 <0.9.0;
 
 import {MockAsset} from "../src/mocks/MockAsset.sol";
 import {MockExchange} from "../src/mocks/MockExchange.sol";
@@ -14,7 +14,7 @@ contract MarketTest is VaultFixture {
     function test_UpdaterMovesPriceWithinTheBound() public {
         skip(ORACLE_INTERVAL);
         vm.expectEmit(true, true, true, true);
-        emit PriceOracle.PriceUpdated(address(idx), 110 * PRICE, 100 * PRICE);
+        emit PriceUpdated(address(idx), 110 * PRICE, 100 * PRICE);
         vm.prank(updater);
         oracle.setPrice(address(idx), 110 * PRICE);
 

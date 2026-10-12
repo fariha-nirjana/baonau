@@ -23,7 +23,8 @@ export type Leg = { symbol: AssetSymbol; side: Side; usd: number };
 export type Action =
   | ({ kind: "trade" } & Leg)
   | { kind: "rebalance"; legs: Leg[] }
-  | ({ kind: "request_approval" } & Leg);
+  /** A trade the owner has signed an approval for: the two size limits are lifted, every other gate still applies. */
+  | ({ kind: "approved_trade" } & Leg);
 
 export type PastTrade = { at: Date; symbol: AssetSymbol; side: Side; usd: number };
 export type ScamEntry = { address: string; label: string };
@@ -44,7 +45,7 @@ export type Outcome = "pass" | "escalate" | "block";
 export type Check = { id: string; outcome: Outcome; detail: string };
 
 export type Verdict = {
-  /** allow: sign it. escalate: send to the owner for approval. block: do nothing. */
+  /** allow: send it. escalate: ask the owner to sign for it. block: do nothing. */
   decision: "allow" | "escalate" | "block";
   checks: Check[];
   explanation: string;
@@ -95,149 +96,182 @@ function apply(state: State, leg: Leg, position: Position) {
   state.volumeLeft -= leg.usd;
 }
 
+/**
+ * The gates, in the order they are checked. A receipt shows every one of them
+ * with pass or fail, so the reader sees what was checked and not only what failed.
+ */
+export const GATE_LABELS: Record<string, string> = {
+  mandate: "A mandate is signed",
+  agent: "The agent has a live key and is not paused",
+  velocity: "Not trading too often",
+  source: "Asked for by the investor or the plan",
+  scam_list: "Not on the scam token list",
+  mandate_asset: "The asset is in the mandate",
+  amount: "The amount is more than zero",
+  price: "The price is up to date",
+  protect_mode: "Buying is not paused after a loss",
+  stop_price: "Above the asset's stop price",
+  cash: "Enough cash",
+  holding: "Enough of the asset to sell",
+  exposure: "Inside the asset's cap",
+  defensive_floor: "Enough left in cash and defensive assets",
+  trade_size: "Inside the single-trade limit",
+  daily_volume: "Inside today's trading allowance",
+  abnormal_price: "No abnormal price move",
+  chasing_losses: "Not adding risk right after a loss",
+};
+
 function checkLeg(leg: Leg, facts: Facts, state: State, direct: boolean): Check[] {
   const p = facts.portfolio;
   const position = p.positions.find((x) => x.symbol === leg.symbol);
-  if (!position) return [{ id: "asset", outcome: "block", detail: `${leg.symbol} is not a token this vault knows.` }];
+  if (!position) return [{ id: "mandate_asset", outcome: "block", detail: `${leg.symbol} is not a token this vault knows.` }];
   const checks: Check[] = [];
   const buying = leg.side === "buy";
-
-  const scam = facts.scamList.find((s) => same(s.address, position.address));
-  if (scam && buying) {
-    checks.push({ id: "scam_list", outcome: "block", detail: `${position.name} is on the scam token list: ${scam.label}.` });
-  }
-
-  if (buying && !position.rule.allowed) {
-    checks.push({ id: "mandate_asset", outcome: "block", detail: `${position.name} is not in your mandate, so it cannot be bought.` });
-    return checks;
-  }
-  checks.push({ id: "mandate_asset", outcome: "pass", detail: `${position.name} is in the mandate.` });
-
-  if (leg.usd <= 0) checks.push({ id: "amount", outcome: "block", detail: "The amount must be more than zero." });
-
-  if (position.priceIsStale) {
-    checks.push({ id: "price", outcome: "block", detail: `The price of ${position.name} is out of date, so it is not safe to trade on.` });
-  }
+  const gate = (id: string, failed: Outcome | false, fail: string, pass: string) =>
+    checks.push(failed ? { id, outcome: failed, detail: fail } : { id, outcome: "pass", detail: pass });
+  const round = (share: number) => Math.round(share * 1000) / 10;
 
   if (buying) {
-    if (p.protect.active) {
-      checks.push({
-        id: "protect_mode",
-        outcome: "block",
-        detail: p.protect.cooldownUntil
-          ? `Buying is paused until ${p.protect.cooldownUntil} after a loss trigger. Selling still works.`
-          : `The portfolio is down ${p.today.lossPct}% today, at or past the ${p.mandate.dailyLossPct}% daily loss limit, so buying is paused.`,
-      });
-    }
-    if (position.rule.stopPrice !== null && Number(position.price) <= Number(position.rule.stopPrice)) {
-      checks.push({
-        id: "stop_price",
-        outcome: "block",
-        detail: `${position.name} is at ${position.price}, at or below its stop price of ${position.rule.stopPrice}.`,
-      });
-    }
-    if (leg.usd > state.cash) {
-      checks.push({ id: "cash", outcome: "block", detail: `There is ${money(state.cash)} in cash, less than the ${money(leg.usd)} this needs.` });
-    }
+    const scam = facts.scamList.find((s) => same(s.address, position.address));
+    gate("scam_list", scam ? "block" : false, `${position.name} is on the scam token list: ${scam?.label}.`, `${position.name} is not on the scam token list.`);
+  }
+  if (buying && !position.rule.allowed) {
+    // nothing below can matter for an asset the mandate does not include
+    gate("mandate_asset", "block", `${position.name} is not in your mandate, so it cannot be bought.`, "");
+    return checks;
+  }
+  gate("mandate_asset", false, "", `${position.name} is in the mandate.`);
+  gate("amount", leg.usd <= 0 ? "block" : false, "The amount must be more than zero.", `${money(leg.usd)}.`);
+  gate(
+    "price",
+    position.priceIsStale ? "block" : false,
+    `The price of ${position.name} is out of date, so it is not safe to trade on.`,
+    `Priced at ${position.price}, updated ${position.priceUpdatedAt}.`,
+  );
+
+  if (buying) {
+    gate(
+      "protect_mode",
+      p.protect.active ? "block" : false,
+      p.protect.cooldownUntil
+        ? `Buying is paused until ${p.protect.cooldownUntil} after a loss trigger. Selling still works.`
+        : `The portfolio is down ${p.today.lossPct}% today, at or past the ${p.mandate.dailyLossPct}% daily loss limit, so buying is paused.`,
+      `Down ${p.today.lossPct}% today, under the ${p.mandate.dailyLossPct}% limit, and no cooldown is running.`,
+    );
+    const stop = position.rule.stopPrice;
+    gate(
+      "stop_price",
+      stop !== null && Number(position.price) <= Number(stop) ? "block" : false,
+      `${position.name} is at ${position.price}, at or below its stop price of ${stop}.`,
+      stop === null ? "No stop price is set for this asset." : `At ${position.price}, above its stop price of ${stop}.`,
+    );
+    gate("cash", leg.usd > state.cash ? "block" : false, `There is ${money(state.cash)} in cash, less than the ${money(leg.usd)} this needs.`, `${money(state.cash)} in cash.`);
     const after = ((state.value[leg.symbol] ?? 0) + leg.usd) / state.total;
-    if (after * 100 > position.rule.maxExposurePct) {
-      checks.push({
-        id: "exposure",
-        outcome: "block",
-        detail: `This would make ${position.name} ${Math.round(after * 1000) / 10}% of the portfolio. The mandate allows at most ${position.rule.maxExposurePct}%.`,
-      });
-    }
-    if (!position.rule.defensive) {
+    gate(
+      "exposure",
+      after * 100 > position.rule.maxExposurePct ? "block" : false,
+      `This would make ${position.name} ${round(after)}% of the portfolio. The mandate allows at most ${position.rule.maxExposurePct}%.`,
+      `${position.name} would be ${round(after)}% of the portfolio, within its ${position.rule.maxExposurePct}% cap.`,
+    );
+    if (position.rule.defensive) {
+      gate("defensive_floor", false, "", `${position.name} is a defensive asset, so buying it does not lower the defensive share.`);
+    } else {
       const defensiveAfter = (state.defensive - leg.usd) / state.total;
-      if (defensiveAfter * 100 < p.mandate.minDefensivePct) {
-        checks.push({
-          id: "defensive_floor",
-          outcome: "block",
-          detail: `This would leave ${Math.round(defensiveAfter * 1000) / 10}% in cash and defensive assets. The mandate requires at least ${p.mandate.minDefensivePct}%.`,
-        });
-      }
+      gate(
+        "defensive_floor",
+        defensiveAfter * 100 < p.mandate.minDefensivePct ? "block" : false,
+        `This would leave ${round(defensiveAfter)}% in cash and defensive assets. The mandate requires at least ${p.mandate.minDefensivePct}%.`,
+        `${round(defensiveAfter)}% would stay in cash and defensive assets, above the ${p.mandate.minDefensivePct}% minimum.`,
+      );
     }
-  } else if (leg.usd > (state.value[leg.symbol] ?? 0) * 1.000001) {
-    checks.push({ id: "holding", outcome: "block", detail: `The vault holds ${money(state.value[leg.symbol] ?? 0)} of ${position.name}, less than this sale.` });
+  } else {
+    const held = state.value[leg.symbol] ?? 0;
+    gate("holding", leg.usd > held * 1.000001 ? "block" : false, `The vault holds ${money(held)} of ${position.name}, less than this sale.`, `The vault holds ${money(held)} of ${position.name}.`);
   }
 
-  // An approval request is allowed to exceed the agent's size limits, that is its purpose.
+  // A trade the owner has signed for is allowed past the two size limits. That is all the signature does.
   if (direct) {
     const maxTrade = Number(p.today.maxTrade);
-    if (leg.usd > maxTrade) {
-      checks.push({
-        id: "trade_size",
-        outcome: "escalate",
-        detail: `${money(leg.usd)} is above the limit for one trade (${p.mandate.maxTradePct}% of the portfolio, ${money(maxTrade)} now).`,
-      });
-    } else if (leg.usd > state.volumeLeft) {
-      checks.push({
-        id: "daily_volume",
-        outcome: "escalate",
-        detail: `${money(leg.usd)} is more than the ${money(Math.max(state.volumeLeft, 0))} of trading left for today.`,
-      });
-    } else {
-      checks.push({ id: "limits", outcome: "pass", detail: "The size is within the agent's limits." });
-    }
+    gate(
+      "trade_size",
+      leg.usd > maxTrade ? "escalate" : false,
+      `${money(leg.usd)} is above the limit for one trade (${p.mandate.maxTradePct}% of the portfolio, ${money(maxTrade)} now).`,
+      `Within the limit for one trade (${p.mandate.maxTradePct}% of the portfolio, ${money(maxTrade)} now).`,
+    );
+    gate(
+      "daily_volume",
+      leg.usd > state.volumeLeft ? "escalate" : false,
+      `${money(leg.usd)} is more than the ${money(Math.max(state.volumeLeft, 0))} of trading left for today.`,
+      `${money(Math.max(state.volumeLeft, 0))} of today's trading allowance is left.`,
+    );
+  } else {
+    checks.push({ id: "trade_size", outcome: "pass", detail: "Lifted for this one trade by the owner's signed approval." });
+    checks.push({ id: "daily_volume", outcome: "pass", detail: "Lifted for this one trade by the owner's signed approval." });
   }
 
   const move = facts.moves[leg.symbol];
-  if (move && Math.abs(move.pct) >= ABNORMAL_MOVE_PCT) {
-    checks.push({
-      id: "abnormal_price",
-      outcome: "escalate",
-      detail: `${position.name} has ${move.pct > 0 ? "risen" : "fallen"} ${Math.abs(Math.round(move.pct * 10) / 10)}% in the last ${move.minutes} minutes, which is unusual. A person should confirm a trade in a market like this.`,
-    });
-  }
+  gate(
+    "abnormal_price",
+    move && Math.abs(move.pct) >= ABNORMAL_MOVE_PCT ? "escalate" : false,
+    move ? `${position.name} has ${move.pct > 0 ? "risen" : "fallen"} ${Math.abs(Math.round(move.pct * 10) / 10)}% in the last ${move.minutes} minutes, which is unusual. A person should confirm a trade in a market like this.` : "",
+    move ? `${position.name} has moved ${Math.round(move.pct * 10) / 10}% in the last ${move.minutes} minutes.` : "No recent price history to compare against.",
+  );
 
-  if (buying && !position.rule.defensive && p.today.lossPct >= p.mandate.dailyLossPct * LOSS_CHASING_SHARE && p.today.lossPct > 0) {
-    checks.push({
-      id: "chasing_losses",
-      outcome: "escalate",
-      detail: `The portfolio is already down ${p.today.lossPct}% today. Adding risk after a loss needs your confirmation.`,
-    });
+  if (buying && !position.rule.defensive) {
+    const chasing = p.today.lossPct >= p.mandate.dailyLossPct * LOSS_CHASING_SHARE && p.today.lossPct > 0;
+    gate(
+      "chasing_losses",
+      chasing ? "escalate" : false,
+      `The portfolio is already down ${p.today.lossPct}% today. Adding risk after a loss needs your confirmation.`,
+      `Down ${p.today.lossPct}% today, less than half the daily loss limit.`,
+    );
   }
-
   return checks;
 }
 
-function checkContext(facts: Facts): Check[] {
+function checkContext(facts: Facts, direct: boolean): Check[] {
   const p = facts.portfolio;
   const checks: Check[] = [];
-  if (!p.mandateSigned) {
-    checks.push({ id: "mandate", outcome: "block", detail: "There is no signed mandate yet, so the agent cannot trade." });
-  }
-  if (p.agent.paused) checks.push({ id: "agent", outcome: "block", detail: "The agent is paused." });
-  if (p.agent.keyExpires !== null && new Date(p.agent.keyExpires) <= new Date(p.at)) {
-    checks.push({ id: "agent", outcome: "block", detail: "The agent's session key has expired." });
-  }
+  const gate = (id: string, failed: Outcome | false, fail: string, pass: string) =>
+    checks.push(failed ? { id, outcome: failed, detail: fail } : { id, outcome: "pass", detail: pass });
 
-  const recent = facts.history.filter((t) => facts.now.getTime() - t.at.getTime() < VELOCITY_WINDOW_MS);
-  if (recent.length >= VELOCITY_MAX_TRADES) {
-    checks.push({
-      id: "velocity",
-      outcome: "block",
-      detail: `${recent.length} trades in the last 10 minutes. That is churning, and each trade costs a fee, so trading is paused for now.`,
-    });
+  gate("mandate", p.mandateSigned ? false : "block", "There is no signed mandate yet, so the agent cannot trade.", "Signed and in force.");
+  const noKey = /^0x0+$/.test(p.agent.address);
+  const expired = p.agent.keyExpires !== null && new Date(p.agent.keyExpires) <= new Date(p.at);
+  gate(
+    "agent",
+    p.agent.paused || noKey || expired ? "block" : false,
+    p.agent.paused ? "The agent is paused." : noKey ? "The agent has no key. The owner must issue one, and a new key waits out the delay." : "The agent's session key has expired.",
+    `Key valid until ${p.agent.keyExpires}.`,
+  );
+
+  // An owner-signed trade is one deliberate act, so the churn check does not apply to it.
+  if (direct) {
+    const recent = facts.history.filter((t) => facts.now.getTime() - t.at.getTime() < VELOCITY_WINDOW_MS);
+    gate(
+      "velocity",
+      recent.length >= VELOCITY_MAX_TRADES ? "block" : false,
+      `${recent.length} trades in the last 10 minutes. That is churning, and each trade costs a fee, so trading is paused for now.`,
+      `${recent.length} trades in the last 10 minutes.`,
+    );
   }
 
   // The agent never trades on its own because of something it read.
-  if (facts.untrusted) {
-    checks.push({
-      id: "source",
-      outcome: "escalate",
-      detail: "This trade was prompted by news or other outside text, not by you or by your plan, so you must confirm it.",
-    });
-  }
+  gate(
+    "source",
+    facts.untrusted ? "escalate" : false,
+    "This trade was prompted by news or other outside text, not by you or by your plan, so you must confirm it.",
+    "Prompted by the investor or by the plan.",
+  );
   return checks;
 }
 
 export function evaluate(action: Action, facts: Facts): Verdict {
   const state = stateOf(facts.portfolio);
   const legs = action.kind === "rebalance" ? action.legs : [{ symbol: action.symbol, side: action.side, usd: action.usd }];
-  const direct = action.kind !== "request_approval";
+  const direct = action.kind !== "approved_trade";
 
-  const checks: Check[] = direct ? checkContext(facts) : checkContext(facts).filter((c) => c.id !== "velocity");
+  const checks: Check[] = checkContext(facts, direct);
   if (legs.length === 0) checks.push({ id: "amount", outcome: "block", detail: "There is nothing to trade." });
   for (const leg of legs) {
     checks.push(...checkLeg(leg, facts, state, direct));

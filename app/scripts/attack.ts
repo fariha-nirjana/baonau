@@ -16,7 +16,7 @@ async function main() {
     const r = o.result;
     const what = r.ok ? "WENT THROUGH" : r.stage === "onchain" ? `REVERTED (${r.error?.name ?? "unknown"})` : `NOT SENT (${r.stage})`;
     const detail = r.ok ? "" : `: ${r.error?.explanation ?? r.message}`;
-    console.log(`${n}. ${o.goal}\n   ${what}${detail}\n   ${"url" in r && r.url ? r.url : ""}`);
+    console.log(`${n}. ${o.goal} (call to the ${o.to})\n   ${what}${detail}\n   ${"url" in r && r.url ? r.url : ""}`);
   });
 
   const after = await getPortfolio();

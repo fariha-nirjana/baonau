@@ -45,7 +45,7 @@ test("sends a trade to the owner when today's volume is used up", () => {
 
 test("blocks a buy that would push an asset over its cap", () => {
   // gold is at 10% with a 20% cap; 110 more would make it 21%
-  const v = evaluate({ kind: "request_approval", symbol: "GOLD", side: "buy", usd: 110 }, facts());
+  const v = evaluate({ kind: "approved_trade", symbol: "GOLD", side: "buy", usd: 110 }, facts());
   assert.equal(v.decision, "block");
   assert.deepEqual(failed(v), ["exposure"]);
 });
@@ -118,6 +118,22 @@ test("a rebalance is checked leg by leg, with sells freeing cash for the buys", 
   assert.equal(v.decision, "allow");
   const reversed = evaluate({ kind: "rebalance", legs: [{ symbol: "BOND", side: "buy", usd: 90 }, { symbol: "IDX", side: "sell", usd: 100 }] }, facts({ portfolio: p }));
   assert.deepEqual(failed(reversed), ["cash"]);
+});
+
+test("every gate is listed on the trace, passes included", () => {
+  const v = evaluate(buy("IDX", 50), facts());
+  assert.deepEqual(
+    v.checks.map((c) => c.id),
+    ["mandate", "agent", "velocity", "source", "scam_list", "mandate_asset", "amount", "price", "protect_mode", "stop_price", "cash", "exposure", "defensive_floor", "trade_size", "daily_volume", "abnormal_price", "chasing_losses"],
+  );
+  assert.ok(v.checks.every((c) => c.outcome === "pass" && c.detail.length > 0));
+});
+
+test("an owner-signed trade is past the two size limits and still faces every other gate", () => {
+  const big = evaluate({ kind: "approved_trade", symbol: "BOND", side: "buy", usd: 250 }, facts());
+  assert.equal(big.decision, "allow");
+  const paused = testPortfolio({ patch: (x) => (x.protect = { active: true, cooldownUntil: "2026-10-13T00:20:00.000Z" }) });
+  assert.deepEqual(failed(evaluate({ kind: "approved_trade", symbol: "BOND", side: "buy", usd: 250 }, facts({ portfolio: paused }))), ["protect_mode"]);
 });
 
 test("it can only make things stricter: no fact turns a refusal into an approval", () => {

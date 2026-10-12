@@ -15,7 +15,7 @@ export type AssetInfo = {
   decimals: number;
 };
 
-const NOTE = "simulated tokenized asset (testnet)";
+const NOTE = "simulated test asset (testnet)";
 
 /** Every token the app knows about. MEME is known so that it can be refused by name; it is not in any mandate. */
 export function assets(): Record<AssetSymbol, AssetInfo> {

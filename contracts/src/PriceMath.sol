@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity >=0.8.11 <0.9.0;
 
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Conversions between an asset amount and its value in the stable asset.
 /// Prices are USD per whole token with 8 decimals. One stable unit is treated as one dollar.
 library PriceMath {
     uint256 internal constant PRICE_UNIT = 1e8;
+
+    /// @notice One whole token in its smallest units.
+    function unitOf(address token) internal view returns (uint256) {
+        return 10 ** IERC20Metadata(token).decimals();
+    }
 
     function toStable(uint256 amount, uint256 price, uint256 assetUnit, uint256 stableUnit)
         internal

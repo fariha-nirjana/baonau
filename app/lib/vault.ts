@@ -1,5 +1,5 @@
 import { formatUnits, parseEventLogs, parseUnits, type Abi, type Address, type Hex } from "viem";
-import { policyVaultAbi, priceOracleAbi } from "./abi";
+import { mandateAbi, policyVaultAbi, priceOracleAbi } from "./abi";
 import { assets, SYMBOLS, type AssetSymbol } from "./assets";
 import { getClients, hasMulticall, roleClient, txUrl, type DemoRole } from "./chain";
 import { chainConfig, PRICE_DECIMALS, USD_DECIMALS } from "./config";
@@ -15,9 +15,21 @@ const vault = () => ({ address: chainConfig().VAULT_ADDRESS, abi: policyVaultAbi
 const iso = (seconds: bigint | number) => new Date(Number(seconds) * 1000).toISOString();
 const orNull = (seconds: bigint | number) => (Number(seconds) === 0 ? null : iso(seconds));
 
+const mandates = new Map<string, Address>();
+/** The mandate a vault is bound to. It never changes, so it is read once. */
+export async function mandateAddress(): Promise<Address> {
+  const v = chainConfig().VAULT_ADDRESS;
+  let m = mandates.get(v);
+  if (!m) {
+    m = (await getClients().publicClient.readContract({ ...vault(), functionName: "mandate" })) as Address;
+    mandates.set(v, m);
+  }
+  return m;
+}
+
 // ---------------------------------------------------------------- reads
 
-/** The mandate as signed, with shares as percentages. */
+/** The mandate's limits as signed, with shares as percentages. */
 export type Mandate = {
   maxTradePct: number;
   maxDailyVolumePct: number;
@@ -54,6 +66,8 @@ export type Position = {
 export type Portfolio = {
   /** Chain time of this reading. Countdowns are measured against it, not the local clock. */
   at: string;
+  vaultAddress: Address;
+  mandateAddress: Address;
   totalValue: string;
   cash: string;
   cashSharePct: number;
@@ -62,6 +76,8 @@ export type Portfolio = {
   mandate: Mandate;
   /** False until the owner has signed a first mandate. */
   mandateSigned: boolean;
+  /** Set while a first mandate cannot be signed yet (a later vault of the same owner starts with a wait). */
+  signableFrom: string | null;
   today: {
     /** False until someone has touched the vault on this UTC day and the day-start value has been taken. */
     snapshotTaken: boolean;
@@ -80,12 +96,25 @@ export type Portfolio = {
   };
   /** What a fully compromised agent key could still do today. It can send nothing out of the vault. */
   agentExposure: { tradable: string; maxCost: string };
-  agent: { address: Address; keyExpires: string | null; paused: boolean };
+  agent: {
+    /** The zero address when there is no key, for example after a full withdrawal ended the mandate. */
+    address: Address;
+    keyExpires: string | null;
+    paused: boolean;
+    /** Who the pause belongs to. The owner can lift their own at once; a guardian's needs the guardian or the wait. */
+    pausedBy: "owner" | "guardian" | null;
+  };
   stopLoss: { haltedUntil: string | null; haltRequestAppliesFrom: string | null };
   keys: { owner: Address; guardian: Address; withdrawalAddress: Address };
+  /** Changes that raise the risk and are waiting out the delay. */
   pending: {
     mandate: (Mandate & { appliesFrom: string }) | null;
     withdrawalAddress: { to: Address; appliesFrom: string } | null;
+    agentKey: { address: Address; expires: string; appliesFrom: string } | null;
+    /** `to` is the zero address when the request is to have no guardian. */
+    guardian: { to: Address; appliesFrom: string } | null;
+    waitingPeriod: { seconds: number; appliesFrom: string } | null;
+    unpause: { appliesFrom: string } | null;
   };
   settings: { loosenDelaySeconds: number; maxPriceAgeSeconds: number };
 };
@@ -99,6 +128,13 @@ async function readAll(reads: Read[], blockNumber?: bigint): Promise<unknown[]> 
     return publicClient.multicall({ allowFailure: false, contracts: reads, blockNumber }) as Promise<unknown[]>;
   }
   return Promise.all(reads.map((r) => publicClient.readContract({ ...r, blockNumber })));
+}
+
+/** Runs named reads in one batch and gives the answers back under the same names. */
+async function readNamed<K extends string>(reads: Record<K, Read>, blockNumber?: bigint): Promise<Record<K, unknown>> {
+  const keys = Object.keys(reads) as K[];
+  const out = await readAll(keys.map((k) => reads[k]), blockNumber);
+  return Object.fromEntries(keys.map((k, i) => [k, out[i]])) as Record<K, unknown>;
 }
 
 type RawPolicy = {
@@ -131,79 +167,98 @@ const ruleOf = (r: RawRule): AssetRule => ({
 
 const ruleKey = (asset: Address) => `0x${asset.slice(2).toLowerCase().padStart(64, "0")}` as Hex;
 const textKey = (text: string) => `0x${Buffer.from(text, "utf8").toString("hex").padEnd(64, "0")}` as Hex;
+/** The keys the mandate files waiting changes under. They match the constants in Mandate.sol. */
 export const CHANGE_KEYS = {
   mandate: textKey("policy"),
   stopLossHalt: textKey("stop-loss halt"),
   withdrawalAddress: textKey("withdrawal address"),
+  agentKey: textKey("agent key"),
+  guardian: textKey("guardian"),
+  waitingPeriod: textKey("waiting period"),
+  unpause: textKey("unpause"),
   rule: ruleKey,
 } as const;
+
+const ZERO = "0x0000000000000000000000000000000000000000";
 
 export async function getPortfolio(): Promise<Portfolio> {
   const { publicClient } = getClients();
   const cfg = chainConfig();
-  const v = vault();
+  const v = { address: cfg.VAULT_ADDRESS, abi: policyVaultAbi as Abi };
+  const m = { address: await mandateAddress(), abi: mandateAbi as Abi };
   const oracle = { address: cfg.ORACLE_ADDRESS, abi: priceOracleAbi as Abi };
   const list = SYMBOLS.map((s) => assets()[s]);
   const block = await publicClient.getBlock();
+  const eta = (key: Hex): Read => ({ ...m, functionName: "pendingEta", args: [key] });
 
-  const scalar: Read[] = [
-    { ...v, functionName: "getPolicy" },
-    { ...v, functionName: "getPendingPolicy" },
-    { ...v, functionName: "holdings", args: [cfg.USD_ADDRESS] },
-    { ...v, functionName: "portfolioValue" },
-    { ...v, functionName: "defensiveBps" },
-    { ...v, functionName: "drawdownBps" },
-    { ...v, functionName: "inProtectMode" },
-    { ...v, functionName: "dailyVolumeRemaining" },
-    { ...v, functionName: "agentExposure" },
-    { ...v, functionName: "dayStartValue" },
-    { ...v, functionName: "day" },
-    { ...v, functionName: "volumeToday" },
-    { ...v, functionName: "cooldownUntil" },
-    { ...v, functionName: "lossStreak" },
-    { ...v, functionName: "paused" },
-    { ...v, functionName: "initialized" },
-    { ...v, functionName: "agent" },
-    { ...v, functionName: "agentExpiry" },
-    { ...v, functionName: "owner" },
-    { ...v, functionName: "guardian" },
-    { ...v, functionName: "withdrawalAddress" },
-    { ...v, functionName: "pendingWithdrawalAddress" },
-    { ...v, functionName: "stopLossHaltedUntil" },
-    { ...v, functionName: "loosenDelay" },
-    { ...v, functionName: "maxPriceAge" },
-    { ...v, functionName: "pendingEta", args: [CHANGE_KEYS.mandate] },
-    { ...v, functionName: "pendingEta", args: [CHANGE_KEYS.stopLossHalt] },
-    { ...v, functionName: "pendingEta", args: [CHANGE_KEYS.withdrawalAddress] },
-  ];
-  const perAsset = (a: Address): Read[] => [
-    { ...v, functionName: "holdings", args: [a] },
-    { ...v, functionName: "costBasis", args: [a] },
-    { ...v, functionName: "getRule", args: [a] },
-    { ...v, functionName: "getPendingRule", args: [a] },
-    { ...v, functionName: "pendingEta", args: [ruleKey(a)] },
-    { ...oracle, functionName: "getPrice", args: [a] },
-  ];
+  const r = await readNamed(
+    {
+      cash: { ...v, functionName: "holdings", args: [cfg.USD_ADDRESS] },
+      total: { ...v, functionName: "portfolioValue" },
+      defensiveBps: { ...v, functionName: "defensiveBps" },
+      drawdownBps: { ...v, functionName: "drawdownBps" },
+      inProtect: { ...v, functionName: "inProtectMode" },
+      volumeLeft: { ...v, functionName: "dailyVolumeRemaining" },
+      exposure: { ...v, functionName: "agentExposure" },
+      dayStart: { ...v, functionName: "dayStartValue" },
+      day: { ...v, functionName: "day" },
+      volumeToday: { ...v, functionName: "volumeToday" },
+      cooldownUntil: { ...v, functionName: "cooldownUntil" },
+      lossStreak: { ...v, functionName: "lossStreak" },
+      maxPriceAge: { ...v, functionName: "maxPriceAge" },
+      policy: { ...m, functionName: "getPolicy" },
+      pendingPolicy: { ...m, functionName: "getPendingPolicy" },
+      signed: { ...m, functionName: "signed" },
+      activeFrom: { ...m, functionName: "activeFrom" },
+      paused: { ...m, functionName: "paused" },
+      pausedByGuardian: { ...m, functionName: "pausedByGuardian" },
+      agent: { ...m, functionName: "agent" },
+      agentExpiry: { ...m, functionName: "agentExpiry" },
+      owner: { ...m, functionName: "owner" },
+      guardian: { ...m, functionName: "guardian" },
+      withdrawalAddress: { ...m, functionName: "withdrawalAddress" },
+      haltedUntil: { ...m, functionName: "stopLossHaltedUntil" },
+      loosenDelay: { ...m, functionName: "loosenDelay" },
+      pendingWithdrawal: { ...m, functionName: "pendingWithdrawalAddress" },
+      pendingAgent: { ...m, functionName: "pendingAgent" },
+      pendingAgentExpiry: { ...m, functionName: "pendingAgentExpiry" },
+      pendingGuardian: { ...m, functionName: "pendingGuardian" },
+      pendingDelay: { ...m, functionName: "pendingLoosenDelay" },
+      mandateEta: eta(CHANGE_KEYS.mandate),
+      haltEta: eta(CHANGE_KEYS.stopLossHalt),
+      withdrawalEta: eta(CHANGE_KEYS.withdrawalAddress),
+      agentEta: eta(CHANGE_KEYS.agentKey),
+      guardianEta: eta(CHANGE_KEYS.guardian),
+      delayEta: eta(CHANGE_KEYS.waitingPeriod),
+      unpauseEta: eta(CHANGE_KEYS.unpause),
+    },
+    block.number,
+  );
+  const perAsset = await readAll(
+    list.flatMap((a): Read[] => [
+      { ...v, functionName: "holdings", args: [a.address] },
+      { ...v, functionName: "costBasis", args: [a.address] },
+      { ...m, functionName: "getRule", args: [a.address] },
+      { ...m, functionName: "getPendingRule", args: [a.address] },
+      eta(ruleKey(a.address)),
+      { ...oracle, functionName: "getPrice", args: [a.address] },
+    ]),
+    block.number,
+  );
   const PER = 6;
-  const out = await readAll([...scalar, ...list.flatMap((a) => perAsset(a.address))], block.number);
 
-  const [policy, pendingPolicy, cash, total, defensiveBps, drawdownBps, inProtect, volumeLeft, exposure] = out as [
-    RawPolicy, RawPolicy, bigint, bigint, bigint, bigint, boolean, bigint, readonly [bigint, bigint],
-  ];
-  const [dayStart, day, volumeToday, cooldownUntil, lossStreak, paused, initialized, agent, agentExpiry] = out.slice(9) as [
-    bigint, bigint, bigint, bigint, number, boolean, boolean, Address, bigint,
-  ];
-  const [owner, guardian, withdrawalAddress, pendingWithdrawal, haltedUntil, loosenDelay, maxPriceAge] = out.slice(18) as [
-    Address, Address, Address, Address, bigint, bigint, bigint,
-  ];
-  const [mandateEta, haltEta, withdrawalEta] = out.slice(25) as [bigint, bigint, bigint];
-
+  const policy = r.policy as RawPolicy;
+  const total = r.total as bigint;
+  const cash = r.cash as bigint;
+  const maxPriceAge = r.maxPriceAge as bigint;
+  const exposure = r.exposure as readonly [bigint, bigint];
   const now = block.timestamp;
-  const sameDay = now / 86400n === BigInt(day);
+  const sameDay = now / 86400n === BigInt(r.day as bigint);
   const share = (value: bigint) => (total === 0n ? 0 : Number((value * 10000n) / total) / 100);
+  const when = (key: keyof typeof r) => (Number(r[key] as bigint) === 0 ? null : iso(r[key] as bigint));
 
   const positions = list.map((a, i): Position => {
-    const [held, cost, rule, pendingRule, ruleEta, priceTuple] = out.slice(scalar.length + i * PER) as [
+    const [held, cost, rule, pendingRule, ruleEta, priceTuple] = perAsset.slice(i * PER) as [
       bigint, bigint, RawRule, RawRule, bigint, readonly [bigint, bigint],
     ];
     const [px, updatedAt] = priceTuple;
@@ -225,96 +280,94 @@ export async function getPortfolio(): Promise<Portfolio> {
     };
   });
 
+  const paused = r.paused as boolean;
   return {
     at: iso(now),
+    vaultAddress: v.address,
+    mandateAddress: m.address,
     totalValue: fromUsdUnits(total),
     cash: fromUsdUnits(cash),
     cashSharePct: share(cash),
-    defensiveSharePct: Number(defensiveBps) / 100,
+    defensiveSharePct: Number(r.defensiveBps as bigint) / 100,
     positions,
     mandate: mandateOf(policy),
-    mandateSigned: initialized,
+    mandateSigned: r.signed as boolean,
+    signableFrom: !(r.signed as boolean) && (r.activeFrom as bigint) > now ? iso(r.activeFrom as bigint) : null,
     today: {
       snapshotTaken: sameDay,
-      startValue: fromUsdUnits(sameDay ? dayStart : total),
-      lossPct: Number(drawdownBps) / 100,
+      startValue: fromUsdUnits(sameDay ? (r.dayStart as bigint) : total),
+      lossPct: Number(r.drawdownBps as bigint) / 100,
       maxTrade: fromUsdUnits((total * BigInt(policy.maxTradeBps)) / 10000n),
-      volumeUsed: fromUsdUnits(sameDay ? volumeToday : 0n),
-      volumeLeft: fromUsdUnits(volumeLeft),
-      lossStreak,
+      volumeUsed: fromUsdUnits(sameDay ? (r.volumeToday as bigint) : 0n),
+      volumeLeft: fromUsdUnits(r.volumeLeft as bigint),
+      lossStreak: r.lossStreak as number,
     },
-    protect: { active: inProtect, cooldownUntil: cooldownUntil > now ? iso(cooldownUntil) : null },
+    protect: { active: r.inProtect as boolean, cooldownUntil: (r.cooldownUntil as bigint) > now ? iso(r.cooldownUntil as bigint) : null },
     agentExposure: { tradable: fromUsdUnits(exposure[0]), maxCost: fromUsdUnits(exposure[1]) },
-    agent: { address: agent, keyExpires: orNull(agentExpiry), paused },
-    stopLoss: { haltedUntil: haltedUntil > now ? iso(haltedUntil) : null, haltRequestAppliesFrom: orNull(haltEta) },
-    keys: { owner, guardian, withdrawalAddress },
-    pending: {
-      mandate: mandateEta === 0n ? null : { ...mandateOf(pendingPolicy), appliesFrom: iso(mandateEta) },
-      withdrawalAddress: withdrawalEta === 0n ? null : { to: pendingWithdrawal, appliesFrom: iso(withdrawalEta) },
+    agent: {
+      address: r.agent as Address,
+      keyExpires: orNull(r.agentExpiry as bigint),
+      paused,
+      pausedBy: !paused ? null : (r.pausedByGuardian as boolean) ? "guardian" : "owner",
     },
-    settings: { loosenDelaySeconds: Number(loosenDelay), maxPriceAgeSeconds: Number(maxPriceAge) },
+    stopLoss: { haltedUntil: (r.haltedUntil as bigint) > now ? iso(r.haltedUntil as bigint) : null, haltRequestAppliesFrom: when("haltEta") },
+    keys: { owner: r.owner as Address, guardian: r.guardian as Address, withdrawalAddress: r.withdrawalAddress as Address },
+    pending: {
+      mandate: when("mandateEta") ? { ...mandateOf(r.pendingPolicy as RawPolicy), appliesFrom: when("mandateEta")! } : null,
+      withdrawalAddress: when("withdrawalEta") ? { to: r.pendingWithdrawal as Address, appliesFrom: when("withdrawalEta")! } : null,
+      agentKey: when("agentEta")
+        ? { address: r.pendingAgent as Address, expires: iso(r.pendingAgentExpiry as bigint), appliesFrom: when("agentEta")! }
+        : null,
+      guardian: when("guardianEta") ? { to: r.pendingGuardian as Address, appliesFrom: when("guardianEta")! } : null,
+      waitingPeriod: when("delayEta") ? { seconds: Number(r.pendingDelay as bigint), appliesFrom: when("delayEta")! } : null,
+      unpause: when("unpauseEta") ? { appliesFrom: when("unpauseEta")! } : null,
+    },
+    settings: { loosenDelaySeconds: Number(r.loosenDelay as bigint), maxPriceAgeSeconds: Number(maxPriceAge) },
   };
 }
 
-/** A trade the agent asked the owner to approve. */
-export type TradeRequest = {
-  id: number;
-  symbol: AssetSymbol | null;
-  name: string;
-  side: "buy" | "sell";
-  /** Value in tUSD: what a buy would spend, or what a sell is worth at the current price. */
-  usd: string;
-  expires: string;
-  ref: Hex;
-};
-
-/** The pending, unexpired requests among the latest twelve. */
-export async function getRequests(): Promise<TradeRequest[]> {
-  const { publicClient } = getClients();
-  const v = vault();
-  const [count, block] = await Promise.all([publicClient.readContract({ ...v, functionName: "requestCount" }), publicClient.getBlock()]);
-  const ids = Array.from({ length: Math.min(Number(count), 12) }, (_, i) => Number(count) - i);
-  if (ids.length === 0) return [];
-  const rows = (await readAll(ids.map((id) => ({ ...v, abi: v.abi as Abi, functionName: "getRequest", args: [BigInt(id)] })))) as {
-    asset: Address;
-    isBuy: boolean;
-    amount: bigint;
-    ref: Hex;
-    expiry: bigint;
-    status: number;
-  }[];
-  const list = SYMBOLS.map((s) => assets()[s]);
-  const prices = (await readAll(
-    list.map((a) => ({ address: chainConfig().ORACLE_ADDRESS, abi: priceOracleAbi as Abi, functionName: "getPrice", args: [a.address] })),
-  )) as (readonly [bigint, bigint])[];
-  return rows.flatMap((r, i) => {
-    if (r.status !== 1 || r.expiry < block.timestamp) return [];
-    const at = list.findIndex((a) => a.address.toLowerCase() === r.asset.toLowerCase());
-    const usd = r.isBuy ? r.amount : at < 0 ? 0n : (r.amount * prices[at][0]) / 10n ** 20n;
-    return [
-      {
-        id: ids[i],
-        symbol: at < 0 ? null : list[at].symbol,
-        name: at < 0 ? r.asset : list[at].name,
-        side: r.isBuy ? ("buy" as const) : ("sell" as const),
-        usd: fromUsdUnits(usd),
-        expires: iso(r.expiry),
-        ref: r.ref,
-      },
-    ];
-  });
-}
+export const NO_ADDRESS = ZERO as Address;
 
 // ---------------------------------------------------------------- writes
 
 export type Order = { asset: Address; isBuy: boolean; amount: bigint };
+
+/** What the owner signs to let one exact trade past the agent's size limits. Matches TradeApproval in PolicyVault.sol. */
+export type TradeApproval = {
+  /** 0 buy, 1 sell */
+  action: number;
+  assetIn: Address;
+  assetOut: Address;
+  amount: bigint;
+  nonce: bigint;
+  validFrom: bigint;
+  expiry: bigint;
+};
+
+export const APPROVAL_TYPES = {
+  TradeApproval: [
+    { name: "action", type: "uint8" },
+    { name: "assetIn", type: "address" },
+    { name: "assetOut", type: "address" },
+    { name: "amount", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "validFrom", type: "uint64" },
+    { name: "expiry", type: "uint64" },
+  ],
+} as const;
+
+/** The EIP-712 domain: an approval is only good for this vault on this chain. */
+export function approvalDomain() {
+  const cfg = chainConfig();
+  return { name: "PolicyVault", version: "1", chainId: cfg.CHAIN_ID, verifyingContract: cfg.VAULT_ADDRESS } as const;
+}
 
 /** The calls the agent's key is meant to make. */
 export type AgentCall =
   | { functionName: "buy"; args: readonly [asset: Address, usdIn: bigint, ref: Hex] }
   | { functionName: "sell"; args: readonly [asset: Address, amount: bigint, ref: Hex] }
   | { functionName: "rebalance"; args: readonly [orders: readonly Order[], ref: Hex] }
-  | { functionName: "requestTrade"; args: readonly [asset: Address, isBuy: boolean, amount: bigint, ref: Hex] };
+  | { functionName: "tradeWithApproval"; args: readonly [approval: TradeApproval, signature: Hex, ref: Hex] };
 
 /** Any vault function at all, for showing what happens when the agent key tries something it must not. */
 export type RawCall = { functionName: string; args: readonly unknown[] };
@@ -351,7 +404,7 @@ async function untilNodeHasBlock(blockNumber: bigint) {
   const { publicClient } = getClients();
   for (let attempt = 0; attempt < 20; attempt++) {
     try {
-      await publicClient.readContract({ ...vault(), functionName: "paused", blockNumber });
+      await publicClient.readContract({ ...vault(), functionName: "day", blockNumber });
       return;
     } catch {
       await new Promise((r) => setTimeout(r, 500));
@@ -389,7 +442,8 @@ async function send(sender: Sender, target: { address: Address; abi: Abi }, call
   const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: hasMulticall() ? 2 : 1 });
   await untilNodeHasBlock(receipt.blockNumber);
   if (receipt.status === "success") {
-    const events = parseEventLogs({ abi: target.abi, logs: receipt.logs }).map((log) => ({
+    // one transaction can emit from both contracts: a withdrawal that empties the vault also ends the mandate
+    const events = parseEventLogs({ abi: [...target.abi, ...(mandateAbi as Abi), ...(policyVaultAbi as Abi)], logs: receipt.logs }).map((log) => ({
       name: log.eventName,
       args: Object.fromEntries(Object.entries((log.args ?? {}) as Record<string, unknown>).map(([k, v]) => [k, stringify(v)])),
     }));
@@ -408,16 +462,21 @@ async function send(sender: Sender, target: { address: Address; abi: Abi }, call
   return { ok: false, stage: "onchain", error, message, hash, url: txUrl(hash) };
 }
 
-/** Sends one call signed by the agent's session key. Never throws for a contract refusal. */
-export async function sendAsAgent(call: AgentCall | RawCall, opts: SendOptions = {}): Promise<TxResult> {
+/**
+ * Sends one call signed by the agent's session key. Never throws for a contract refusal.
+ * @param to "mandate" only for showing that the agent key has no powers there
+ */
+export async function sendAsAgent(call: AgentCall | RawCall, opts: SendOptions = {}, to: "vault" | "mandate" = "vault"): Promise<TxResult> {
   const { agentAccount, agentClient } = getClients();
-  return send({ account: agentAccount, client: agentClient }, { address: vault().address, abi: policyVaultAbi as Abi }, call, opts);
+  const target =
+    to === "vault" ? { address: vault().address, abi: policyVaultAbi as Abi } : { address: await mandateAddress(), abi: mandateAbi as Abi };
+  return send({ account: agentAccount, client: agentClient }, target, call, opts);
 }
 
 /** Sends one call signed by the owner, guardian or oracle updater key. For the demo scripts and sign buttons. */
 export async function sendAsRole(
   role: DemoRole,
-  target: "vault" | "oracle" | { address: Address; abi: Abi },
+  target: "vault" | "mandate" | "oracle" | { address: Address; abi: Abi },
   call: RawCall,
   opts: SendOptions = {},
 ): Promise<TxResult> {
@@ -425,7 +484,9 @@ export async function sendAsRole(
   const to =
     target === "vault"
       ? { address: cfg.VAULT_ADDRESS, abi: policyVaultAbi as Abi }
-      : target === "oracle"
+      : target === "mandate"
+        ? { address: await mandateAddress(), abi: mandateAbi as Abi }
+        : target === "oracle"
         ? { address: cfg.ORACLE_ADDRESS, abi: priceOracleAbi as Abi }
         : target;
   return send(roleClient(role) as unknown as Sender, to, call, opts);

@@ -39,6 +39,28 @@ test("a queued change is shown as waiting, not as done", () => {
   const r = receiptOf(entry("owner", "change_mandate", { ok: true, url: "u", events: [{ name: "PolicyProposed", args: { eta: "1791831888" } }] }));
   assert.equal(r.outcome, "waiting out the delay");
   assert.match(r.what, /^Mandate change signed, waiting until \d\d:\d\d UTC$/);
+  assert.deepEqual(r.gates, []);
+});
+
+test("a decision not to act gets a receipt of its own", () => {
+  const r = receiptOf(entry("chat", "abstain", { ok: true, abstained: true }, { args: { what: "Buy MEME for the investor" }, reason: "It is not in the mandate and is on the scam list." }));
+  assert.equal(r.outcome, "decided not to act");
+  assert.equal(r.what, "Did not buy MEME for the investor");
+  assert.equal(r.why, "It is not in the mandate and is on the scam list.");
+});
+
+test("the gate trace lists every check with its outcome, and the contract's verdict sits beside it", () => {
+  const risk = {
+    decision: "allow" as const,
+    explanation: "Allowed.",
+    checks: [
+      { id: "mandate_asset", outcome: "pass" as const, detail: "Bond fund is in the mandate." },
+      { id: "trade_size", outcome: "pass" as const, detail: "Within the limit for one trade." },
+    ],
+  };
+  const r = receiptOf(entry("chat", "buy", { ok: false, stage: "onchain", url: "u", error: { name: "ExceedsExposure", explanation: "Over the cap." } }, { risk }));
+  assert.deepEqual(r.gates.map((g) => [g.label, g.outcome]), [["The asset is in the mandate", "pass"], ["Inside the single-trade limit", "pass"]]);
+  assert.deepEqual(r.contract, { verdict: "reverted", reason: "Over the cap." });
 });
 
 test("price updates are left out of the activity list, newest first", () => {

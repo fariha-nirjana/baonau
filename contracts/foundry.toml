@@ -2,12 +2,12 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-solc = "0.8.28"
-# paris keeps the bytecode free of newer opcodes, so it also runs on older EVM chains
-evm_version = "paris"
+# FISCO BCOS supports Solidity up to 0.8.11, so everything is written for and compiled with that version
+solc = "0.8.11"
+# the newest EVM version this compiler knows; it has no opcodes that older chains lack
+evm_version = "london"
 optimizer = true
-# low on purpose: PolicyVault is close to the 24 KB contract size limit, and size matters more here than gas
-optimizer_runs = 1
+optimizer_runs = 200
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",

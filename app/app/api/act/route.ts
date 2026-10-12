@@ -3,7 +3,7 @@ import { SYMBOLS } from "@/lib/assets";
 import { runAutopilot } from "@/lib/autopilot";
 import { updateDraft } from "@/lib/drafts";
 import { keeperTick, movePrices } from "@/lib/keeper";
-import { applyReady, guardianActions, ownerActions, signDraft, type Vetoable } from "@/lib/owner-actions";
+import { applyReady, approveRequest, guardianActions, ownerActions, rejectRequest, signDraft, type Vetoable } from "@/lib/owner-actions";
 
 type Body = { role?: "owner" | "guardian" | "demo"; action?: string; arg?: string };
 
@@ -25,9 +25,13 @@ export async function POST(request: Request) {
       case "owner:apply":
         return Response.json(await applyReady());
       case "owner:approve":
-        return Response.json(await ownerActions.approveRequest(Number(arg)));
+        return Response.json(await approveRequest(arg));
       case "owner:reject":
-        return Response.json(await ownerActions.rejectRequest(Number(arg)));
+        return Response.json(await rejectRequest(arg, "owner"));
+      case "owner:cancel":
+        return Response.json(await ownerActions.cancel(arg as Vetoable | "guardian"));
+      case "owner:remove-guardian":
+        return Response.json(await ownerActions.removeGuardian());
       case "owner:pause":
         return Response.json(await ownerActions.pause());
       case "owner:unpause":
@@ -42,8 +46,10 @@ export async function POST(request: Request) {
         return Response.json(await guardianActions.haltStopLoss());
       case "guardian:resume-stop-loss":
         return Response.json(await guardianActions.resumeStopLoss());
-      case "guardian:reject":
-        return Response.json(await guardianActions.rejectRequest(Number(arg)));
+      case "guardian:unpause":
+        return Response.json(await guardianActions.unpause());
+      case "guardian:veto-own-removal":
+        return Response.json(await guardianActions.vetoOwnRemoval());
       case "demo:keeper":
         return Response.json(await keeperTick({ refresh: arg === "refresh" }));
       case "demo:price": {

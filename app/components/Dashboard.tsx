@@ -24,13 +24,22 @@ const TITLES: Record<View, [string, string]> = {
   demo: ["Security demo", "See what a stolen agent key can and cannot do."],
 };
 
+/** How many changes that raise the risk are waiting. The guardian is alerted to each. */
+function waitingCount(state: AppState): number {
+  const p = state.portfolio;
+  const pending = p.pending;
+  return (
+    [pending.mandate, pending.withdrawalAddress, pending.agentKey, pending.guardian, pending.waitingPeriod, pending.unpause, p.stopLoss.haltRequestAppliesFrom].filter(Boolean).length +
+    p.positions.filter((x) => x.pendingRule).length
+  );
+}
+
 function moodOf(state: AppState, attacking: boolean): Mood {
   const p = state.portfolio;
   const last = state.receipts[0];
   const justBlocked = last && last.outcome === "reverted by the contract" && Date.now() - new Date(last.at).getTime() < 90_000;
   if (attacking || justBlocked) return "shield";
-  const waiting = p.pending.mandate || p.pending.withdrawalAddress || p.stopLoss.haltRequestAppliesFrom || p.positions.some((x) => x.pendingRule);
-  if (p.protect.active || waiting || p.stopLoss.haltedUntil || p.agent.paused) return "warning";
+  if (p.protect.active || waitingCount(state) > 0 || p.stopLoss.haltedUntil || p.agent.paused) return "warning";
   if (p.today.lossPct >= 1) return "watching";
   return "calm";
 }
@@ -133,6 +142,7 @@ export function Dashboard() {
   const pending = state.drafts.length + state.requests.length;
   const [title, subtitle] = TITLES[view];
   const stale = p.positions.some((x) => x.priceIsStale && (x.rule.allowed || Number(x.amount) > 0));
+  const waiting = waitingCount(state);
 
   return (
     <div className="flex h-full">
@@ -175,25 +185,33 @@ export function Dashboard() {
       <div className="flex min-w-0 flex-1 flex-col">
         <p className="flex items-center gap-2 bg-sun-soft px-8 py-2 text-base text-sun-ink">
           <span className="size-2.5 rounded-full bg-sun" />
-          <span className="font-semibold">Base Sepolia testnet.</span> Test money and simulated tokenized assets. No real value.
+          <span className="font-semibold">Base Sepolia testnet.</span> Test money and simulated test assets. No real value.
         </p>
         <header className="flex items-center border-b border-line bg-card px-8 py-3.5">
           <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
             <Segmented<Currency> value={settings.currency} options={[["BDT", "৳ BDT"], ["CNY", "¥ CNY"], ["USD", "$ USD"]]} onChange={(currency) => setSettings((s) => ({ ...s, currency }))} />
             <Segmented<Language> value={settings.language} options={[["en", "EN"], ["zh", "中文"], ["bn", "বাংলা"]]} onChange={(language) => setSettings((s) => ({ ...s, language }))} />
-            <Segmented<Settings["role"]> value={settings.role} options={[["owner", "Owner"], ["guardian", "Guardian"]]} onChange={(role) => setSettings((s) => ({ ...s, role }))} />
+            <Segmented<Settings["role"]>
+              value={settings.role}
+              options={[["owner", "Owner"], ["guardian", waiting ? `Guardian (${waiting})` : "Guardian"]]}
+              onChange={(role) => setSettings((s) => ({ ...s, role }))}
+            />
             <Button kind={view === "demo" ? "primary" : "ghost"} onClick={() => setView("demo")}>
               Security demo
             </Button>
-            {p.agent.paused ? (
-              settings.role === "owner" ? (
-                <Button onClick={() => act("owner", "unpause")}>Unpause the AI</Button>
-              ) : (
-                <Chip tone="warn">AI paused</Chip>
-              )
-            ) : (
+            {!p.agent.paused ? (
               <Button kind="danger" onClick={() => act(settings.role, "pause")}>
                 Pause the AI
+              </Button>
+            ) : settings.role === "guardian" ? (
+              <Button onClick={() => act("guardian", "unpause")}>Lift the pause</Button>
+            ) : p.agent.pausedBy === "owner" ? (
+              <Button onClick={() => act("owner", "unpause")}>Unpause the AI</Button>
+            ) : p.pending.unpause ? (
+              <Chip tone="warn">Paused by guardian, unpause waiting</Chip>
+            ) : (
+              <Button kind="ghost" onClick={() => act("owner", "unpause")}>
+                Ask to unpause (waits)
               </Button>
             )}
           </div>
@@ -213,9 +231,20 @@ export function Dashboard() {
             ) : null}
             {settings.role === "guardian" ? (
               <p className="mt-4 rounded-2xl bg-sky-soft p-4 text-lg text-sky">
-                Guardian view. You can pause the AI, cancel a change that is waiting, reject a request and halt the stop-loss in an emergency. You cannot move money or approve anything.
+                Guardian view. You can pause the AI, cancel a change that is waiting and halt the stop-loss in an emergency. You cannot move money, sign for trades or change the mandate.
               </p>
             ) : null}
+            {settings.role === "guardian" && waiting > 0 ? (
+              <button onClick={() => setView("mandate")} className="slide-in mt-4 block w-full rounded-2xl border border-sun bg-sun-soft p-4 text-left text-lg text-sun-ink">
+                <span className="font-semibold">
+                  Alert: the owner has asked for {waiting} {waiting === 1 ? "change" : "changes"} that would raise the risk.
+                </span>{" "}
+                Nothing has taken effect yet. Open the mandate to see the countdown and cancel if it looks like a decision made in a bad moment.
+              </button>
+            ) : null}
+            {!/^0x0+$/.test(p.agent.address) || !p.mandateSigned ? null : (
+              <p className="mt-4 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">The AI has no key right now, so it cannot trade. A new key waits out the delay like any other rise in risk.</p>
+            )}
 
             <div className="mt-6">
               {view === "portfolio" ? <PortfolioView state={state} settings={settings} act={act} skew={skew} mood={mood} speech={speechOf(state, mood)} /> : null}

@@ -1,13 +1,541 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity >=0.8.11 <0.9.0;
 
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Mandate} from "../src/Mandate.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 import {TestUSD} from "../src/TestUSD.sol";
+import {AssetRule, Policy} from "../src/Types.sol";
+import {VaultFactory} from "../src/VaultFactory.sol";
 import {MockAsset} from "../src/mocks/MockAsset.sol";
 import {PriceOracle} from "../src/mocks/PriceOracle.sol";
 import {VaultFixture} from "./utils/VaultFixture.sol";
+
+/// Threat B. Plays the human side: an owner who keeps changing their mind,
+/// mostly towards more risk, and a guardian who sometimes says no. For every
+/// change it works out on its own whether the change lowers or raises risk,
+/// then records it if the mandate did anything else: a rise in risk that
+/// applied at once, or a cut in risk that was made to wait.
+contract PanickingOwner is Test {
+    Mandate public mandate;
+    PolicyVault public vault;
+    TestUSD public usd;
+    PriceOracle public oracle;
+    uint256 internal ownerKey;
+    address public owner;
+    address public guardian;
+    address public agent;
+    address public updater;
+    /// the only other address the owner ever asks to withdraw to
+    address public secondAccount;
+    address[] public tokens;
+
+    bool public loosenedInstantly;
+    bool public tighteningDelayed;
+    bool public appliedEarly;
+    bool public guardianVetoedOwnRemoval;
+    bool public newVaultSignedEarly;
+    bool public signedTwice;
+    bool public withdrawalMisdirected;
+    bool public terminationMissed;
+    /// our own record of whose pause it is, kept apart from what the contract says
+    bool internal guardianHoldsThePause;
+    VaultFactory public factory;
+    /// another owner's vault, for approvals signed for the wrong one
+    PolicyVault public decoy;
+    bool public approvalIsForTheDecoy;
+
+    uint256 public queued;
+    uint256 public applied;
+    uint256 public vetoed;
+    uint256 public tightened;
+
+    PolicyVault.TradeApproval internal _approval;
+    bytes internal _signature;
+    bool public hasApproval;
+    uint256 public nextNonce = 1;
+
+    constructor(
+        Mandate mandate_,
+        PolicyVault vault_,
+        TestUSD usd_,
+        PriceOracle oracle_,
+        uint256 ownerKey_,
+        address guardian_,
+        address agent_,
+        address updater_,
+        address[] memory tokens_,
+        VaultFactory factory_,
+        PolicyVault decoy_
+    ) {
+        factory = factory_;
+        decoy = decoy_;
+        updater = updater_;
+        mandate = mandate_;
+        vault = vault_;
+        usd = usd_;
+        oracle = oracle_;
+        ownerKey = ownerKey_;
+        owner = vm.addr(ownerKey_);
+        guardian = guardian_;
+        agent = agent_;
+        tokens = tokens_;
+        secondAccount = makeAddr("owner's second account");
+    }
+
+    // ---- the mandate's limits
+
+    function loosenPolicy(uint256 seed) external {
+        // hashed because the fuzzer favours round numbers
+        seed = uint256(keccak256(abi.encode(seed)));
+        Policy memory p = mandate.getPolicy();
+        uint256 field = seed % 7;
+        uint256 r = seed >> 8;
+        if (field == 0) p.maxTradeBps = uint16(bound(r, p.maxTradeBps, 10_000));
+        else if (field == 1) p.maxDailyVolumeBps = uint16(bound(r, p.maxDailyVolumeBps, 30_000));
+        else if (field == 2) p.dailyLossBps = uint16(bound(r, p.dailyLossBps, 10_000));
+        else if (field == 3) p.maxSlippageBps = uint16(bound(r, p.maxSlippageBps, 500));
+        else if (field == 4) p.minDefensiveBps = uint16(bound(r, 0, p.minDefensiveBps));
+        else if (field == 5) p.maxLossStreak = r % 3 == 0 ? 0 : uint8(bound(r, p.maxLossStreak, 20));
+        else p.cooldown = uint32(bound(r, 0, p.cooldown));
+        _propose(p);
+    }
+
+    function tightenPolicy(uint256 seed) external {
+        seed = uint256(keccak256(abi.encode(seed)));
+        Policy memory p = mandate.getPolicy();
+        uint256 field = seed % 7;
+        uint256 r = seed >> 8;
+        // floors keep the agent able to act, so the run keeps testing something
+        if (field == 0 && p.maxTradeBps > 300) p.maxTradeBps = uint16(bound(r, 300, p.maxTradeBps));
+        else if (field == 1 && p.maxDailyVolumeBps > 1_000) p.maxDailyVolumeBps = uint16(bound(r, 1_000, p.maxDailyVolumeBps));
+        else if (field == 2 && p.dailyLossBps > 200) p.dailyLossBps = uint16(bound(r, 200, p.dailyLossBps));
+        else if (field == 3 && p.maxSlippageBps > 50) p.maxSlippageBps = uint16(bound(r, 50, p.maxSlippageBps));
+        else if (field == 4 && p.minDefensiveBps < 5_000) p.minDefensiveBps = uint16(bound(r, p.minDefensiveBps, 5_000));
+        else if (field == 5 && p.maxLossStreak > 2) p.maxLossStreak = uint8(bound(r, 2, p.maxLossStreak));
+        else if (p.cooldown < 2 days) p.cooldown = uint32(bound(r, p.cooldown, 2 days));
+        _propose(p);
+    }
+
+    function applyPolicy(uint256 waitFirst) external {
+        _apply(mandate.POLICY_CHANGE(), waitFirst, 0);
+    }
+
+    // ---- asset rules
+
+    function changeRule(uint256 assetSeed, uint256 seed) external {
+        address asset = tokens[assetSeed % 3];
+        seed = uint256(keccak256(abi.encode(seed)));
+        AssetRule memory old = mandate.getRule(asset);
+        AssetRule memory rule = AssetRule(old.allowed, old.defensive, old.maxExposureBps, old.stopPrice);
+        (uint256 price,) = oracle.getPrice(asset);
+        uint256 r = seed >> 8;
+        if (seed % 5 == 0) rule.maxExposureBps = uint16(bound(r, old.maxExposureBps, 10_000));
+        else if (seed % 5 == 1) rule.maxExposureBps = uint16(bound(r, 1_000, 10_000));
+        else if (seed % 5 == 2) rule.stopPrice = bound(r, 0, price);
+        else if (seed % 5 == 3) rule.stopPrice = bound(r, old.stopPrice, old.stopPrice > price ? old.stopPrice : price);
+        else rule.defensive = !old.defensive;
+        _proposeRule(asset, rule);
+    }
+
+    /// Takes an asset out of the mandate (immediate) or asks to put one back
+    /// (waits). Asking to put one back is three times as likely, so the run
+    /// does not end up with nothing left to trade.
+    function delistOrRelist(uint256 assetSeed, uint256 seed) external {
+        address asset = tokens[assetSeed % 3];
+        AssetRule memory old = mandate.getRule(asset);
+        bool delist = uint256(keccak256(abi.encode(seed))) % 4 == 0;
+        if (old.allowed != delist) return;
+        _proposeRule(asset, AssetRule(!old.allowed, old.defensive, old.maxExposureBps, old.stopPrice));
+    }
+
+    function applyRule(uint256 assetSeed, uint256 waitFirst) external {
+        _apply(mandate.ruleKey(tokens[assetSeed % 3]), waitFirst, 1);
+    }
+
+    /// A panicking owner tries to let the agent buy the token that is pumping.
+    function tryToAllowTheMemeCoin() external {
+        bytes32 key = mandate.ruleKey(tokens[3]);
+        vm.prank(owner);
+        try mandate.proposeAssetRule(tokens[3], AssetRule(true, true, 10_000, 0)) {} catch {}
+        if (mandate.getRule(tokens[3]).allowed) loosenedInstantly = true;
+        // the guardian always vetoes this one, so the token stays off the allowlist for the whole run
+        vm.prank(guardian);
+        try mandate.cancelChange(key) {
+            vetoed++;
+        } catch {}
+    }
+
+    // ---- the stop-loss
+
+    /// "Don't sell, it will come back": the owner tries to switch the stop-loss off.
+    function ownerTriesToHaltTheStopLoss() external {
+        uint64 before = mandate.stopLossHaltedUntil();
+        vm.prank(owner);
+        mandate.haltStopLoss();
+        if (mandate.stopLossHaltedUntil() != before) loosenedInstantly = true;
+        queued++;
+    }
+
+    function applyHalt(uint256 waitFirst) external {
+        _apply(mandate.HALT_CHANGE(), waitFirst, 2);
+    }
+
+    /// The guardian's emergency halt, or either of them switching the stop-loss back on.
+    function guardianHaltsOrSomeoneResumes(uint256 seed) external {
+        seed = uint256(keccak256(abi.encode(seed)));
+        if (seed % 4 == 0) {
+            vm.prank(guardian);
+            mandate.haltStopLoss();
+            if (mandate.stopLossHaltedUntil() != block.timestamp + 3 days) tighteningDelayed = true;
+        } else {
+            vm.prank(seed % 2 == 0 ? owner : guardian);
+            mandate.resumeStopLoss();
+            // switching protection back on lowers risk, so it must be immediate
+            if (mandate.stopLossHaltedUntil() != 0) tighteningDelayed = true;
+            tightened++;
+        }
+    }
+
+    // ---- the withdrawal address
+
+    /// "Update your withdrawal address": the owner asks to send withdrawals somewhere else.
+    function askToMoveTheWithdrawalAddress(bool back) external {
+        address before = mandate.withdrawalAddress();
+        vm.prank(owner);
+        mandate.proposeWithdrawalAddress(back ? owner : secondAccount);
+        if (mandate.withdrawalAddress() != before) loosenedInstantly = true;
+        queued++;
+    }
+
+    function applyWithdrawalAddress(uint256 waitFirst) external {
+        _apply(mandate.WITHDRAWAL_CHANGE(), waitFirst, 3);
+    }
+
+    // ---- the agent's key
+
+    /// A longer life for the agent's key waits. A shorter one applies at once.
+    function changeAgentExpiry(uint256 seed) external {
+        if (mandate.agent() != agent) return;
+        uint64 old = mandate.agentExpiry();
+        uint64 expiry = uint64(bound(seed, block.timestamp + 1 hours, block.timestamp + 90 days));
+        vm.prank(owner);
+        try mandate.setAgent(agent, expiry) {} catch {
+            return;
+        }
+        if (expiry <= old) {
+            if (mandate.agentExpiry() != expiry) tighteningDelayed = true;
+            tightened++;
+        } else {
+            if (mandate.agentExpiry() != old) loosenedInstantly = true;
+            queued++;
+        }
+    }
+
+    function applyAgent(uint256 waitFirst) external {
+        _apply(mandate.AGENT_CHANGE(), waitFirst, 4);
+    }
+
+    /// The owner is talked into handing the agent role to someone else. It waits, and the guardian says no.
+    function askForADifferentAgent() external {
+        bytes32 key = mandate.AGENT_CHANGE();
+        vm.prank(owner);
+        try mandate.setAgent(secondAccount, uint64(block.timestamp + 30 days)) {} catch {
+            return;
+        }
+        if (mandate.agent() == secondAccount) loosenedInstantly = true;
+        vm.prank(guardian);
+        mandate.cancelChange(key);
+        vetoed++;
+    }
+
+    // ---- the guardian and the waiting period
+
+    /// The owner asks to drop the guardian. It waits, the guardian cannot cancel
+    /// it, and here the owner thinks better of it before the wait is over.
+    function askToRemoveTheGuardian() external {
+        bytes32 key = mandate.GUARDIAN_CHANGE();
+        vm.prank(owner);
+        mandate.setGuardian(address(0));
+        if (mandate.guardian() != guardian) loosenedInstantly = true;
+        vm.prank(guardian);
+        try mandate.cancelChange(key) {
+            guardianVetoedOwnRemoval = true;
+        } catch {}
+        vm.prank(owner);
+        try mandate.cancelChange(key) {} catch {}
+    }
+
+    /// Leaving for a new vault is not a way around the wait: a second vault's
+    /// first mandate cannot be signed at once, and the first one cannot be signed again.
+    function tryANewVaultOrASecondSignature(bool again) external {
+        address[] memory assets = new address[](1);
+        assets[0] = tokens[0];
+        AssetRule[] memory rules = new AssetRule[](1);
+        rules[0] = AssetRule(true, true, 10_000, 0);
+        Policy memory loose = Policy(10_000, type(uint16).max, 10_000, 500, 0, 0, 0);
+        vm.startPrank(owner);
+        if (again) {
+            try mandate.signMandate(loose, assets, rules, agent, uint64(block.timestamp + 1 days)) {
+                signedTwice = true;
+            } catch {}
+        } else {
+            (Mandate another,) = factory.createVault(address(0), 1 minutes);
+            try another.signMandate(loose, assets, rules, agent, uint64(block.timestamp + 1 days)) {
+                newVaultSignedEarly = true;
+            } catch {}
+        }
+        vm.stopPrank();
+    }
+
+    function changeWaitingPeriod(uint256 seed) external {
+        uint64 old = mandate.loosenDelay();
+        uint64 next = uint64(bound(uint256(keccak256(abi.encode(seed))), 1 minutes, 36 hours));
+        vm.prank(owner);
+        mandate.setLoosenDelay(next);
+        if (next >= old) {
+            if (mandate.loosenDelay() != next) tighteningDelayed = true;
+            tightened++;
+        } else {
+            if (mandate.loosenDelay() != old) loosenedInstantly = true;
+            queued++;
+        }
+    }
+
+    function applyWaitingPeriod(uint256 waitFirst) external {
+        _apply(mandate.DELAY_CHANGE(), waitFirst, 5);
+    }
+
+    // ---- pausing
+
+    /// Mostly unpauses, so the run spends most of its time with a live agent.
+    function pauseOrUnpause(uint256 seed) external {
+        seed = uint256(keccak256(abi.encode(seed)));
+        if (seed % 6 == 0) {
+            bool byGuardian = seed % 12 == 0;
+            vm.prank(byGuardian ? guardian : owner);
+            mandate.pause();
+            if (byGuardian) guardianHoldsThePause = true;
+            // pausing lowers risk, so it must be immediate for either of them
+            if (!mandate.paused()) tighteningDelayed = true;
+            tightened++;
+        } else if (seed % 2 == 0) {
+            vm.prank(guardian);
+            mandate.unpause();
+            guardianHoldsThePause = false;
+            if (mandate.paused()) tighteningDelayed = true;
+        } else {
+            vm.prank(owner);
+            mandate.unpause();
+            // the owner lifts their own pause at once, never the guardian's
+            if (guardianHoldsThePause && !mandate.paused()) loosenedInstantly = true;
+            if (!guardianHoldsThePause && mandate.paused()) tighteningDelayed = true;
+        }
+    }
+
+    function applyUnpause(uint256 waitFirst) external {
+        _apply(mandate.UNPAUSE_CHANGE(), waitFirst, 6);
+    }
+
+    function guardianVetoes(uint256 seed) external {
+        bytes32[5] memory keys = [
+            mandate.POLICY_CHANGE(),
+            mandate.HALT_CHANGE(),
+            mandate.WITHDRAWAL_CHANGE(),
+            mandate.DELAY_CHANGE(),
+            mandate.UNPAUSE_CHANGE()
+        ];
+        vm.prank(guardian);
+        try mandate.cancelChange(keys[seed % 5]) {
+            vetoed++;
+        } catch {}
+    }
+
+    // ---- approvals and funds
+
+    /// The owner signs for one trade above the agent's limits. Sometimes the
+    /// approval is malformed on purpose: too long-lived, or not valid yet.
+    function signApproval(uint256 seed, uint256 amount) external {
+        seed = uint256(keccak256(abi.encode(seed)));
+        bool isBuy = seed % 3 != 0;
+        // one time in eight it is for the token that is not in the mandate
+        address asset = (seed >> 8) % 8 == 0 ? tokens[3] : tokens[(seed >> 8) % 3];
+        uint64 lifetime = (seed >> 16) % 5 == 0 ? uint64(bound(seed >> 24, 1 hours + 1, 2 days)) : uint64(bound(seed >> 24, 1 minutes, 1 hours));
+        uint64 validFrom = (seed >> 40) % 7 == 0 ? uint64(block.timestamp + 30 minutes) : uint64(block.timestamp);
+        _approval = PolicyVault.TradeApproval({
+            action: isBuy ? 0 : 1,
+            assetIn: isBuy ? address(usd) : asset,
+            assetOut: isBuy ? asset : address(usd),
+            amount: isBuy ? bound(amount, 1e6, 6_000e6) : bound(amount, 1e10, vault.holdings(asset) + 1e18),
+            nonce: nextNonce++,
+            validFrom: validFrom,
+            expiry: validFrom + lifetime
+        });
+        // one time in six the owner's signature is for a different vault, which must make it worthless here
+        approvalIsForTheDecoy = (seed >> 48) % 6 == 0;
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, (approvalIsForTheDecoy ? decoy : vault).approvalDigest(_approval));
+        _signature = abi.encodePacked(r, s, v);
+        hasApproval = true;
+    }
+
+    function getApproval() external view returns (PolicyVault.TradeApproval memory, bytes memory) {
+        return (_approval, _signature);
+    }
+
+    function cancelApproval() external {
+        if (!hasApproval) return;
+        vm.prank(owner);
+        vault.cancelApproval(_approval.nonce);
+    }
+
+    function deposit(uint256 amount) external {
+        amount = bound(amount, 1, 5_000e6);
+        usd.mint(owner, amount);
+        vm.startPrank(owner);
+        usd.approve(address(vault), amount);
+        vault.deposit(address(usd), amount);
+        vm.stopPrank();
+    }
+
+    /// Takes out part of a holding. It must arrive at the address registered in the mandate.
+    function withdraw(uint256 tokenSeed, uint256 amount) external {
+        address token = tokenSeed % 4 == 3 ? address(usd) : tokens[tokenSeed % 3];
+        uint256 held = vault.holdings(token);
+        if (held < 8) return;
+        amount = bound(amount, 1, held / 4);
+        address to = mandate.withdrawalAddress();
+        uint256 before = IERC20(token).balanceOf(to);
+        vm.prank(owner);
+        vault.withdraw(token, amount);
+        if (IERC20(token).balanceOf(to) != before + amount) withdrawalMisdirected = true;
+    }
+
+    /// Takes out everything, which must end the mandate, then comes back: a
+    /// fresh deposit, and a new key for the agent that has to wait like any other.
+    function leaveAndComeBack(uint256 seed) external {
+        if (uint256(keccak256(abi.encode(seed))) % 6 != 0 || mandate.agent() != agent) return;
+        vm.startPrank(owner);
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 held = vault.holdings(tokens[i]);
+            if (held != 0) vault.withdraw(tokens[i], held);
+        }
+        uint256 cash = vault.holdings(address(usd));
+        if (cash != 0) vault.withdraw(address(usd), cash);
+        if (mandate.agent() != address(0)) terminationMissed = true;
+
+        usd.mint(owner, 10_000e6);
+        usd.approve(address(vault), 10_000e6);
+        vault.deposit(address(usd), 10_000e6);
+        try mandate.setAgent(agent, uint64(block.timestamp + 60 days)) {} catch {}
+        if (mandate.agent() != address(0)) loosenedInstantly = true;
+        vm.stopPrank();
+        _apply(mandate.AGENT_CHANGE(), 0, 4);
+        if (mandate.agent() != agent) {
+            // the guardian may have paused or the key proposal failed; wait it out properly
+            uint64 eta = mandate.pendingEta(mandate.AGENT_CHANGE());
+            if (eta != 0) {
+                vm.warp(eta);
+                vm.prank(owner);
+                mandate.applyAgent();
+            }
+        }
+    }
+
+    // ---- internals
+
+    function _propose(Policy memory p) internal {
+        Policy memory old = mandate.getPolicy();
+        bool streakOk = p.maxLossStreak == old.maxLossStreak
+            || (p.maxLossStreak != 0 && (old.maxLossStreak == 0 || p.maxLossStreak < old.maxLossStreak));
+        bool lowersRisk = streakOk && p.maxTradeBps <= old.maxTradeBps && p.maxDailyVolumeBps <= old.maxDailyVolumeBps
+            && p.dailyLossBps <= old.dailyLossBps && p.maxSlippageBps <= old.maxSlippageBps
+            && p.minDefensiveBps >= old.minDefensiveBps && p.cooldown >= old.cooldown;
+        vm.prank(owner);
+        try mandate.proposePolicy(p) {} catch {
+            return;
+        }
+        bytes32 now_ = keccak256(abi.encode(mandate.getPolicy()));
+        if (lowersRisk) {
+            if (now_ != keccak256(abi.encode(p))) tighteningDelayed = true;
+            tightened++;
+        } else {
+            if (now_ != keccak256(abi.encode(old))) loosenedInstantly = true;
+            queued++;
+        }
+    }
+
+    function _proposeRule(address asset, AssetRule memory rule) internal {
+        AssetRule memory old = mandate.getRule(asset);
+        bool lowersRisk = (!rule.allowed || old.allowed) && (!rule.defensive || old.defensive)
+            && rule.maxExposureBps <= old.maxExposureBps && rule.stopPrice >= old.stopPrice;
+        vm.prank(owner);
+        try mandate.proposeAssetRule(asset, rule) {} catch {
+            return;
+        }
+        bytes32 now_ = keccak256(abi.encode(mandate.getRule(asset)));
+        if (lowersRisk) {
+            if (now_ != keccak256(abi.encode(rule))) tighteningDelayed = true;
+            tightened++;
+        } else {
+            if (now_ != keccak256(abi.encode(old))) loosenedInstantly = true;
+            queued++;
+        }
+    }
+
+    /// Tries to apply the change waiting under `key`. If it goes through, the wait must be over.
+    /// @param waitFirst zero, or one other value in three, waits out the delay first, with the price keeper still running
+    function _apply(bytes32 key, uint256 waitFirst, uint256 kind) internal {
+        uint64 eta = mandate.pendingEta(key);
+        if ((waitFirst == 0 || uint256(keccak256(abi.encode(waitFirst))) % 3 == 0) && eta > block.timestamp) {
+            vm.warp(eta);
+            vm.startPrank(updater);
+            for (uint256 i = 0; i < tokens.length; i++) {
+                (uint256 price,) = oracle.getPrice(tokens[i]);
+                // a feed refreshed under a minute ago refuses another update, and does not need one
+                try oracle.setPrice(tokens[i], price) {} catch {}
+            }
+            vm.stopPrank();
+        }
+        vm.startPrank(owner);
+        bool ok;
+        if (kind == 0) {
+            try mandate.applyPolicy() {
+                ok = true;
+            } catch {}
+        } else if (kind == 1) {
+            try mandate.applyAssetRule(address(uint160(uint256(key)))) {
+                ok = true;
+            } catch {}
+        } else if (kind == 2) {
+            try mandate.applyStopLossHalt() {
+                ok = true;
+            } catch {}
+        } else if (kind == 3) {
+            try mandate.applyWithdrawalAddress() {
+                ok = true;
+            } catch {}
+        } else if (kind == 4) {
+            try mandate.applyAgent() {
+                ok = true;
+            } catch {}
+        } else if (kind == 5) {
+            try mandate.applyLoosenDelay() {
+                ok = true;
+            } catch {}
+        } else {
+            try mandate.applyUnpause() {
+                ok = true;
+            } catch {}
+        }
+        vm.stopPrank();
+        if (ok) {
+            applied++;
+            if (eta == 0 || block.timestamp < eta) appliedEarly = true;
+            if (kind == 6) guardianHoldsThePause = false;
+        }
+    }
+}
 
 /// Threat A. Plays a fully compromised agent: it holds the real agent key and
 /// fires random calls at everything that key can reach. After every call that
@@ -15,9 +543,11 @@ import {VaultFixture} from "./utils/VaultFixture.sol";
 contract CompromisedAgent is Test {
     uint256 constant BPS = 10_000;
 
+    Mandate public mandate;
     PolicyVault public vault;
     TestUSD public usd;
     PriceOracle public oracle;
+    PanickingOwner public ownerHandler;
     address public agent;
     address public attacker;
     address[] public tokens; // three allowlisted assets, then the one that is not
@@ -33,32 +563,35 @@ contract CompromisedAgent is Test {
     bool public costBroken;
     bool public streakBroken;
     bool public stopFiredEarly;
-    bool public policyTouched;
+    bool public stopRefusedWrongly;
+    bool public stopProceedsLeft;
+    bool public rulesTouched;
+    bool public approvalBroken;
+    bool public setUpAgain;
 
     uint256 public attempts;
     uint256 public trades;
+    uint256 public approvalsUsed;
+    uint256 public approvalsRefused;
     uint256 public buysRefusedInProtectMode;
     uint256 public stopLossesFired;
     /// how often each contract error turned the agent away
     mapping(bytes4 => uint256) public refusals;
     mapping(uint256 => uint256) public volumeByDay;
 
-    constructor(
-        PolicyVault vault_,
-        TestUSD usd_,
-        PriceOracle oracle_,
-        address agent_,
-        address attacker_,
-        address[] memory tokens_
-    ) {
-        vault = vault_;
-        usd = usd_;
-        oracle = oracle_;
-        agent = agent_;
+    constructor(PanickingOwner ownerHandler_, address attacker_) {
+        ownerHandler = ownerHandler_;
+        mandate = ownerHandler_.mandate();
+        vault = ownerHandler_.vault();
+        usd = ownerHandler_.usd();
+        oracle = ownerHandler_.oracle();
+        agent = ownerHandler_.agent();
         attacker = attacker_;
-        tokens = tokens_;
+        for (uint256 i = 0; i < 4; i++) {
+            tokens.push(ownerHandler_.tokens(i));
+        }
         // the fixture has already traded today
-        volumeByDay[block.timestamp / 1 days] = vault_.volumeToday();
+        volumeByDay[block.timestamp / 1 days] = vault.volumeToday();
     }
 
     /// Random size, from nothing up to twice the per-trade limit.
@@ -124,7 +657,7 @@ contract CompromisedAgent is Test {
             if (isBuy) hasBuy = true;
         }
         bool wasProtected = vault.inProtectMode();
-        bool wasPaused = vault.paused();
+        bool wasPaused = mandate.paused();
         uint256 valueBefore = vault.portfolioValue();
         attempts++;
         vm.prank(agent);
@@ -132,37 +665,85 @@ contract CompromisedAgent is Test {
             if (hasBuy && wasProtected) boughtWhileProtected = true;
             if (legTooBig) sizeBroken = true;
             for (uint256 i = 0; i < legs; i++) {
-                if (orders[i].isBuy && !vault.getRule(orders[i].asset).allowed) tradedOffAllowlist = true;
+                if (orders[i].isBuy && !mandate.getRule(orders[i].asset).allowed) tradedOffAllowlist = true;
             }
             _afterTrade(volume, valueBefore, wasPaused);
         } catch {}
     }
 
-    /// Ask for a trade above the limits, then try to approve it with the agent key.
-    function requestAndSelfApprove(uint256 assetSeed, bool isBuy, uint256 amount) external {
-        address asset = tokens[assetSeed % tokens.length];
-        bytes32 before = _rulesHash();
-        vm.startPrank(agent);
-        try vault.requestTrade(asset, isBuy, bound(amount, 0, 1_000_000e6), bytes32(0)) returns (uint256 id) {
-            try vault.approveRequest(id) {
-                policyTouched = true;
-            } catch {}
-        } catch {}
-        vm.stopPrank();
-        if (_rulesHash() != before) policyTouched = true;
+    /// Uses the owner's latest signed approval: as signed, with one field
+    /// changed, or again after it has been used. Only the first may work, once,
+    /// inside its time window, and every rule but the two size limits still holds.
+    /// The owner signs for a trade and the agent uses it straight away, as signed.
+    function signAndUseApproval(uint256 seed, uint256 amount) external {
+        ownerHandler.signApproval(seed, amount);
+        _useApproval(0);
     }
 
+    function useApproval(uint256 seed) external {
+        _useApproval(uint256(keccak256(abi.encode(seed))));
+    }
+
+    function _useApproval(uint256 seed) internal {
+        if (!ownerHandler.hasApproval()) return;
+        (PolicyVault.TradeApproval memory a, bytes memory sig) = ownerHandler.getApproval();
+        bytes32 signed = keccak256(abi.encode(a));
+        if (seed % 5 == 1) a.amount += 1 + (seed >> 8) % 1e9;
+        else if (seed % 5 == 2) a.nonce += 1;
+        else if (seed % 5 == 3) a.expiry += 1 hours;
+        else if (seed % 5 == 4 && a.action == 0) a.assetOut = tokens[(seed >> 8) % tokens.length];
+
+        bool tampered = keccak256(abi.encode(a)) != signed || ownerHandler.approvalIsForTheDecoy();
+        bool usedBefore = vault.usedNonce(a.nonce);
+        bool inWindow = block.timestamp >= a.validFrom && block.timestamp <= a.expiry && a.expiry - a.validFrom <= 1 hours;
+        address bought = a.action == 0 ? a.assetOut : address(0);
+        bool belowStop;
+        if (bought != address(0)) {
+            (uint256 price,) = oracle.getPrice(bought);
+            belowStop = price <= mandate.getRule(bought).stopPrice;
+        }
+        bool wasProtected = vault.inProtectMode();
+        bool wasPaused = mandate.paused();
+        uint256 valueBefore = vault.portfolioValue();
+        uint256 usdValue = a.action == 0 ? a.amount : _usdValue(a.assetIn, a.amount);
+
+        vm.prank(agent);
+        try vault.tradeWithApproval(a, sig, bytes32(0)) {
+            approvalsUsed++;
+            if (tampered || usedBefore || !inWindow || !vault.usedNonce(a.nonce)) approvalBroken = true;
+            if (wasPaused) tradedWhilePaused = true;
+            if (bought != address(0)) {
+                if (wasProtected) boughtWhileProtected = true;
+                if (belowStop) boughtBelowStop = true;
+                _checkHolding(bought);
+            }
+            // an approved trade is outside the agent's own allowance, so the day's count must not move
+            if (vault.volumeToday() != volumeByDay[block.timestamp / 1 days]) volumeBroken = true;
+            _checkCost(usdValue, valueBefore);
+        } catch {
+            approvalsRefused++;
+        }
+    }
+
+    /// Everything the agent key must not be able to do, in one go.
     function callOwnerFunctions(uint256 amount, uint256 assetSeed) external {
         address asset = tokens[assetSeed % tokens.length];
-        PolicyVault.Policy memory loose = PolicyVault.Policy(10_000, type(uint16).max, 10_000, 500, 0, 0, 0);
-        PolicyVault.AssetRule memory open = PolicyVault.AssetRule(true, true, 10_000, 0);
+        Policy memory loose = Policy(10_000, type(uint16).max, 10_000, 500, 0, 0, 0);
+        AssetRule memory open = AssetRule(true, true, 10_000, 0);
         address[] memory assets = new address[](1);
         assets[0] = asset;
-        PolicyVault.AssetRule[] memory rules = new PolicyVault.AssetRule[](1);
+        AssetRule[] memory rules = new AssetRule[](1);
         rules[0] = open;
-        bytes32[4] memory keys =
-            [vault.POLICY_CHANGE(), vault.HALT_CHANGE(), vault.WITHDRAWAL_CHANGE(), vault.ruleKey(asset)];
-        uint256 lastRequest = vault.requestCount();
+        bytes32[8] memory keys = [
+            mandate.POLICY_CHANGE(),
+            mandate.HALT_CHANGE(),
+            mandate.WITHDRAWAL_CHANGE(),
+            mandate.AGENT_CHANGE(),
+            mandate.GUARDIAN_CHANGE(),
+            mandate.DELAY_CHANGE(),
+            mandate.UNPAUSE_CHANGE(),
+            mandate.ruleKey(asset)
+        ];
 
         bytes32 before = _rulesHash();
         uint256 usdBefore = usd.balanceOf(address(vault));
@@ -171,44 +752,72 @@ contract CompromisedAgent is Test {
         try vault.withdraw(asset, amount) {} catch {}
         try vault.sweep(address(usd)) {} catch {}
         try vault.deposit(address(usd), amount) {} catch {}
-        try vault.initialize(loose, assets, rules) {} catch {}
-        try vault.proposePolicy(loose) {} catch {}
-        try vault.applyPolicy() {} catch {}
-        try vault.proposeAssetRule(asset, open) {} catch {}
-        try vault.applyAssetRule(asset) {} catch {}
-        try vault.proposeWithdrawalAddress(attacker) {} catch {}
-        try vault.applyWithdrawalAddress() {} catch {}
-        try vault.haltStopLoss() {} catch {}
-        try vault.applyStopLossHalt() {} catch {}
-        try vault.resumeStopLoss() {} catch {}
-        try vault.approveRequest(lastRequest) {} catch {}
-        try vault.setAgent(attacker, uint64(block.timestamp + 90 days)) {} catch {}
-        try vault.setGuardian(agent) {} catch {}
-        try vault.transferGuardian(agent) {} catch {}
+        try vault.cancelApproval(amount) {} catch {}
+        try mandate.signMandate(loose, assets, rules, attacker, uint64(block.timestamp + 1 days)) {} catch {}
+        try mandate.proposePolicy(loose) {} catch {}
+        try mandate.applyPolicy() {} catch {}
+        try mandate.proposeAssetRule(asset, open) {} catch {}
+        try mandate.applyAssetRule(asset) {} catch {}
+        try mandate.proposeWithdrawalAddress(attacker) {} catch {}
+        try mandate.applyWithdrawalAddress() {} catch {}
+        try mandate.haltStopLoss() {} catch {}
+        try mandate.applyStopLossHalt() {} catch {}
+        try mandate.resumeStopLoss() {} catch {}
+        try mandate.setAgent(attacker, uint64(block.timestamp + 90 days)) {} catch {}
+        try mandate.applyAgent() {} catch {}
+        try mandate.revokeAgent() {} catch {}
+        try mandate.setGuardian(agent) {} catch {}
+        try mandate.applyGuardian() {} catch {}
+        try mandate.setLoosenDelay(1 minutes) {} catch {}
+        try mandate.applyLoosenDelay() {} catch {}
+        try mandate.applyUnpause() {} catch {}
+        try mandate.terminate() {} catch {}
         for (uint256 i = 0; i < keys.length; i++) {
-            try vault.cancelChange(keys[i]) {} catch {}
+            try mandate.cancelChange(keys[i]) {} catch {}
         }
-        try vault.pause() {} catch {}
-        try vault.unpause() {} catch {}
+        try mandate.pause() {} catch {}
+        try mandate.unpause() {} catch {}
         // and straight at the tokens
         try usd.transferFrom(address(vault), agent, amount) {} catch {}
         try IERC20(asset).transferFrom(address(vault), agent, amount) {} catch {}
         vm.stopPrank();
-        if (_rulesHash() != before || usd.balanceOf(address(vault)) != usdBefore) policyTouched = true;
+        if (_rulesHash() != before || usd.balanceOf(address(vault)) != usdBefore) rulesTouched = true;
+    }
+
+    /// The vault and the mandate are copies of templates. Nobody may set a copy up a second time.
+    function setUpACopyAgain(bool asAgent) external {
+        vm.startPrank(asAgent ? agent : attacker);
+        try mandate.init(attacker, address(0), attacker, address(usd), oracle, 1 minutes, 0) {
+            setUpAgain = true;
+        } catch {}
+        try vault.init(Mandate(attacker), usd, oracle, vault.exchange(), 1) {
+            setUpAgain = true;
+        } catch {}
+        vm.stopPrank();
     }
 
     /// Anyone can call the stop-loss. It must only fire at or below the stop
-    /// price, never during a halt, and it must sell the whole holding.
+    /// price, never during a halt, it must sell the whole holding, and every
+    /// unit of the proceeds must stay in the vault.
     function triggerStopLoss(uint256 assetSeed) external {
         address asset = tokens[assetSeed % tokens.length];
-        (uint256 price,) = oracle.getPrice(asset);
-        uint256 stopPrice = vault.getRule(asset).stopPrice;
-        bool halted = block.timestamp < vault.stopLossHaltedUntil();
+        (uint256 price, uint256 updatedAt) = oracle.getPrice(asset);
+        uint256 stopPrice = mandate.getRule(asset).stopPrice;
+        bool halted = block.timestamp < mandate.stopLossHaltedUntil();
+        // when all of this holds, nothing else may stand in the way, not even a paused agent
+        bool due = vault.holdings(asset) != 0 && price <= stopPrice && !halted && block.timestamp <= updatedAt + vault.maxPriceAge();
+        uint256 cashBefore = vault.holdings(address(usd));
+        uint256 balanceBefore = usd.balanceOf(address(vault));
         vm.prank(attacker);
-        try vault.triggerStopLoss(asset) {
+        try vault.triggerStopLoss(asset) returns (uint256 usdOut) {
             stopLossesFired++;
             if (price > stopPrice || halted || vault.holdings(asset) != 0) stopFiredEarly = true;
-        } catch {}
+            if (vault.holdings(address(usd)) != cashBefore + usdOut || usd.balanceOf(address(vault)) != balanceBefore + usdOut) {
+                stopProceedsLeft = true;
+            }
+        } catch {
+            if (due) stopRefusedWrongly = true;
+        }
     }
 
     function poke() external {
@@ -220,14 +829,14 @@ contract CompromisedAgent is Test {
     function donate(uint256 amount) external {
         uint256 valueBefore = vault.portfolioValue();
         usd.mint(address(vault), bound(amount, 1, 1_000_000e6));
-        if (vault.portfolioValue() != valueBefore) policyTouched = true;
+        if (vault.portfolioValue() != valueBefore) rulesTouched = true;
     }
 
     function _tryBuy(address asset, uint256 amount) internal {
         (uint256 price,) = oracle.getPrice(asset);
-        bool belowStop = price <= vault.getRule(asset).stopPrice;
+        bool belowStop = price <= mandate.getRule(asset).stopPrice;
         bool wasProtected = vault.inProtectMode();
-        bool wasPaused = vault.paused();
+        bool wasPaused = mandate.paused();
         uint256 limit = _tradeLimit();
         uint256 valueBefore = vault.portfolioValue();
         attempts++;
@@ -236,10 +845,7 @@ contract CompromisedAgent is Test {
             if (wasProtected) boughtWhileProtected = true;
             if (belowStop) boughtBelowStop = true;
             if (amount > limit) sizeBroken = true;
-            PolicyVault.AssetRule memory rule = vault.getRule(asset);
-            if (!rule.allowed) tradedOffAllowlist = true;
-            if (vault.exposureBps(asset) > rule.maxExposureBps) exposureBroken = true;
-            if (!rule.defensive && vault.defensiveBps() < vault.getPolicy().minDefensiveBps) floorBroken = true;
+            _checkHolding(asset);
             _afterTrade(amount, valueBefore, wasPaused);
         } catch (bytes memory err) {
             refusals[bytes4(err)]++;
@@ -248,7 +854,7 @@ contract CompromisedAgent is Test {
     }
 
     function _trySell(address asset, uint256 amount) internal {
-        bool wasPaused = vault.paused();
+        bool wasPaused = mandate.paused();
         uint256 limit = _tradeLimit();
         uint256 valueBefore = vault.portfolioValue();
         uint256 value = _usdValue(asset, amount);
@@ -257,7 +863,7 @@ contract CompromisedAgent is Test {
         try vault.sell(asset, amount, bytes32(0)) {
             if (value > limit) sizeBroken = true;
             // a full streak must have been turned into a cooldown and reset
-            uint8 maxStreak = vault.getPolicy().maxLossStreak;
+            uint8 maxStreak = mandate.getPolicy().maxLossStreak;
             if (maxStreak != 0 && vault.lossStreak() >= maxStreak) streakBroken = true;
             _afterTrade(value, valueBefore, wasPaused);
         } catch (bytes memory err) {
@@ -265,24 +871,35 @@ contract CompromisedAgent is Test {
         }
     }
 
+    /// After a buy: the asset is in the mandate, inside its cap, and enough is left in defensive assets.
+    function _checkHolding(address asset) internal {
+        AssetRule memory rule = mandate.getRule(asset);
+        if (!rule.allowed) tradedOffAllowlist = true;
+        if (vault.exposureBps(asset) > rule.maxExposureBps) exposureBroken = true;
+        if (!rule.defensive && vault.defensiveBps() < mandate.getPolicy().minDefensiveBps) floorBroken = true;
+    }
+
     function _afterTrade(uint256 usdValue, uint256 valueBefore, bool wasPaused) internal {
         trades++;
-        PolicyVault.Policy memory p = vault.getPolicy();
         if (wasPaused) tradedWhilePaused = true;
         // the vault's count of today's agent volume must match ours and be inside the cap
         uint256 today = block.timestamp / 1 days;
         volumeByDay[today] += usdValue;
         if (volumeByDay[today] != vault.volumeToday()) volumeBroken = true;
-        if (vault.volumeToday() > vault.dayStartValue() * p.maxDailyVolumeBps / BPS) volumeBroken = true;
+        if (vault.volumeToday() > vault.dayStartValue() * mandate.getPolicy().maxDailyVolumeBps / BPS) volumeBroken = true;
+        _checkCost(usdValue, valueBefore);
+    }
+
+    function _checkCost(uint256 usdValue, uint256 valueBefore) internal {
         uint256 valueAfter = vault.portfolioValue();
         // prices did not move inside this call, so any drop in value is what the trade cost
-        if (valueBefore > valueAfter && valueBefore - valueAfter > usdValue * p.maxSlippageBps / BPS + 4) {
+        if (valueBefore > valueAfter && valueBefore - valueAfter > usdValue * mandate.getPolicy().maxSlippageBps / BPS + 4) {
             costBroken = true;
         }
     }
 
     function _tradeLimit() internal view returns (uint256) {
-        return vault.portfolioValue() * vault.getPolicy().maxTradeBps / BPS;
+        return vault.portfolioValue() * mandate.getPolicy().maxTradeBps / BPS;
     }
 
     function _usdValue(address asset, uint256 amount) internal view returns (uint256) {
@@ -294,295 +911,40 @@ contract CompromisedAgent is Test {
     function _rulesHash() internal view returns (bytes32 h) {
         h = keccak256(
             abi.encode(
-                vault.getPolicy(),
-                vault.getPendingPolicy(),
-                vault.agent(),
-                vault.agentExpiry(),
-                vault.guardian(),
-                vault.paused(),
-                vault.withdrawalAddress(),
-                vault.pendingWithdrawalAddress(),
-                vault.stopLossHaltedUntil(),
-                vault.pendingEta(vault.POLICY_CHANGE()),
-                vault.pendingEta(vault.HALT_CHANGE()),
-                vault.pendingEta(vault.WITHDRAWAL_CHANGE()),
-                vault.getAssets()
+                mandate.getPolicy(),
+                mandate.getPendingPolicy(),
+                mandate.agent(),
+                mandate.agentExpiry(),
+                mandate.guardian(),
+                mandate.paused(),
+                mandate.pausedByGuardian(),
+                mandate.withdrawalAddress(),
+                mandate.stopLossHaltedUntil(),
+                mandate.loosenDelay(),
+                mandate.signed(),
+                mandate.getAssets()
+            )
+        );
+        h = keccak256(
+            abi.encode(
+                h,
+                mandate.pendingEta(mandate.POLICY_CHANGE()),
+                mandate.pendingEta(mandate.HALT_CHANGE()),
+                mandate.pendingEta(mandate.WITHDRAWAL_CHANGE()),
+                mandate.pendingEta(mandate.AGENT_CHANGE()),
+                mandate.pendingEta(mandate.GUARDIAN_CHANGE()),
+                mandate.pendingEta(mandate.DELAY_CHANGE()),
+                mandate.pendingEta(mandate.UNPAUSE_CHANGE()),
+                address(vault.mandate()),
+                mandate.vault(),
+                mandate.owner()
             )
         );
         for (uint256 i = 0; i < tokens.length; i++) {
             h = keccak256(
-                abi.encode(
-                    h, vault.getRule(tokens[i]), vault.getPendingRule(tokens[i]), vault.pendingEta(vault.ruleKey(tokens[i]))
-                )
+                abi.encode(h, mandate.getRule(tokens[i]), mandate.getPendingRule(tokens[i]), mandate.pendingEta(mandate.ruleKey(tokens[i])))
             );
         }
-    }
-}
-
-/// Threat B. Plays the human side: an owner who keeps changing their mind,
-/// mostly towards more risk, and a guardian who sometimes says no. It records
-/// any change that raised the risk without waiting out the delay.
-contract PanickingOwner is Test {
-    PolicyVault public vault;
-    TestUSD public usd;
-    PriceOracle public oracle;
-    address public owner;
-    address public guardian;
-    /// the only other address the owner ever asks to withdraw to
-    address public secondAccount;
-    address[] public tokens;
-
-    bool public loosenedInstantly;
-    bool public appliedEarly;
-    bool public haltedWithoutWaiting;
-    bool public withdrawalAddressMovedEarly;
-    bool public approvedTradeBrokeARule;
-
-    uint256 public queued;
-    uint256 public applied;
-    uint256 public vetoed;
-
-    constructor(
-        PolicyVault vault_,
-        TestUSD usd_,
-        PriceOracle oracle_,
-        address owner_,
-        address guardian_,
-        address[] memory tokens_
-    ) {
-        vault = vault_;
-        usd = usd_;
-        oracle = oracle_;
-        owner = owner_;
-        guardian = guardian_;
-        tokens = tokens_;
-        secondAccount = makeAddr("owner's second account");
-    }
-
-    function loosenPolicy(uint256 seed) external {
-        // hashed because the fuzzer favours round numbers
-        seed = uint256(keccak256(abi.encode(seed)));
-        PolicyVault.Policy memory p = vault.getPolicy();
-        uint256 field = seed % 7;
-        uint256 r = seed >> 8;
-        if (field == 0) p.maxTradeBps = uint16(bound(r, p.maxTradeBps, 10_000));
-        else if (field == 1) p.maxDailyVolumeBps = uint16(bound(r, p.maxDailyVolumeBps, 30_000));
-        else if (field == 2) p.dailyLossBps = uint16(bound(r, p.dailyLossBps, 10_000));
-        else if (field == 3) p.maxSlippageBps = uint16(bound(r, p.maxSlippageBps, 500));
-        else if (field == 4) p.minDefensiveBps = uint16(bound(r, 0, p.minDefensiveBps));
-        else if (field == 5) p.maxLossStreak = r % 3 == 0 ? 0 : uint8(bound(r, p.maxLossStreak, 20));
-        else p.cooldown = uint32(bound(r, 0, p.cooldown));
-        _propose(p);
-    }
-
-    function tightenPolicy(uint256 seed) external {
-        seed = uint256(keccak256(abi.encode(seed)));
-        PolicyVault.Policy memory p = vault.getPolicy();
-        uint256 field = seed % 7;
-        uint256 r = seed >> 8;
-        // floors keep the agent able to act, so the run keeps testing something
-        if (field == 0 && p.maxTradeBps > 300) p.maxTradeBps = uint16(bound(r, 300, p.maxTradeBps));
-        else if (field == 1 && p.maxDailyVolumeBps > 1_000) p.maxDailyVolumeBps = uint16(bound(r, 1_000, p.maxDailyVolumeBps));
-        else if (field == 2 && p.dailyLossBps > 200) p.dailyLossBps = uint16(bound(r, 200, p.dailyLossBps));
-        else if (field == 3 && p.maxSlippageBps > 50) p.maxSlippageBps = uint16(bound(r, 50, p.maxSlippageBps));
-        else if (field == 4 && p.minDefensiveBps < 5_000) p.minDefensiveBps = uint16(bound(r, p.minDefensiveBps, 5_000));
-        else if (field == 5 && p.maxLossStreak > 2) p.maxLossStreak = uint8(bound(r, 2, p.maxLossStreak));
-        else if (p.cooldown < 2 days) p.cooldown = uint32(bound(r, p.cooldown, 2 days));
-        _propose(p);
-    }
-
-    function applyPolicy(bool waitFirst) external {
-        uint64 eta = vault.pendingEta(vault.POLICY_CHANGE());
-        if (waitFirst && eta > block.timestamp) vm.warp(eta);
-        vm.prank(owner);
-        try vault.applyPolicy() {
-            applied++;
-            if (eta == 0 || block.timestamp < eta) appliedEarly = true;
-        } catch {}
-    }
-
-    function changeRule(uint256 assetSeed, uint256 seed) external {
-        address asset = tokens[assetSeed % 3];
-        seed = uint256(keccak256(abi.encode(seed)));
-        PolicyVault.AssetRule memory old = vault.getRule(asset);
-        PolicyVault.AssetRule memory rule = old;
-        (uint256 price,) = oracle.getPrice(asset);
-        uint256 r = seed >> 8;
-        if (seed % 5 == 0) rule.maxExposureBps = uint16(bound(r, old.maxExposureBps, 10_000));
-        else if (seed % 5 == 1) rule.maxExposureBps = uint16(bound(r, 1_000, 10_000));
-        else if (seed % 5 == 2) rule.stopPrice = bound(r, 0, price);
-        else if (seed % 5 == 3) rule.stopPrice = bound(r, old.stopPrice, old.stopPrice > price ? old.stopPrice : price);
-        else rule.defensive = !old.defensive;
-        _proposeRule(asset, rule);
-    }
-
-    function applyRule(uint256 assetSeed, bool waitFirst) external {
-        address asset = tokens[assetSeed % 3];
-        uint64 eta = vault.pendingEta(vault.ruleKey(asset));
-        if (waitFirst && eta > block.timestamp) vm.warp(eta);
-        vm.prank(owner);
-        try vault.applyAssetRule(asset) {
-            applied++;
-            if (eta == 0 || block.timestamp < eta) appliedEarly = true;
-        } catch {}
-    }
-
-    /// A panicking owner tries to let the agent buy the token that is pumping.
-    function tryToAllowTheMemeCoin() external {
-        bytes32 key = vault.ruleKey(tokens[3]);
-        vm.prank(owner);
-        try vault.proposeAssetRule(tokens[3], PolicyVault.AssetRule(true, true, 10_000, 0)) {} catch {}
-        if (vault.getRule(tokens[3]).allowed) loosenedInstantly = true;
-        // the guardian always vetoes this one, so the token stays off the allowlist for the whole run
-        vm.prank(guardian);
-        try vault.cancelChange(key) {
-            vetoed++;
-        } catch {}
-    }
-
-    /// Takes an asset off the allowlist (instant) or asks to put it back (waits).
-    function delistOrRelist(uint256 assetSeed) external {
-        address asset = tokens[assetSeed % 3];
-        PolicyVault.AssetRule memory rule = vault.getRule(asset);
-        rule.allowed = !rule.allowed;
-        _proposeRule(asset, rule);
-    }
-
-    /// "Don't sell, it will come back": the owner tries to switch the stop-loss off.
-    function ownerTriesToHaltTheStopLoss() external {
-        uint64 before = vault.stopLossHaltedUntil();
-        vm.prank(owner);
-        vault.haltStopLoss();
-        if (vault.stopLossHaltedUntil() != before) haltedWithoutWaiting = true;
-        queued++;
-    }
-
-    function applyHalt(bool waitFirst) external {
-        uint64 eta = vault.pendingEta(vault.HALT_CHANGE());
-        if (waitFirst && eta > block.timestamp) vm.warp(eta);
-        vm.prank(owner);
-        try vault.applyStopLossHalt() {
-            applied++;
-            if (eta == 0 || block.timestamp < eta) haltedWithoutWaiting = true;
-        } catch {}
-    }
-
-    /// The guardian's emergency halt, or either of them switching the stop-loss back on.
-    function guardianHaltsOrSomeoneResumes(uint256 seed) external {
-        seed = uint256(keccak256(abi.encode(seed)));
-        if (seed % 4 == 0) {
-            vm.prank(guardian);
-            vault.haltStopLoss();
-        } else {
-            vm.prank(seed % 2 == 0 ? owner : guardian);
-            vault.resumeStopLoss();
-        }
-    }
-
-    /// "Update your withdrawal address": the owner asks to send withdrawals somewhere else.
-    function askToMoveTheWithdrawalAddress(bool back) external {
-        address before = vault.withdrawalAddress();
-        vm.prank(owner);
-        vault.proposeWithdrawalAddress(back ? owner : secondAccount);
-        if (vault.withdrawalAddress() != before) withdrawalAddressMovedEarly = true;
-        queued++;
-    }
-
-    function applyWithdrawalAddress(bool waitFirst) external {
-        uint64 eta = vault.pendingEta(vault.WITHDRAWAL_CHANGE());
-        if (waitFirst && eta > block.timestamp) vm.warp(eta);
-        vm.prank(owner);
-        try vault.applyWithdrawalAddress() {
-            applied++;
-            if (eta == 0 || block.timestamp < eta) withdrawalAddressMovedEarly = true;
-        } catch {}
-    }
-
-    function guardianVetoes(uint256 seed) external {
-        bytes32[3] memory keys = [vault.POLICY_CHANGE(), vault.HALT_CHANGE(), vault.WITHDRAWAL_CHANGE()];
-        vm.prank(guardian);
-        try vault.cancelChange(keys[seed % 3]) {
-            vetoed++;
-        } catch {}
-    }
-
-    /// Mostly unpauses, so the run spends most of its time with a live agent.
-    function pauseOrUnpause(uint256 seed) external {
-        if (uint256(keccak256(abi.encode(seed))) % 6 == 0) {
-            vm.prank(guardian);
-            vault.pause();
-        } else {
-            vm.prank(owner);
-            vault.unpause();
-        }
-    }
-
-    function approveLatestRequest() external {
-        uint256 id = vault.requestCount();
-        if (id == 0) return;
-        PolicyVault.Request memory req = vault.getRequest(id);
-        bool wasProtected = vault.inProtectMode();
-        bool wasPaused = vault.paused();
-        vm.prank(owner);
-        try vault.approveRequest(id) {
-            if (wasPaused) approvedTradeBrokeARule = true;
-            if (req.isBuy) {
-                PolicyVault.AssetRule memory rule = vault.getRule(req.asset);
-                if (wasProtected || !rule.allowed || vault.exposureBps(req.asset) > rule.maxExposureBps) {
-                    approvedTradeBrokeARule = true;
-                }
-                if (!rule.defensive && vault.defensiveBps() < vault.getPolicy().minDefensiveBps) {
-                    approvedTradeBrokeARule = true;
-                }
-            }
-        } catch {}
-    }
-
-    function deposit(uint256 amount) external {
-        amount = bound(amount, 1, 5_000e6);
-        usd.mint(owner, amount);
-        vm.startPrank(owner);
-        usd.approve(address(vault), amount);
-        vault.deposit(address(usd), amount);
-        vm.stopPrank();
-    }
-
-    function withdraw(uint256 tokenSeed, uint256 amount) external {
-        address token = tokenSeed % 4 == 3 ? address(usd) : tokens[tokenSeed % 3];
-        uint256 held = vault.holdings(token);
-        if (held == 0) return;
-        vm.prank(owner);
-        vault.withdraw(token, bound(amount, 1, held / 4 + 1));
-    }
-
-    function _propose(PolicyVault.Policy memory p) internal {
-        PolicyVault.Policy memory old = vault.getPolicy();
-        vm.prank(owner);
-        try vault.proposePolicy(p) {} catch {
-            return;
-        }
-        PolicyVault.Policy memory cur = vault.getPolicy();
-        bool streakOk = cur.maxLossStreak == old.maxLossStreak
-            || (cur.maxLossStreak != 0 && (old.maxLossStreak == 0 || cur.maxLossStreak < old.maxLossStreak));
-        bool tighterOrSame = streakOk && cur.maxTradeBps <= old.maxTradeBps
-            && cur.maxDailyVolumeBps <= old.maxDailyVolumeBps && cur.dailyLossBps <= old.dailyLossBps
-            && cur.maxSlippageBps <= old.maxSlippageBps && cur.minDefensiveBps >= old.minDefensiveBps
-            && cur.cooldown >= old.cooldown;
-        if (!tighterOrSame) loosenedInstantly = true;
-        if (vault.pendingEta(vault.POLICY_CHANGE()) != 0) queued++;
-    }
-
-    function _proposeRule(address asset, PolicyVault.AssetRule memory rule) internal {
-        PolicyVault.AssetRule memory old = vault.getRule(asset);
-        vm.prank(owner);
-        try vault.proposeAssetRule(asset, rule) {} catch {
-            return;
-        }
-        PolicyVault.AssetRule memory cur = vault.getRule(asset);
-        bool tighterOrSame = (!cur.allowed || old.allowed) && (!cur.defensive || old.defensive)
-            && cur.maxExposureBps <= old.maxExposureBps && cur.stopPrice >= old.stopPrice;
-        if (!tighterOrSame) loosenedInstantly = true;
-        if (vault.pendingEta(vault.ruleKey(asset)) != 0) queued++;
     }
 }
 
@@ -651,10 +1013,12 @@ abstract contract InvariantFixture is VaultFixture {
         _buy(bond, 1_000 * USD);
         _buy(gold, 500 * USD);
         vm.prank(owner);
-        vault.proposeAssetRule(address(idx), PolicyVault.AssetRule(true, false, 5000, 85 * PRICE));
+        mandate.proposeAssetRule(address(idx), AssetRule(true, false, 5000, 85 * PRICE));
 
-        agentHandler = new CompromisedAgent(vault, usd, oracle, agent, attacker, tokens);
-        ownerHandler = new PanickingOwner(vault, usd, oracle, owner, guardian, tokens);
+        vm.prank(stranger);
+        (, PolicyVault decoy) = factory.createVault(address(0), LOOSEN_DELAY);
+        ownerHandler = new PanickingOwner(mandate, vault, usd, oracle, OWNER_KEY, guardian, agent, updater, tokens, factory, decoy);
+        agentHandler = new CompromisedAgent(ownerHandler, attacker);
         market = new MarketMoves(oracle, updater, tokens, ORACLE_INTERVAL);
         targetContract(address(agentHandler));
         targetContract(address(market));
@@ -670,7 +1034,7 @@ contract PolicyVaultInvariantTest is InvariantFixture {
 
     /// Nothing ever reaches the agent, the caller of a stop-loss, or anyone else.
     /// Every test dollar is in the vault, with the exchange, or at an address
-    /// the owner registered for withdrawals.
+    /// the owner registered for withdrawals. Stop-loss proceeds stay in the vault.
     function invariant_FundsOnlyLeaveToTheWithdrawalAddress() public view {
         address second = ownerHandler.secondAccount();
         assertEq(
@@ -683,18 +1047,19 @@ contract PolicyVaultInvariantTest is InvariantFixture {
             assertEq(a.totalSupply(), a.balanceOf(address(vault)) + a.balanceOf(owner) + a.balanceOf(second));
         }
         assertEq(usd.balanceOf(agent) + usd.balanceOf(attacker) + usd.balanceOf(address(agentHandler)), 0);
+        assertFalse(agentHandler.stopProceedsLeft());
     }
 
     /// The token off the allowlist is never bought, by any route.
     function invariant_NeverHoldsAnAssetOffTheAllowlist() public view {
         assertEq(meme.totalSupply(), 0);
         assertEq(vault.holdings(address(meme)), 0);
-        assertFalse(vault.getRule(address(meme)).allowed);
+        assertFalse(mandate.getRule(address(meme)).allowed);
         assertFalse(agentHandler.tradedOffAllowlist());
     }
 
-    /// After any agent buy, the asset is inside its exposure cap and enough is
-    /// left in cash and defensive assets.
+    /// After any agent buy, signed for by the owner or not, the asset is inside
+    /// its exposure cap and enough is left in cash and defensive assets.
     function invariant_PortfolioRulesHoldAfterEveryBuy() public view {
         assertFalse(agentHandler.exposureBroken());
         assertFalse(agentHandler.floorBroken());
@@ -717,34 +1082,59 @@ contract PolicyVaultInvariantTest is InvariantFixture {
         assertFalse(agentHandler.costBroken());
     }
 
-    /// The agent key cannot change the mandate, the keys, the pause state, the
-    /// stop-loss halt or the withdrawal address, and tokens sent to the vault
-    /// do not move its valuation.
+    /// The agent key can never withdraw, change the mandate or the keys, pause
+    /// or unpause, halt the stop-loss or move the withdrawal address, and
+    /// tokens sent to the vault do not move its valuation.
     function invariant_AgentCannotChangeTheRules() public view {
-        assertFalse(agentHandler.policyTouched());
-        assertEq(vault.agent(), agent);
-        assertEq(vault.guardian(), guardian);
+        assertFalse(agentHandler.rulesTouched());
+        assertEq(mandate.agent(), agent);
+        assertEq(mandate.guardian(), guardian);
+        assertEq(mandate.owner(), owner);
     }
 
     /// Threat B. Nothing that raises the risk takes effect before its waiting
     /// period: a looser mandate or asset rule, an owner's halt of the
-    /// stop-loss, or a new withdrawal address.
+    /// stop-loss, a new withdrawal address, a longer-lived or different agent
+    /// key, a shorter waiting period, lifting a guardian's pause, dropping the guardian.
     function invariant_RiskOnlyGoesUpAfterTheDelay() public view {
         assertFalse(ownerHandler.loosenedInstantly());
         assertFalse(ownerHandler.appliedEarly());
-        assertFalse(ownerHandler.haltedWithoutWaiting());
-        assertFalse(ownerHandler.withdrawalAddressMovedEarly());
+        assertFalse(ownerHandler.guardianVetoedOwnRemoval());
+        assertFalse(ownerHandler.newVaultSignedEarly());
+        assertFalse(ownerHandler.signedTwice());
     }
 
-    /// An owner-approved trade skips the size limits and nothing else.
-    function invariant_ApprovalDoesNotBypassRiskRules() public view {
-        assertFalse(ownerHandler.approvedTradeBrokeARule());
+    /// The owner can always take funds out, they arrive at the registered
+    /// address, and taking out everything ends the mandate.
+    function invariant_WithdrawalsGoToTheRegisteredAddress() public view {
+        assertFalse(ownerHandler.withdrawalMisdirected());
+        assertFalse(ownerHandler.terminationMissed());
+    }
+
+    /// Every change that lowers the risk takes effect in the same transaction.
+    function invariant_RiskGoesDownImmediately() public view {
+        assertFalse(ownerHandler.tighteningDelayed());
+    }
+
+    /// A signed approval works once, only exactly as signed, only inside its
+    /// time window of an hour at most, and lifts nothing but the two size limits.
+    function invariant_ApprovalsWorkOnceAndOnlyAsSigned() public view {
+        assertFalse(agentHandler.approvalBroken());
     }
 
     /// The stop-loss only fires at or below the stop price and outside a halt,
     /// and sells the whole holding.
     function invariant_StopLossOnlyFiresAtTheStopPrice() public view {
         assertFalse(agentHandler.stopFiredEarly());
+        // and when it is due it always fires, whether or not the agent is paused
+        assertFalse(agentHandler.stopRefusedWrongly());
+    }
+
+    /// A vault and its mandate are bound to each other for good, and neither copy can be set up twice.
+    function invariant_CopiesAreBoundOnceAndForGood() public view {
+        assertFalse(agentHandler.setUpAgain());
+        assertEq(address(vault.mandate()), address(mandate));
+        assertEq(mandate.vault(), address(vault));
     }
 
     /// The vault's books never claim more than it holds.
@@ -757,8 +1147,9 @@ contract PolicyVaultInvariantTest is InvariantFixture {
 
     function afterInvariant() public view {
         console.log("agent attempts", agentHandler.attempts(), "went through", agentHandler.trades());
+        console.log("approvals used", agentHandler.approvalsUsed(), "refused", agentHandler.approvalsRefused());
         console.log("risk increases queued", ownerHandler.queued(), "applied after the wait", ownerHandler.applied());
-        console.log("guardian vetoes", ownerHandler.vetoed());
+        console.log("risk cuts applied at once", ownerHandler.tightened(), "guardian vetoes", ownerHandler.vetoed());
         console.log("buys refused in protect mode", agentHandler.buysRefusedInProtectMode());
         console.log("stop-losses fired", agentHandler.stopLossesFired());
         _logRefusals("AssetNotAllowed", PolicyVault.AssetNotAllowed.selector);
@@ -770,7 +1161,8 @@ contract PolicyVaultInvariantTest is InvariantFixture {
         _logRefusals("CooldownActive", PolicyVault.CooldownActive.selector);
         _logRefusals("BelowStopPrice", PolicyVault.BelowStopPrice.selector);
         _logRefusals("StalePrice", PolicyVault.StalePrice.selector);
-        _logRefusals("WalletPaused", PolicyVault.WalletPaused.selector);
+        _logRefusals("AgentPaused", Mandate.AgentPaused.selector);
+        _logRefusals("AgentKeyExpired", Mandate.AgentKeyExpired.selector);
         _logRefusals("InsufficientBalance", PolicyVault.InsufficientBalance.selector);
         _logRefusals("ZeroAmount", PolicyVault.ZeroAmount.selector);
     }
@@ -786,18 +1178,17 @@ contract ExpiredAgentKeyInvariantTest is InvariantFixture {
 
     function setUp() public override {
         super.setUp();
-        vm.warp(vault.agentExpiry());
+        vm.warp(mandate.agentExpiry());
         market.wait(0);
         for (uint256 i = 0; i < 3; i++) {
             held[i] = vault.holdings(tokens[i]);
         }
     }
 
-    /// The key makes no trade and no request. Holdings can still fall, because
-    /// the stop-loss does not need the agent, but nothing is ever bought.
+    /// The key makes no trade, with or without an approval. Holdings can still
+    /// fall, because the stop-loss does not need the agent, but nothing is ever bought.
     function invariant_ExpiredKeyCanDoNothing() public view {
-        assertEq(agentHandler.trades(), 0);
-        assertEq(vault.requestCount(), 0);
+        assertEq(agentHandler.trades() + agentHandler.approvalsUsed(), 0);
         for (uint256 i = 0; i < 3; i++) {
             assertLe(vault.holdings(tokens[i]), held[i]);
         }
@@ -810,12 +1201,11 @@ contract RevokedAgentKeyInvariantTest is InvariantFixture {
     function setUp() public override {
         super.setUp();
         vm.prank(guardian);
-        vault.revokeAgent();
+        mandate.revokeAgent();
     }
 
     function invariant_RevokedKeyCanDoNothing() public view {
-        assertEq(agentHandler.trades(), 0);
-        assertEq(vault.requestCount(), 0);
-        assertEq(vault.agent(), address(0));
+        assertEq(agentHandler.trades() + agentHandler.approvalsUsed(), 0);
+        assertEq(mandate.agent(), address(0));
     }
 }

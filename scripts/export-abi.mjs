@@ -9,7 +9,9 @@ const abiOf = (name) =>
   JSON.parse(readFileSync(join(root, "contracts/out", `${name}.sol`, `${name}.json`), "utf8")).abi;
 
 const exports = {
+  mandateAbi: "Mandate",
   policyVaultAbi: "PolicyVault",
+  vaultFactoryAbi: "VaultFactory",
   priceOracleAbi: "PriceOracle",
   mockExchangeAbi: "MockExchange",
   mockAssetAbi: "MockAsset",

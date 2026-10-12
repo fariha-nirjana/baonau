@@ -19,6 +19,16 @@ export type AuditRecord = {
   risk: Verdict | null;
 };
 
+/**
+ * A decision not to act, logged like any action. It covers the agent declining
+ * a trade and the fail-safe cases: a model error, a timeout or output that
+ * could not be used all mean nothing is sent.
+ */
+export function logAbstention(what: string, reason: string, source: string) {
+  const record: AuditRecord = { at: new Date().toISOString(), tool: "abstain", args: { what }, reason, source, risk: null };
+  appendAudit({ ref: refOf(record), record, result: { ok: true, abstained: true } });
+}
+
 /** Attempted and completed actions alike are logged, including ones the contract reverted. */
 export type AuditEntry = { ref: Hex; record: AuditRecord; result: unknown };
 
