@@ -1,6 +1,0 @@
-[
-  { "id": "services-fee", "mandateId": 1, "label": "Student services fee", "amount": "250", "dueDate": "2026-10-16", "status": "due" },
-  { "id": "tuition-2", "mandateId": 1, "label": "Tuition instalment 2 of 3", "amount": "1500", "dueDate": "2026-10-20", "status": "due" },
-  { "id": "rent-nov", "mandateId": 2, "label": "Rent, November", "amount": "800", "dueDate": "2026-11-01", "status": "due" },
-  { "id": "tuition-3", "mandateId": 1, "label": "Tuition instalment 3 of 3", "amount": "1500", "dueDate": "2026-11-20", "status": "due" }
-]

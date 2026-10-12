@@ -2,6 +2,7 @@
 import { createInterface, type Interface } from "node:readline";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { runAgent } from "../lib/agent";
+import { readPlan } from "../lib/plan";
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 
@@ -31,7 +32,8 @@ function nextMessage(rl: Interface): Promise<string | null> {
 async function main() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const history: ChatCompletionMessageParam[] = [];
-  console.log("Agent wallet chat. Type a request, or 'exit' to quit. Pasted text can span several lines.\n");
+  const plan = readPlan();
+  console.log("Portfolio agent chat. Type a request, or 'exit' to quit. Pasted text can span several lines.\n");
 
   while (true) {
     const input = await nextMessage(rl);
@@ -40,7 +42,7 @@ async function main() {
 
     history.push({ role: "user", content: input });
     const reply = await runAgent(history, {
-      ctx: { source: "chat" },
+      ctx: { source: "chat", language: plan.language, currency: plan.currency },
       onEvent: (e) => {
         if (e.type === "tool_call") console.log(dim(`  tool ${e.name} ${e.args}`));
         else console.log(dim(`  -> ${JSON.stringify(e.result).slice(0, 400)}`));

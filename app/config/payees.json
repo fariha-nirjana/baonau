@@ -1,7 +1,0 @@
-{
-  "note": "Display names for mandate payees. The addresses themselves are read from the contract.",
-  "byMandateId": {
-    "1": "Northfield University",
-    "2": "Greenway Student Housing"
-  }
-}

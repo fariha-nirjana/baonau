@@ -1,5 +1,5 @@
 {
-  "name": "app",
+  "name": "pocketpilot-app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -12,7 +12,10 @@
     "chat": "tsx --env-file=../.env scripts/chat.ts",
     "ask": "tsx --env-file=../.env scripts/ask.ts",
     "test": "tsx --test lib/*.test.ts",
-    "doc": "tsx --env-file=../.env scripts/doc.ts"
+    "keeper": "tsx --env-file=../.env scripts/keeper.ts",
+    "attack": "tsx --env-file=../.env scripts/attack.ts",
+    "owner": "tsx --env-file=../.env scripts/owner.ts",
+    "autopilot": "tsx --env-file=../.env scripts/autopilot.ts"
   },
   "dependencies": {
     "next": "16.4.0",

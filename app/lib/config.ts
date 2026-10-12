@@ -7,10 +7,27 @@ const chainSchema = z.object({
   RPC_URL: z.string().url(),
   CHAIN_ID: z.coerce.number().int(),
   EXPLORER_URL: z.string().url(),
-  TOKEN_ADDRESS: address,
-  WALLET_ADDRESS: address,
-  // The agent holds only its own session key. The owner and guardian keys never reach this code path.
+  VAULT_ADDRESS: address,
+  USD_ADDRESS: address,
+  ORACLE_ADDRESS: address,
+  EXCHANGE_ADDRESS: address,
+  IDX_ADDRESS: address,
+  BOND_ADDRESS: address,
+  GOLD_ADDRESS: address,
+  MEME_ADDRESS: address,
+  // The agent holds only its own session key. The other keys never reach the agent's code path.
   AGENT_PRIVATE_KEY: privateKey,
+});
+
+/**
+ * Keys for the other roles. Only the demo scripts and the demo's "sign" buttons
+ * load these. In a real deployment the owner and guardian sign in their own
+ * wallets and these would not exist on the server.
+ */
+const roleSchema = z.object({
+  OWNER_PRIVATE_KEY: privateKey,
+  GUARDIAN_PRIVATE_KEY: privateKey,
+  ORACLE_UPDATER_PRIVATE_KEY: privateKey,
 });
 
 const llmSchema = z.object({
@@ -29,15 +46,21 @@ function parse<T>(schema: z.ZodType<T>, what: string): T {
 }
 
 let chain: z.infer<typeof chainSchema> | undefined;
+let roles: z.infer<typeof roleSchema> | undefined;
 let llm: z.infer<typeof llmSchema> | undefined;
 
 export function chainConfig() {
   return (chain ??= parse(chainSchema, "chain"));
 }
 
+export function roleKeys() {
+  return (roles ??= parse(roleSchema, "demo role key"));
+}
+
 export function llmConfig() {
   return (llm ??= parse(llmSchema, "model"));
 }
 
-export const TOKEN_DECIMALS = 6;
-export const TOKEN_SYMBOL = "tUSD";
+export const USD_DECIMALS = 6;
+export const USD_SYMBOL = "tUSD";
+export const PRICE_DECIMALS = 8;

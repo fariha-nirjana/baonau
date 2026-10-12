@@ -1,0 +1,7 @@
+{
+  "note": "Mock list of reported scam tokens for the demo. MEME_ADDRESS from the deployment is added to it at run time. A real deployment would query a token-screening provider.",
+  "entries": [
+    { "address": "0x000000000000000000000000000000000000dEaD", "label": "Demo: reported rug pull" },
+    { "address": "0x00000000000000000000000000000000DeaDBeef", "label": "Demo: fake copy of a known token" }
+  ]
+}
