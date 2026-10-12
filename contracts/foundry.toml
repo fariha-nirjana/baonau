@@ -19,3 +19,15 @@ runs = 512
 runs = 256
 depth = 64
 fail_on_revert = false
+
+[lint]
+lint_on_build = false
+
+# long run for the numbers quoted in the security report: FOUNDRY_PROFILE=deep forge test
+[profile.deep.fuzz]
+runs = 10000
+
+[profile.deep.invariant]
+runs = 1000
+depth = 250
+fail_on_revert = true

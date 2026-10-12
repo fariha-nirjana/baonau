@@ -23,8 +23,7 @@ print(d[0][sys.argv[1]])' "$1"
 owner="$(new_wallet)"
 guardian="$(new_wallet)"
 agent="$(new_wallet)"
-university="$(new_wallet)"
-landlord="$(new_wallet)"
+updater="$(new_wallet)"
 
 owner_key="$(field private_key <<<"$owner")"
 owner_addr="$(field address <<<"$owner")"
@@ -32,8 +31,8 @@ guardian_key="$(field private_key <<<"$guardian")"
 guardian_addr="$(field address <<<"$guardian")"
 agent_key="$(field private_key <<<"$agent")"
 agent_addr="$(field address <<<"$agent")"
-university_addr="$(field address <<<"$university")"
-landlord_addr="$(field address <<<"$landlord")"
+updater_key="$(field private_key <<<"$updater")"
+updater_addr="$(field address <<<"$updater")"
 
 umask 077
 cat > "$env_file" <<EOF
@@ -48,14 +47,21 @@ GUARDIAN_ADDRESS=$guardian_addr
 AGENT_PRIVATE_KEY=$agent_key
 AGENT_ADDRESS=$agent_addr
 
-UNIVERSITY_ADDRESS=$university_addr
-LANDLORD_ADDRESS=$landlord_addr
+ORACLE_UPDATER_PRIVATE_KEY=$updater_key
+ORACLE_UPDATER_ADDRESS=$updater_addr
 
-MANDATE_DELAY=120
 LOOSEN_DELAY=120
+MAX_PRICE_AGE=3600
+ORACLE_MIN_INTERVAL=4
 
-TOKEN_ADDRESS=
-WALLET_ADDRESS=
+USD_ADDRESS=
+ORACLE_ADDRESS=
+EXCHANGE_ADDRESS=
+IDX_ADDRESS=
+BOND_ADDRESS=
+GOLD_ADDRESS=
+MEME_ADDRESS=
+VAULT_ADDRESS=
 
 LLM_API_KEY=
 LLM_BASE_URL=https://api.deepseek.com
