@@ -9,7 +9,7 @@ import {VaultFixture} from "./utils/VaultFixture.sol";
 
 contract PolicyVaultTest is VaultFixture {
     function _rule(bool allowed, uint16 capBps, uint256 stopPrice) internal pure returns (PolicyVault.AssetRule memory) {
-        return PolicyVault.AssetRule(allowed, capBps, stopPrice);
+        return PolicyVault.AssetRule(allowed, false, capBps, stopPrice);
     }
 
     /// Three 10% drops take the index from 100 to 72.9, a 10.84% loss on the day for the portfolio.
@@ -74,9 +74,10 @@ contract PolicyVaultTest is VaultFixture {
 
         skip(1 days);
         _refreshPrices();
-        assertEq(vault.dailyVolumeRemaining(), MAX_DAILY);
+        // 30% of what the portfolio is worth on the new day, 9,991 after three fees
+        assertEq(vault.dailyVolumeRemaining(), 2_997_300_000);
         _buy(bond, 500 * USD);
-        assertEq(vault.dailyVolumeRemaining(), MAX_DAILY - 500 * USD);
+        assertEq(vault.dailyVolumeRemaining(), 2_997_300_000 - 500 * USD);
     }
 
     // ---------------- agent: blocked ----------------
@@ -138,15 +139,29 @@ contract PolicyVaultTest is VaultFixture {
     }
 
     function test_RevertWhen_OverTradeLimit() public {
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsTradeLimit.selector, MAX_TRADE + 1, MAX_TRADE));
-        _buy(idx, MAX_TRADE + 1);
+        // 11% of a 10,000 tUSD portfolio
+        uint256 limit = 1_100 * USD;
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsTradeLimit.selector, limit + 1, limit));
+        _buy(idx, limit + 1);
+        _buy(idx, limit);
+    }
+
+    function test_TradeLimitFollowsThePortfolioValue() public {
+        vm.prank(owner);
+        vault.withdraw(address(usd), 9_000 * USD);
+        // the same 11%, now of 1,000 tUSD
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsTradeLimit.selector, 111 * USD, 110 * USD));
+        _buy(idx, 111 * USD);
+        _buy(idx, 110 * USD);
+        // and the day's volume is 30% of it
+        assertEq(vault.dailyVolumeRemaining(), 300 * USD - 110 * USD);
     }
 
     function test_RevertWhen_SellOverTradeLimit() public {
         _buy(idx, 1_000 * USD);
         _buy(idx, 1_000 * USD);
-        // 19.94 units at 100 is 1,994 tUSD, above the 1,000 limit
-        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsTradeLimit.selector, 1_994 * USD, MAX_TRADE));
+        // 19.94 units at 100 is 1,994 tUSD, above 11% of the 9,994 the portfolio is worth
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsTradeLimit.selector, 1_994 * USD, 1_099_340_000));
         _sell(idx, 19.94e18);
     }
 
@@ -169,12 +184,16 @@ contract PolicyVaultTest is VaultFixture {
     }
 
     function test_RevertWhen_NotEnoughCash() public {
-        vm.prank(owner);
+        // an approved request has no size limit, so it can ask for more cash than there is
+        vm.prank(agent);
+        uint256 id = vault.requestTrade(address(bond), true, 600 * USD, REF);
+        vm.startPrank(owner);
         vault.withdraw(address(usd), FUNDS - 500 * USD);
         vm.expectRevert(
             abi.encodeWithSelector(PolicyVault.InsufficientBalance.selector, address(usd), 600 * USD, 500 * USD)
         );
-        _buy(bond, 600 * USD);
+        vault.approveRequest(id);
+        vm.stopPrank();
     }
 
     function test_RevertWhen_SellingMoreThanHeld() public {
@@ -223,7 +242,8 @@ contract PolicyVaultTest is VaultFixture {
         address[] memory none = new address[](0);
         PolicyVault.AssetRule[] memory noRules = new PolicyVault.AssetRule[](0);
         PolicyVault.Policy memory loose = _policy();
-        loose.maxTradeUsd = type(uint256).max;
+        loose.maxTradeBps = 10_000;
+        bytes32 policyKey = vault.POLICY_CHANGE();
 
         vm.startPrank(agent);
         vm.expectRevert(PolicyVault.NotOwner.selector);
@@ -243,6 +263,12 @@ contract PolicyVaultTest is VaultFixture {
         vm.expectRevert(PolicyVault.NotOwner.selector);
         vault.applyAssetRule(address(meme));
         vm.expectRevert(PolicyVault.NotOwner.selector);
+        vault.proposeWithdrawalAddress(agent);
+        vm.expectRevert(PolicyVault.NotOwner.selector);
+        vault.applyWithdrawalAddress();
+        vm.expectRevert(PolicyVault.NotOwner.selector);
+        vault.applyStopLossHalt();
+        vm.expectRevert(PolicyVault.NotOwner.selector);
         vault.approveRequest(1);
         vm.expectRevert(PolicyVault.NotOwner.selector);
         vault.setAgent(agent, uint64(block.timestamp + 90 days));
@@ -253,7 +279,11 @@ contract PolicyVaultTest is VaultFixture {
         vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
         vault.pause();
         vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
-        vault.cancelPolicy();
+        vault.haltStopLoss();
+        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
+        vault.resumeStopLoss();
+        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
+        vault.cancelChange(policyKey);
         vm.expectRevert(PolicyVault.NotGuardian.selector);
         vault.transferGuardian(agent);
         vm.stopPrank();
@@ -334,7 +364,7 @@ contract PolicyVaultTest is VaultFixture {
         assertEq(vault.cooldownUntil(), 0);
 
         vm.expectEmit(true, true, true, true);
-        emit PolicyVault.ProtectModeEntered(1084, uint64(block.timestamp + COOLDOWN));
+        emit PolicyVault.ProtectModeEntered(PolicyVault.Trigger.DailyLoss, 1084, uint64(block.timestamp + COOLDOWN));
         vm.prank(stranger);
         vault.poke();
         assertEq(vault.cooldownUntil(), block.timestamp + COOLDOWN);
@@ -419,6 +449,90 @@ contract PolicyVaultTest is VaultFixture {
         assertEq(usd.balanceOf(address(vault)), vault.holdings(address(usd)));
     }
 
+    // ---------------- minimum defensive share ----------------
+
+    function test_RevertWhen_BuyLeavesTooLittleInDefensiveAssets() public {
+        PolicyVault.Policy memory p = _policy();
+        p.minDefensiveBps = 7000;
+        vm.prank(owner);
+        vault.proposePolicy(p);
+
+        _buy(idx, 1_000 * USD);
+        _buy(idx, 1_000 * USD);
+        _buy(idx, 1_000 * USD);
+        assertEq(vault.defensiveBps(), 7006);
+        skip(1 days);
+        _refreshPrices();
+        // a fourth buy would leave 6,000 of 9,988 in cash
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.BelowDefensiveFloor.selector, 6007, 7000));
+        _buy(idx, 1_000 * USD);
+        // the bond fund is defensive, so buying it is still fine and only the fee moves the share
+        _buy(bond, 1_000 * USD);
+        assertEq(vault.defensiveBps(), 7005);
+    }
+
+    function test_DefensiveShareCountsCashAndDefensiveAssets() public {
+        _buy(bond, 1_000 * USD);
+        _buy(bond, 1_000 * USD);
+        _buy(gold, 1_000 * USD);
+        // 7,000 cash plus 1,994 in the bond fund, of 9,991
+        assertEq(vault.defensiveBps(), 9002);
+    }
+
+    function test_MarkingAnAssetDefensiveWaits_UnmarkingIsInstant() public {
+        vm.startPrank(owner);
+        vault.proposeAssetRule(address(gold), PolicyVault.AssetRule(true, true, 2000, 0));
+        assertFalse(vault.getRule(address(gold)).defensive);
+        assertEq(vault.pendingEta(vault.ruleKey(address(gold))), block.timestamp + LOOSEN_DELAY);
+
+        vault.proposeAssetRule(address(bond), PolicyVault.AssetRule(true, false, 6000, 0));
+        assertFalse(vault.getRule(address(bond)).defensive);
+        vm.stopPrank();
+    }
+
+    // ---------------- loss streak ----------------
+
+    function test_ThreeLosingSellsInARowStartACooldown() public {
+        _buy(idx, 1_000 * USD);
+        // selling at the price just paid loses the two fees
+        _sell(idx, 2e18);
+        _sell(idx, 2e18);
+        assertEq(vault.lossStreak(), 2);
+        assertEq(vault.cooldownUntil(), 0);
+
+        vm.expectEmit(true, true, true, true);
+        emit PolicyVault.ProtectModeEntered(PolicyVault.Trigger.LossStreak, 0, uint64(block.timestamp + COOLDOWN));
+        _sell(idx, 2e18);
+        assertEq(vault.lossStreak(), 0);
+
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.CooldownActive.selector, block.timestamp + COOLDOWN));
+        _buy(bond, 100 * USD);
+        // selling is never blocked
+        _sell(idx, 1e18);
+    }
+
+    function test_AWinningSellResetsTheLossStreak() public {
+        _buy(idx, 1_000 * USD);
+        _sell(idx, 2e18);
+        _sell(idx, 2e18);
+        assertEq(vault.lossStreak(), 2);
+
+        _setPrice(idx, 110 * PRICE);
+        _sell(idx, 2e18);
+        assertEq(vault.lossStreak(), 0);
+        assertEq(vault.cooldownUntil(), 0);
+    }
+
+    function test_CostBasisFollowsBuysSellsAndWithdrawals() public {
+        _buy(idx, 1_000 * USD);
+        assertEq(vault.costBasis(address(idx)), 1_000 * USD);
+        _sell(idx, 4.985e18);
+        assertEq(vault.costBasis(address(idx)), 500 * USD);
+        vm.prank(owner);
+        vault.withdraw(address(idx), 4.985e18);
+        assertEq(vault.costBasis(address(idx)), 0);
+    }
+
     // ---------------- stop-loss ----------------
 
     function test_AnyoneCanTriggerStopLoss() public {
@@ -429,6 +543,8 @@ contract PolicyVaultTest is VaultFixture {
 
         vm.expectEmit(true, true, true, true);
         emit PolicyVault.StopLossTriggered(address(idx), 39.88e18, 3_578_432_400, 90 * PRICE, stranger);
+        vm.expectEmit(true, true, true, true);
+        emit PolicyVault.ProtectModeEntered(PolicyVault.Trigger.StopLoss, 0, uint64(block.timestamp + COOLDOWN));
         vm.prank(stranger);
         uint256 out = vault.triggerStopLoss(address(idx));
 
@@ -489,14 +605,97 @@ contract PolicyVaultTest is VaultFixture {
         vault.triggerStopLoss(address(idx));
     }
 
-    function test_RevertWhen_StopLossWhilePaused() public {
+    /// Threat B: an owner who pauses in a crash does not switch off their own protection.
+    function test_StopLossStillFiresWhileTheAgentIsPaused() public {
+        _setStop(90 * PRICE);
+        _holdIndex();
+        _setPrice(idx, 90 * PRICE);
+        vm.prank(owner);
+        vault.pause();
+
+        vm.prank(stranger);
+        vault.triggerStopLoss(address(idx));
+        assertEq(vault.holdings(address(idx)), 0);
+    }
+
+    function test_OwnerHaltOfTheStopLossWaits() public {
+        _setStop(90 * PRICE);
+        _holdIndex();
+        _setPrice(idx, 90 * PRICE);
+
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit PolicyVault.StopLossHaltProposed(uint64(block.timestamp) + LOOSEN_DELAY);
+        vault.haltStopLoss();
+        assertEq(vault.stopLossHaltedUntil(), 0);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        vault.applyStopLossHalt();
+        vm.stopPrank();
+
+        // so the stop-loss the owner wanted to stop still fires
+        vm.prank(stranger);
+        vault.triggerStopLoss(address(idx));
+        assertEq(vault.holdings(address(idx)), 0);
+    }
+
+    function test_OwnerHaltAppliesAfterTheDelay_UnlessTheGuardianVetoes() public {
+        bytes32 key = vault.HALT_CHANGE();
+        vm.prank(owner);
+        vault.haltStopLoss();
+        uint256 snap = vm.snapshotState();
+
+        skip(LOOSEN_DELAY);
+        vm.prank(owner);
+        vault.applyStopLossHalt();
+        assertEq(vault.stopLossHaltedUntil(), block.timestamp + 3 days);
+
+        vm.revertToState(snap);
+        vm.prank(guardian);
+        vault.cancelChange(key);
+        skip(LOOSEN_DELAY);
+        vm.expectRevert(PolicyVault.NoPendingChange.selector);
+        vm.prank(owner);
+        vault.applyStopLossHalt();
+        assertEq(vault.stopLossHaltedUntil(), 0);
+    }
+
+    /// The guardian's emergency brake, for a price feed that has gone wrong.
+    function test_GuardianHaltsTheStopLossAtOnce() public {
+        _setStop(90 * PRICE);
+        _holdIndex();
+        _setPrice(idx, 90 * PRICE);
+
+        vm.prank(guardian);
+        vault.haltStopLoss();
+        uint64 until = uint64(block.timestamp + 3 days);
+        assertEq(vault.stopLossHaltedUntil(), until);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.StopLossIsHalted.selector, until));
+        vault.triggerStopLoss(address(idx));
+
+        // resuming makes the vault stricter, so it is instant for either of them
+        vm.prank(owner);
+        vault.resumeStopLoss();
+        vault.triggerStopLoss(address(idx));
+        assertEq(vault.holdings(address(idx)), 0);
+    }
+
+    function test_AHaltLapsesOnItsOwn() public {
         _setStop(90 * PRICE);
         _holdIndex();
         _setPrice(idx, 90 * PRICE);
         vm.prank(guardian);
-        vault.pause();
-        vm.expectRevert(PolicyVault.WalletPaused.selector);
+        vault.haltStopLoss();
+
+        skip(3 days);
+        _refreshPrices();
         vault.triggerStopLoss(address(idx));
+        assertEq(vault.holdings(address(idx)), 0);
+    }
+
+    function test_RevertWhen_StrangerHaltsTheStopLoss() public {
+        vm.expectRevert(PolicyVault.NotOwnerOrGuardian.selector);
+        vm.prank(stranger);
+        vault.haltStopLoss();
     }
 
     function test_RevertWhen_BuyingAtOrBelowStopPrice() public {
@@ -522,34 +721,37 @@ contract PolicyVaultTest is VaultFixture {
 
         _setStop(50 * PRICE);
         assertEq(vault.getRule(address(idx)).stopPrice, 95 * PRICE);
-        assertEq(vault.getPendingRule(address(idx)).eta, block.timestamp + LOOSEN_DELAY);
+        assertEq(vault.pendingEta(vault.ruleKey(address(idx))), block.timestamp + LOOSEN_DELAY);
+        assertEq(vault.getPendingRule(address(idx)).stopPrice, 50 * PRICE);
     }
 
     // ---------------- policy changes: stricter is instant, looser waits ----------------
 
     function test_TighteningPolicyIsInstant() public {
         PolicyVault.Policy memory p = _policy();
-        p.maxTradeUsd = 200 * USD;
+        p.maxTradeBps = 200;
         p.dailyLossBps = 300;
+        p.minDefensiveBps = 5000;
+        p.maxLossStreak = 2;
         p.cooldown = 1 days;
         vm.prank(owner);
         vault.proposePolicy(p);
 
-        assertEq(vault.getPolicy().maxTradeUsd, 200 * USD);
-        assertEq(vault.getPolicy().dailyLossBps, 300);
-        assertEq(vault.getPolicy().cooldown, 1 days);
+        assertEq(keccak256(abi.encode(vault.getPolicy())), keccak256(abi.encode(p)));
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.ExceedsTradeLimit.selector, 201 * USD, 200 * USD));
         _buy(idx, 201 * USD);
     }
 
     function test_LooseningPolicyWaitsForTheDelay() public {
+        bytes32 key = vault.POLICY_CHANGE();
         PolicyVault.Policy memory p = _policy();
         p.dailyLossBps = 5000;
         vm.startPrank(owner);
         vault.proposePolicy(p);
         assertEq(vault.getPolicy().dailyLossBps, DAILY_LOSS_BPS);
         uint64 eta = uint64(block.timestamp) + LOOSEN_DELAY;
-        assertEq(vault.getPendingPolicy().eta, eta);
+        assertEq(vault.pendingEta(key), eta);
+        assertEq(vault.getPendingPolicy().dailyLossBps, 5000);
 
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.ChangeNotReady.selector, eta));
         vault.applyPolicy();
@@ -558,21 +760,31 @@ contract PolicyVaultTest is VaultFixture {
         vault.applyPolicy();
         vm.stopPrank();
         assertEq(vault.getPolicy().dailyLossBps, 5000);
-        assertEq(vault.getPendingPolicy().eta, 0);
+        assertEq(vault.pendingEta(key), 0);
     }
 
     function test_EveryLooseningDirectionWaits() public {
         PolicyVault.Policy memory p = _policy();
-        p.maxTradeUsd += 1;
+        p.maxTradeBps += 1;
         _expectQueued(p);
         p = _policy();
-        p.maxDailyVolumeUsd += 1;
+        p.maxDailyVolumeBps += 1;
         _expectQueued(p);
         p = _policy();
         p.dailyLossBps += 1;
         _expectQueued(p);
         p = _policy();
         p.maxSlippageBps += 1;
+        _expectQueued(p);
+        p = _policy();
+        p.minDefensiveBps -= 1;
+        _expectQueued(p);
+        p = _policy();
+        p.maxLossStreak += 1;
+        _expectQueued(p);
+        // zero switches the streak rule off
+        p = _policy();
+        p.maxLossStreak = 0;
         _expectQueued(p);
         p = _policy();
         p.cooldown -= 1;
@@ -583,37 +795,41 @@ contract PolicyVaultTest is VaultFixture {
         vm.prank(owner);
         vault.proposePolicy(p);
         assertEq(keccak256(abi.encode(vault.getPolicy())), keccak256(abi.encode(_policy())));
-        assertEq(vault.getPendingPolicy().eta, block.timestamp + LOOSEN_DELAY);
+        assertEq(vault.pendingEta(vault.POLICY_CHANGE()), block.timestamp + LOOSEN_DELAY);
     }
 
     function test_MixedPolicyChangeWaitsAsAWhole() public {
         PolicyVault.Policy memory p = _policy();
-        p.maxTradeUsd = 100 * USD;
+        p.maxTradeBps = 100;
         p.dailyLossBps = 2000;
         _expectQueued(p);
     }
 
+    /// Threat B: after a loss the owner tries to triple the risk limit. The guardian says no.
     function test_GuardianCanVetoLoosening() public {
+        bytes32 key = vault.POLICY_CHANGE();
         PolicyVault.Policy memory p = _policy();
-        p.maxTradeUsd = 50_000 * USD;
+        p.dailyLossBps = DAILY_LOSS_BPS * 3;
         vm.prank(owner);
         vault.proposePolicy(p);
 
+        vm.expectEmit(true, true, true, true);
+        emit PolicyVault.ChangeCancelled(key, guardian);
         vm.prank(guardian);
-        vault.cancelPolicy();
+        vault.cancelChange(key);
 
         vm.warp(block.timestamp + LOOSEN_DELAY);
         vm.expectRevert(PolicyVault.NoPendingChange.selector);
         vm.prank(owner);
         vault.applyPolicy();
-        assertEq(vault.getPolicy().maxTradeUsd, MAX_TRADE);
+        assertEq(vault.getPolicy().dailyLossBps, DAILY_LOSS_BPS);
     }
 
     function test_TighteningClearsAPendingLoosening() public {
         PolicyVault.Policy memory loose = _policy();
-        loose.maxTradeUsd = 50_000 * USD;
+        loose.maxTradeBps = 9000;
         PolicyVault.Policy memory tight = _policy();
-        tight.maxTradeUsd = 100 * USD;
+        tight.maxTradeBps = 100;
         vm.startPrank(owner);
         vault.proposePolicy(loose);
         vault.proposePolicy(tight);
@@ -621,24 +837,28 @@ contract PolicyVaultTest is VaultFixture {
         vm.expectRevert(PolicyVault.NoPendingChange.selector);
         vault.applyPolicy();
         vm.stopPrank();
-        assertEq(vault.getPolicy().maxTradeUsd, 100 * USD);
+        assertEq(vault.getPolicy().maxTradeBps, 100);
     }
 
     function test_RevertWhen_PolicyIsInvalid() public {
         PolicyVault.Policy memory p = _policy();
         p.dailyLossBps = 10_001;
-        vm.expectRevert(PolicyVault.InvalidPolicy.selector);
-        vm.prank(owner);
-        vault.proposePolicy(p);
-
+        _expectInvalid(p);
+        p = _policy();
+        p.maxTradeBps = 10_001;
+        _expectInvalid(p);
+        p = _policy();
+        p.minDefensiveBps = 10_001;
+        _expectInvalid(p);
         p = _policy();
         p.maxSlippageBps = 501;
-        vm.expectRevert(PolicyVault.InvalidPolicy.selector);
-        vm.prank(owner);
-        vault.proposePolicy(p);
-
+        _expectInvalid(p);
         p = _policy();
         p.cooldown = 30 days + 1;
+        _expectInvalid(p);
+    }
+
+    function _expectInvalid(PolicyVault.Policy memory p) internal {
         vm.expectRevert(PolicyVault.InvalidPolicy.selector);
         vm.prank(owner);
         vault.proposePolicy(p);
@@ -677,8 +897,9 @@ contract PolicyVaultTest is VaultFixture {
         vm.expectRevert(abi.encodeWithSelector(PolicyVault.AssetNotAllowed.selector, address(meme)));
         _buy(meme, 100 * USD);
 
+        bytes32 key = vault.ruleKey(address(meme));
         vm.prank(guardian);
-        vault.cancelAssetRule(address(meme));
+        vault.cancelChange(key);
         vm.warp(block.timestamp + LOOSEN_DELAY);
         vm.expectRevert(PolicyVault.NoPendingChange.selector);
         vm.prank(owner);
@@ -764,6 +985,8 @@ contract PolicyVaultTest is VaultFixture {
         vault.approveRequest(1);
         vm.expectRevert(PolicyVault.NotOwner.selector);
         vault.setAgent(attacker, uint64(block.timestamp + 1 days));
+        vm.expectRevert(PolicyVault.NotOwner.selector);
+        vault.proposeWithdrawalAddress(guardian);
         vm.expectRevert(PolicyVault.NotAgent.selector);
         vault.buy(address(idx), 1 * USD, REF);
 
@@ -840,6 +1063,55 @@ contract PolicyVaultTest is VaultFixture {
         assertEq(idx.balanceOf(owner), 9.97e18);
         assertEq(vault.holdings(address(usd)), 7_000 * USD);
         assertEq(vault.holdings(address(idx)), 0);
+    }
+
+    /// A new withdrawal address always waits, whoever asked for it and however urgent it sounds.
+    function test_ChangingTheWithdrawalAddressWaits() public {
+        address elsewhere = makeAddr("new address");
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit PolicyVault.WithdrawalAddressProposed(elsewhere, uint64(block.timestamp) + LOOSEN_DELAY);
+        vault.proposeWithdrawalAddress(elsewhere);
+        assertEq(vault.withdrawalAddress(), owner);
+
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.ChangeNotReady.selector, block.timestamp + LOOSEN_DELAY));
+        vault.applyWithdrawalAddress();
+        // until then, money still goes to the old address
+        vault.withdraw(address(usd), 100 * USD);
+        assertEq(usd.balanceOf(owner), 100 * USD);
+        assertEq(usd.balanceOf(elsewhere), 0);
+
+        skip(LOOSEN_DELAY);
+        vault.applyWithdrawalAddress();
+        vault.withdraw(address(usd), 100 * USD);
+        vm.stopPrank();
+        assertEq(vault.withdrawalAddress(), elsewhere);
+        assertEq(usd.balanceOf(elsewhere), 100 * USD);
+    }
+
+    function test_GuardianCanVetoAWithdrawalAddressChange() public {
+        bytes32 key = vault.WITHDRAWAL_CHANGE();
+        vm.prank(owner);
+        vault.proposeWithdrawalAddress(attacker);
+        vm.prank(guardian);
+        vault.cancelChange(key);
+
+        skip(LOOSEN_DELAY);
+        vm.expectRevert(PolicyVault.NoPendingChange.selector);
+        vm.prank(owner);
+        vault.applyWithdrawalAddress();
+        assertEq(vault.withdrawalAddress(), owner);
+    }
+
+    function test_RevertWhen_WithdrawalAddressIsInvalid() public {
+        vm.startPrank(owner);
+        vm.expectRevert(PolicyVault.ZeroAddress.selector);
+        vault.proposeWithdrawalAddress(address(0));
+        vm.expectRevert(PolicyVault.InvalidAgent.selector);
+        vault.proposeWithdrawalAddress(agent);
+        vm.expectRevert(PolicyVault.InvalidAgent.selector);
+        vault.proposeWithdrawalAddress(address(vault));
+        vm.stopPrank();
     }
 
     function test_RevertWhen_WithdrawingMoreThanHeld() public {
@@ -991,17 +1263,20 @@ contract PolicyVaultTest is VaultFixture {
         return all[seed % 4];
     }
 
-    /// Whatever the agent buys, the asset is on the allowlist and inside its cap afterwards.
-    function testFuzz_BuyNeverBreaksAllowlistOrExposureCap(uint256 seed, uint256 usdIn, uint8 rounds) public {
+    /// Whatever the agent buys, the trade is inside the size limit, the asset is on the
+    /// allowlist and inside its cap, and enough is left in defensive assets.
+    function testFuzz_BuyStaysInsideTheMandate(uint256 seed, uint256 usdIn, uint8 rounds) public {
         rounds = uint8(bound(rounds, 1, 6));
         for (uint256 i = 0; i < rounds; i++) {
             MockAsset asset = _pick(uint256(keccak256(abi.encode(seed, i))));
-            uint256 amount = bound(uint256(keccak256(abi.encode(usdIn, i))), 0, 2 * MAX_TRADE);
+            uint256 amount = bound(uint256(keccak256(abi.encode(usdIn, i))), 0, 2_200 * USD);
+            uint256 limit = vault.portfolioValue() * MAX_TRADE_BPS / 10_000;
             vm.prank(agent);
             try vault.buy(address(asset), amount, REF) {
                 assertTrue(vault.getRule(address(asset)).allowed);
                 assertLe(vault.exposureBps(address(asset)), vault.getRule(address(asset)).maxExposureBps);
-                assertLe(amount, MAX_TRADE);
+                assertGe(vault.defensiveBps(), MIN_DEFENSIVE_BPS);
+                assertLe(amount, limit);
             } catch {}
         }
         assertEq(vault.holdings(address(meme)), 0);
@@ -1010,7 +1285,7 @@ contract PolicyVaultTest is VaultFixture {
 
     /// A trade never costs more against the oracle price than the slippage limit allows.
     function testFuzz_TradeCostIsBounded(uint256 usdIn, uint256 sellShare) public {
-        usdIn = bound(usdIn, 1, MAX_TRADE);
+        usdIn = bound(usdIn, 1, 1_000 * USD);
         uint256 before = vault.portfolioValue();
         uint256 bought = _buy(idx, usdIn);
         uint256 afterBuy = vault.portfolioValue();
@@ -1032,7 +1307,7 @@ contract PolicyVaultTest is VaultFixture {
             uint256 usdBefore = vault.holdings(address(usd));
             vm.prank(agent);
             if (r % 2 == 0) {
-                try vault.buy(address(asset), bound(r >> 16, 0, MAX_TRADE), REF) {
+                try vault.buy(address(asset), bound(r >> 16, 0, 1_000 * USD), REF) {
                     volume += usdBefore - vault.holdings(address(usd));
                 } catch {}
             } else {
@@ -1046,31 +1321,36 @@ contract PolicyVaultTest is VaultFixture {
         assertEq(usd.balanceOf(agent), 0);
     }
 
-    /// Any policy the owner proposes either tightens every field and applies now, or changes nothing yet.
-    function testFuzz_PolicyChangeIsTighterOrQueued(uint256 a, uint256 b, uint16 c, uint16 d, uint32 e) public {
+    /// Any mandate the owner proposes either tightens every field and applies now, or changes nothing yet.
+    function testFuzz_PolicyChangeIsTighterOrQueued(uint16[5] memory bps, uint8 streak, uint32 cooldown) public {
         PolicyVault.Policy memory p = PolicyVault.Policy({
-            maxTradeUsd: a,
-            maxDailyVolumeUsd: b,
-            dailyLossBps: uint16(bound(c, 0, 10_000)),
-            maxSlippageBps: uint16(bound(d, 0, 500)),
-            cooldown: uint32(bound(e, 0, 30 days))
+            maxTradeBps: uint16(bound(bps[0], 0, 10_000)),
+            maxDailyVolumeBps: bps[1],
+            dailyLossBps: uint16(bound(bps[2], 0, 10_000)),
+            maxSlippageBps: uint16(bound(bps[3], 0, 500)),
+            minDefensiveBps: uint16(bound(bps[4], 0, 10_000)),
+            maxLossStreak: streak,
+            cooldown: uint32(bound(cooldown, 0, 30 days))
         });
         PolicyVault.Policy memory old = _policy();
         vm.prank(owner);
         vault.proposePolicy(p);
 
         PolicyVault.Policy memory cur = vault.getPolicy();
+        uint64 eta = vault.pendingEta(vault.POLICY_CHANGE());
         if (keccak256(abi.encode(cur)) == keccak256(abi.encode(old))) {
             bool unchanged = keccak256(abi.encode(p)) == keccak256(abi.encode(old));
-            assertTrue(unchanged || vault.getPendingPolicy().eta == block.timestamp + LOOSEN_DELAY);
+            assertTrue(unchanged || eta == block.timestamp + LOOSEN_DELAY);
         } else {
             assertEq(keccak256(abi.encode(cur)), keccak256(abi.encode(p)));
-            assertLe(cur.maxTradeUsd, old.maxTradeUsd);
-            assertLe(cur.maxDailyVolumeUsd, old.maxDailyVolumeUsd);
+            assertLe(cur.maxTradeBps, old.maxTradeBps);
+            assertLe(cur.maxDailyVolumeBps, old.maxDailyVolumeBps);
             assertLe(cur.dailyLossBps, old.dailyLossBps);
             assertLe(cur.maxSlippageBps, old.maxSlippageBps);
+            assertGe(cur.minDefensiveBps, old.minDefensiveBps);
+            assertTrue(cur.maxLossStreak != 0 && cur.maxLossStreak <= old.maxLossStreak);
             assertGe(cur.cooldown, old.cooldown);
-            assertEq(vault.getPendingPolicy().eta, 0);
+            assertEq(eta, 0);
         }
     }
 }

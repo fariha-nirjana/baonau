@@ -6,7 +6,8 @@ solc = "0.8.28"
 # paris keeps the bytecode free of newer opcodes, so it also runs on older EVM chains
 evm_version = "paris"
 optimizer = true
-optimizer_runs = 200
+# low on purpose: PolicyVault is close to the 24 KB contract size limit, and size matters more here than gas
+optimizer_runs = 1
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",

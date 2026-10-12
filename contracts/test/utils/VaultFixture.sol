@@ -30,10 +30,15 @@ abstract contract VaultFixture is Test {
     uint256 constant USD = 1e6;
     uint256 constant PRICE = 1e8;
     uint256 constant FUNDS = 10_000 * USD;
-    uint256 constant MAX_TRADE = 1_000 * USD;
+    // 11% per trade, so a 1,000 tUSD trade still fits after fees have shaved the portfolio
+    uint16 constant MAX_TRADE_BPS = 1100;
+    uint16 constant MAX_DAILY_BPS = 3000;
+    // 30% of the 10,000 deposited
     uint256 constant MAX_DAILY = 3_000 * USD;
     uint16 constant DAILY_LOSS_BPS = 800;
     uint16 constant SLIPPAGE_BPS = 100;
+    uint16 constant MIN_DEFENSIVE_BPS = 2500;
+    uint8 constant MAX_LOSS_STREAK = 3;
     uint32 constant COOLDOWN = 6 hours;
     uint256 constant FEE_BPS = 30;
     uint64 constant LOOSEN_DELAY = 1 days;
@@ -64,9 +69,10 @@ abstract contract VaultFixture is Test {
         assets[1] = address(bond);
         assets[2] = address(gold);
         PolicyVault.AssetRule[] memory rules = new PolicyVault.AssetRule[](3);
-        rules[0] = PolicyVault.AssetRule(true, 5000, 0);
-        rules[1] = PolicyVault.AssetRule(true, 6000, 0);
-        rules[2] = PolicyVault.AssetRule(true, 2000, 0);
+        rules[0] = PolicyVault.AssetRule(true, false, 5000, 0);
+        // the bond fund is the defensive asset
+        rules[1] = PolicyVault.AssetRule(true, true, 6000, 0);
+        rules[2] = PolicyVault.AssetRule(true, false, 2000, 0);
 
         usd.mint(owner, FUNDS);
         vm.startPrank(owner);
@@ -79,10 +85,12 @@ abstract contract VaultFixture is Test {
 
     function _policy() internal pure returns (PolicyVault.Policy memory) {
         return PolicyVault.Policy({
-            maxTradeUsd: MAX_TRADE,
-            maxDailyVolumeUsd: MAX_DAILY,
+            maxTradeBps: MAX_TRADE_BPS,
+            maxDailyVolumeBps: MAX_DAILY_BPS,
             dailyLossBps: DAILY_LOSS_BPS,
             maxSlippageBps: SLIPPAGE_BPS,
+            minDefensiveBps: MIN_DEFENSIVE_BPS,
+            maxLossStreak: MAX_LOSS_STREAK,
             cooldown: COOLDOWN
         });
     }
