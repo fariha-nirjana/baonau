@@ -30,7 +30,7 @@ test("a reverted transaction keeps its link and the contract's reason", () => {
   );
   assert.equal(r.outcome, "reverted by the contract");
   assert.match(r.actor, /COMPROMISED AGENT/);
-  assert.equal(r.what, "Tried to Send the cash to the attacker");
+  assert.equal(r.what, "Tried to send the cash to the attacker");
   assert.equal(r.url, "https://example/tx/0x1");
   assert.match(r.refusal ?? "", /owner key/);
 });
@@ -38,7 +38,7 @@ test("a reverted transaction keeps its link and the contract's reason", () => {
 test("a queued change is shown as waiting, not as done", () => {
   const r = receiptOf(entry("owner", "change_mandate", { ok: true, url: "u", events: [{ name: "PolicyProposed", args: { eta: "1791831888" } }] }));
   assert.equal(r.outcome, "waiting out the delay");
-  assert.match(r.what, /Mandate change queued until 2026/);
+  assert.match(r.what, /^Mandate change signed, waiting until \d\d:\d\d UTC$/);
 });
 
 test("price updates are left out of the activity list, newest first", () => {

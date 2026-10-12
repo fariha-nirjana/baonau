@@ -256,6 +256,55 @@ export async function getPortfolio(): Promise<Portfolio> {
   };
 }
 
+/** A trade the agent asked the owner to approve. */
+export type TradeRequest = {
+  id: number;
+  symbol: AssetSymbol | null;
+  name: string;
+  side: "buy" | "sell";
+  /** Value in tUSD: what a buy would spend, or what a sell is worth at the current price. */
+  usd: string;
+  expires: string;
+  ref: Hex;
+};
+
+/** The pending, unexpired requests among the latest twelve. */
+export async function getRequests(): Promise<TradeRequest[]> {
+  const { publicClient } = getClients();
+  const v = vault();
+  const [count, block] = await Promise.all([publicClient.readContract({ ...v, functionName: "requestCount" }), publicClient.getBlock()]);
+  const ids = Array.from({ length: Math.min(Number(count), 12) }, (_, i) => Number(count) - i);
+  if (ids.length === 0) return [];
+  const rows = (await readAll(ids.map((id) => ({ ...v, abi: v.abi as Abi, functionName: "getRequest", args: [BigInt(id)] })))) as {
+    asset: Address;
+    isBuy: boolean;
+    amount: bigint;
+    ref: Hex;
+    expiry: bigint;
+    status: number;
+  }[];
+  const list = SYMBOLS.map((s) => assets()[s]);
+  const prices = (await readAll(
+    list.map((a) => ({ address: chainConfig().ORACLE_ADDRESS, abi: priceOracleAbi as Abi, functionName: "getPrice", args: [a.address] })),
+  )) as (readonly [bigint, bigint])[];
+  return rows.flatMap((r, i) => {
+    if (r.status !== 1 || r.expiry < block.timestamp) return [];
+    const at = list.findIndex((a) => a.address.toLowerCase() === r.asset.toLowerCase());
+    const usd = r.isBuy ? r.amount : at < 0 ? 0n : (r.amount * prices[at][0]) / 10n ** 20n;
+    return [
+      {
+        id: ids[i],
+        symbol: at < 0 ? null : list[at].symbol,
+        name: at < 0 ? r.asset : list[at].name,
+        side: r.isBuy ? ("buy" as const) : ("sell" as const),
+        usd: fromUsdUnits(usd),
+        expires: iso(r.expiry),
+        ref: r.ref,
+      },
+    ];
+  });
+}
+
 // ---------------------------------------------------------------- writes
 
 export type Order = { asset: Address; isBuy: boolean; amount: bigint };

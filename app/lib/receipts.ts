@@ -33,6 +33,9 @@ type Result = {
   events?: { name: string; args: Record<string, string> }[];
 };
 
+const clock = (seconds: string) => `${new Date(Number(seconds) * 1000).toISOString().slice(11, 16)} UTC`;
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
 const ACTORS: Record<string, string> = {
   chat: "Agent, asked by the investor",
   ask: "Agent, asked by the investor",
@@ -57,13 +60,13 @@ function describeEvents(events: Result["events"], currency: Currency): string[] 
       case "StopLossTriggered":
         return [`Stop-loss sold all ${name} for ${display(formatUnits(BigInt(e.args.usdAmount), 6), currency)} at ${formatUnits(BigInt(e.args.price), 8)}`];
       case "ProtectModeEntered":
-        return [`Buying paused until ${new Date(Number(e.args.until) * 1000).toISOString()}`];
+        return [`Buying paused until ${clock(e.args.until)}`];
       case "TradeRequested":
         return [`Request ${e.args.requestId} created for the owner`];
       case "PolicyProposed":
-        return [`Mandate change queued until ${new Date(Number(e.args.eta) * 1000).toISOString()}`];
+        return [`Mandate change signed, waiting until ${clock(e.args.eta)}`];
       case "StopLossHaltProposed":
-        return [`Stop-loss halt queued until ${new Date(Number(e.args.eta) * 1000).toISOString()}`];
+        return [`Stop-loss halt signed, waiting until ${clock(e.args.eta)}`];
       case "ChangeCancelled":
         return ["A waiting change was cancelled"];
       case "PolicyChanged":
@@ -88,7 +91,7 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
 
   const attempted =
     record.legs?.map((l) => `${l.side} ${l.symbol} for ${display(l.usd, currency)}`).join(", ") ??
-    (typeof record.args.goal === "string" ? record.args.goal : record.tool.replace(/_/g, " "));
+    (typeof record.args.goal === "string" ? lowerFirst(record.args.goal) : record.tool.replace(/_/g, " "));
 
   return {
     at: record.at,
