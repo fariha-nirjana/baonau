@@ -44,42 +44,63 @@ function IconTile({ name, tone, size = 44 }: { name: IconName; tone: string; siz
 
 // ---------------------------------------------------------------- portfolio
 
+/** A change shown without red or green: neutral ink with an arrow and a sign (in China red means up). */
+export function Change({ pct, suffix = "today" }: { pct: number; suffix?: string }) {
+  const flat = Math.abs(pct) < 0.005;
+  const mark = flat ? "" : pct > 0 ? "▲ +" : "▼ −";
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-line bg-card px-3 py-1 text-sm font-semibold text-ink">
+      {mark}
+      {Math.abs(pct).toFixed(2)}% {suffix}
+    </span>
+  );
+}
+
+/** A speech bubble with its tail pointing right, at the mascot. */
+function SpeechBubble({ children, onAck }: { children: ReactNode; onAck?: () => void }) {
+  return (
+    <div className="card-shadow relative rounded-2xl border border-line bg-card px-4 py-3">
+      <p className="text-[0.95rem] leading-snug font-semibold">{children}</p>
+      {onAck ? (
+        <button onClick={onAck} className="mt-1 text-sm font-semibold text-leaf underline">
+          Got it
+        </button>
+      ) : null}
+      <span aria-hidden className="absolute top-1/2 -right-[7px] size-3.5 -translate-y-1/2 rotate-45 border-t border-r border-line bg-card" />
+    </div>
+  );
+}
+
 function ValueCard({ state, settings, mimo, onAck }: { state: AppState; settings: Settings; mimo: MimoSay; onAck: () => void }) {
   const p = state.portfolio;
   const start = Number(p.today.startValue);
   const change = start > 0 ? ((Number(p.totalValue) - start) / start) * 100 : 0;
-  const up = change >= 0;
   return (
-    <Card className="flex overflow-hidden p-0!">
-      <div className="flex min-w-0 flex-1 flex-col p-6">
+    <Card className={`mood-${mimo.mood} relative h-[19rem] overflow-hidden p-0!`}>
+      {/* the mascot stands in the corner on a soft blob, as in the team's mockup */}
+      <div aria-hidden className="absolute -right-16 -bottom-24 size-[22rem] rounded-full transition-colors duration-500" style={{ background: "var(--mood-soft)" }} />
+      <Icon name="sparkle" size={22} strokeWidth={1.6} className="absolute right-[15.5rem] bottom-16 text-sun" />
+      <Icon name="sparkle" size={16} strokeWidth={1.8} className="absolute top-24 right-7 text-sun" />
+      <div className="absolute right-4 -bottom-6">
+        <Mascot mood={mimo.mood} variant={mimo.variant} size={240} />
+      </div>
+      <div className="absolute top-6 right-[14.5rem] z-10 w-56">
+        <SpeechBubble onAck={mimo.dismissKey ? onAck : undefined}>{mimo.line}</SpeechBubble>
+      </div>
+
+      <div className="relative flex h-full flex-col p-6 pr-[30rem]">
         <Eyebrow>Portfolio value</Eyebrow>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
+        <div className="mt-2">
           <Money usd={p.totalValue} currency={settings.currency} size="xl" />
-          <Chip tone={up ? "good" : "bad"} icon={up ? "chart" : "chartDown"}>
-            {up ? "+" : ""}
-            {change.toFixed(2)}% today
-          </Chip>
         </div>
-        <div className="mt-4 h-28 min-h-0">
-          {state.history.length >= 2 ? (
-            <Sparkline points={state.history.slice(-120)} height={112} />
-          ) : (
-            <p className="pt-8 text-sm text-muted">The chart fills in as the app reads the vault.</p>
-          )}
+        <div className="mt-2">
+          <Change pct={change} />
         </div>
-        <p className="mt-1 text-xs text-muted">Values as read from the vault by this app. Simulated test assets on a testnet.</p>
       </div>
-      <div className={`mood-${mimo.mood} relative flex w-72 shrink-0 flex-col items-center justify-end px-4 pt-4 transition-colors`} style={{ background: "var(--mood-soft)" }}>
-        <div className="card-shadow relative z-10 w-full rounded-2xl border border-line bg-card px-4 py-3 text-center">
-          <p className="hand text-[1.45rem] font-semibold">{mimo.line}</p>
-          {mimo.dismissKey ? (
-            <button onClick={onAck} className="mt-1 text-sm font-semibold text-leaf underline">
-              Got it
-            </button>
-          ) : null}
-        </div>
-        <Mascot mood={mimo.mood} variant={mimo.variant} size={200} />
+      <div className="absolute right-[16rem] bottom-10 left-0 h-24">
+        {state.history.length >= 2 ? <Sparkline points={state.history.slice(-120)} height={96} /> : <p className="px-6 pt-10 text-sm text-muted">The chart fills in as the app reads the vault.</p>}
       </div>
+      <p className="absolute bottom-4 left-6 text-xs text-muted">Values as read from the vault by this app. Simulated test assets on a testnet.</p>
     </Card>
   );
 }
@@ -417,7 +438,7 @@ export function MandateView({ state, settings, act, skew }: ViewProps) {
                 Switch back on
               </Button>
             ) : settings.role === "guardian" ? (
-              <Button kind="danger" busy={busy === "halt"} onClick={() => run("halt", "guardian", "halt-stop-loss")}>
+              <Button kind="ghost" busy={busy === "halt"} onClick={() => run("halt", "guardian", "halt-stop-loss")}>
                 Emergency halt
               </Button>
             ) : (
@@ -508,7 +529,7 @@ function queueOf(state: AppState): QueueItem[] {
               <p className="num flex items-center gap-3 text-3xl font-bold">
                 {a}
                 {unit}
-                <Icon name="arrow" size={22} className="text-coral" />
+                <Icon name="arrow" size={22} className="text-sun-ink" />
                 {b}
                 {unit}
               </p>
@@ -551,9 +572,9 @@ function QueueCard({ item, settings, act, skew }: { item: QueueItem } & Omit<Vie
   const left = useCountdown(item.appliesFrom, skew);
   const { busy, run } = useBusy(act);
   return (
-    <section className="slide-in rounded-(--radius-card) border-2 border-dashed border-coral/35 bg-[#fffaf7] p-6">
+    <section className="slide-in rounded-(--radius-card) border-2 border-dashed border-sun bg-[#fffbef] p-6">
       <div className="flex items-start gap-4">
-        <IconTile name="clock" tone="bg-coral-soft text-coral" />
+        <IconTile name="clock" tone="bg-sun-soft text-sun-ink" />
         <div className="min-w-0 flex-1">
           <h3 className="font-display text-2xl font-semibold">{item.label}</h3>
           <p className="text-[0.95rem] text-muted">Raises the risk, so it waits</p>
@@ -568,7 +589,7 @@ function QueueCard({ item, settings, act, skew }: { item: QueueItem } & Omit<Vie
       <div className="mt-4 flex justify-end gap-3">
         {settings.role === "guardian" ? (
           item.vetoKey ? (
-            <Button kind="danger" busy={busy === "veto"} onClick={() => run("veto", "guardian", "veto", item.vetoKey as string)}>
+            <Button kind="dark" busy={busy === "veto"} onClick={() => run("veto", "guardian", "veto", item.vetoKey as string)}>
               Cancel it
             </Button>
           ) : (
@@ -828,14 +849,14 @@ export function DemoView({ state, settings, act, onAttack }: ViewProps & { onAtt
   const reverted = steps.filter((s) => !s.result.ok).length;
   return (
     <div className="space-y-5">
-      <section className="card-shadow flex items-center gap-6 rounded-(--radius-card) border-2 border-coral bg-coral-soft p-6">
+      <section className="card-shadow flex items-center gap-6 rounded-(--radius-card) bg-forest-deep p-6 text-white">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-coral">Compromised-agent mode. Scripted attacker, not the AI model</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sun">Compromised-agent mode. Scripted attacker, not the AI model</p>
           <h2 className="mt-2 font-display text-3xl font-semibold">Assume the AI has been taken over</h2>
           <p className="mt-2 max-w-3xl text-[1.05rem]">
             This replaces the AI&apos;s output with an attacker&apos;s list of actions, skips the risk checks, and signs every call with the real agent key. Each call is sent to the chain even when it is certain to fail, so every line below ends in a real transaction.
           </p>
-          <Button kind="alarm" busy={running} onClick={attack} className="mt-4">
+          <Button kind="ghost" busy={running} onClick={attack} className="mt-4">
             <Icon name="bolt" size={18} />
             Run the attack
           </Button>
@@ -871,7 +892,7 @@ export function DemoView({ state, settings, act, onAttack }: ViewProps & { onAtt
           </ol>
         </Card>
       ) : null}
-      {error ? <p className="rounded-2xl bg-coral-soft p-4 text-lg text-coral">{error}</p> : null}
+      {error ? <p className="rounded-2xl bg-sun-soft p-4 text-lg text-sun-ink">{error}</p> : null}
 
       {end ? (
         <Card className="slide-in">

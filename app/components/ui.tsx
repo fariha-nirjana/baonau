@@ -84,9 +84,12 @@ export function Sparkline({ points, height = 120 }: { points: { at: string; valu
   if (points.length < 2) return null;
   const w = 600;
   const values = points.map((p) => p.value);
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
-  const pad = (hi - lo) * 0.15 || hi * 0.002 || 1;
+  // the vertical range is at least 3% of the value, so a small wobble looks small
+  const mid = (Math.min(...values) + Math.max(...values)) / 2;
+  const half = Math.max(((Math.max(...values) - Math.min(...values)) / 2) * 1.15, Math.abs(mid) * 0.015, 1e-9);
+  const lo = mid - half;
+  const hi = mid + half;
+  const pad = 0;
   const t0 = new Date(points[0].at).getTime();
   const span = new Date(points[points.length - 1].at).getTime() - t0 || 1;
   const xy = points.map((p) => [((new Date(p.at).getTime() - t0) / span) * w, height - ((p.value - lo + pad) / (hi - lo + 2 * pad)) * height] as const);

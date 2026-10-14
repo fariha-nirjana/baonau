@@ -260,7 +260,7 @@ export function Dashboard() {
               Security demo
             </Button>
             {!p.agent.paused ? (
-              <Button kind="alarm" onClick={() => act(settings.role, "pause")} className="py-2!">
+              <Button kind="dark" onClick={() => act(settings.role, "pause")} className="py-2!">
                 <Icon name="pause" size={18} />
                 Pause the AI
               </Button>
@@ -297,7 +297,7 @@ export function Dashboard() {
                         {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
                       </p>
                       <h1 className="mt-1 flex items-center gap-2 font-display text-4xl font-semibold">
-                        {greeting(new Date())}.<Icon name="sparkle" size={26} className="text-coral" strokeWidth={1.6} />
+                        {greeting(new Date())}.<Icon name="sparkle" size={26} className="text-sun" strokeWidth={1.6} />
                       </h1>
                     </>
                   ) : (
@@ -309,7 +309,7 @@ export function Dashboard() {
               </div>
 
               {notice ? <p className="slide-in mt-4 rounded-2xl bg-coral-soft p-4 text-lg text-coral">{notice}</p> : null}
-              {error ? <p className="mt-4 rounded-2xl bg-coral-soft p-4 text-base text-coral">Could not refresh: {error}</p> : null}
+              {error ? <p className="mt-4 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">Could not refresh: {error}</p> : null}
               {stale ? (
                 <p className="mt-4 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">
                   The price feed is out of date, so the vault will refuse trades until it is refreshed. Use &quot;Refresh prices&quot; in the security demo.

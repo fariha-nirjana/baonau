@@ -4,6 +4,12 @@
  * Dream", deep green with mint and sun) and will change when the graphics
  * lead settles it. Change the values here and the whole app follows.
  * Nothing else in the app names a colour directly.
+ *
+ * Colour rules (team decision, Oct 14):
+ * - Forest green is the brand primary.
+ * - Gains and losses are never red or green (in China red means up): they use
+ *   neutral ink with ▲/▼ and +/− signs.
+ * - Red (coral) only means "blocked". Amber (sun) only means "warning".
  */
 @theme {
   --color-forest: #1c4036;
@@ -40,8 +46,6 @@
 
   --font-sans: var(--font-body), var(--font-bangla), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-display: var(--font-heading), var(--font-bangla), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  /* the mascot's speech bubble only */
-  --font-hand: var(--font-handwriting), var(--font-bangla), "PingFang SC", cursive;
 
   --radius-card: 1.5rem;
 }
@@ -53,21 +57,22 @@
   --mood-line: var(--color-mint-line);
 }
 .mood-thinking,
-.mood-watching {
+.mood-watching,
+.mood-worried {
   --mood: var(--color-sky);
   --mood-soft: var(--color-sky-soft);
   --mood-line: #c9d6f2;
 }
-.mood-worried,
 .mood-holding {
-  --mood: #c98a0c;
+  --mood: var(--color-forest);
+  --mood-soft: var(--color-mint);
+  --mood-line: var(--color-mint-line);
+}
+/* amber means a warning and nothing else; red means blocked and nothing else */
+.mood-warning {
+  --mood: #a86a00;
   --mood-soft: var(--color-sun-soft);
   --mood-line: #f0d98a;
-}
-.mood-warning {
-  --mood: #d4731c;
-  --mood-soft: #fff0df;
-  --mood-line: #f3cf9f;
 }
 .mood-shield {
   --mood: var(--color-coral);

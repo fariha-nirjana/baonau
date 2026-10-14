@@ -187,11 +187,11 @@ export function Chat({
           ) : (
             <div key={i} className="space-y-3">
               {m.steps?.map((s, j) => <StepCard key={j} step={s} go={go} />)}
-              <div className="flex gap-2.5">
-                <div className="shrink-0 rounded-xl bg-sun-soft p-0.5">
-                  <Mascot mood="calm" size={30} still />
+              <div className="flex items-end gap-2">
+                <div className="mb-0.5 shrink-0 rounded-full bg-mint p-0.5">
+                  <Mascot mood="calm" size={28} still />
                 </div>
-                <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{m.content}</p>
+                <p className="mr-6 rounded-2xl rounded-bl-md border border-line bg-paper px-4 py-2.5 text-[0.95rem] leading-relaxed whitespace-pre-wrap">{m.content}</p>
               </div>
             </div>
           ),

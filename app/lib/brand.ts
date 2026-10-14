@@ -4,6 +4,7 @@
  */
 export const BRAND = {
   product: "Paws for Thought",
+  team: "Team Ulysses",
   tagline: "Money, safely minded",
   /** The agent's persona. The mascot is being renamed; the new name goes here. */
   agent: "Mimo",
