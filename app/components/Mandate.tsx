@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
 import { fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
@@ -77,7 +77,7 @@ function Term({ label, note, value, tone = "ink" }: { label: ReactNode; note?: R
   );
 }
 
-function MandateDocument({ state, settings, t }: { state: AppState; settings: Settings; t: Strings }) {
+function MandateDocument({ state, settings, t, onSigned }: { state: AppState; settings: Settings; t: Strings; onSigned: () => void }) {
   const p = state.portfolio;
   const m = p.mandate;
   const names = ASSET_NAME[settings.language];
@@ -91,10 +91,16 @@ function MandateDocument({ state, settings, t }: { state: AppState; settings: Se
             {t.mandate.docSigned}
           </p>
         </div>
-        <a href={`${state.explorer}/address/${state.mandate}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-leaf hover:bg-paper">
-          {t.mandate.contract} {short(state.mandate)}
-          <Icon name="arrowUpRight" size={13} />
-        </a>
+        <div className="flex flex-col items-end gap-2">
+          <button onClick={onSigned} className="flex items-center gap-1.5 rounded-lg bg-forest px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-soft">
+            <Icon name="mandate" size={15} />
+            {t.signed.open}
+          </button>
+          <a href={`${state.explorer}/address/${state.mandate}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-semibold text-leaf hover:underline">
+            {t.mandate.contract} {short(state.mandate)}
+            <Icon name="arrowUpRight" size={12} />
+          </a>
+        </div>
       </div>
 
       <div className="mt-7 space-y-6">
@@ -327,13 +333,201 @@ export function MandateHeader({ settings }: { settings: Settings }) {
 export function MandateView(props: Props) {
   const { state, settings, act, skew } = props;
   const t = strings(settings.language, settings.role);
+  // ?signed=open opens it straight away, for links and screenshots (this screen only renders in the browser)
+  const [signedOpen, setSignedOpen] = useState(() => new URLSearchParams(window.location.search).get("signed") === "open");
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-      <MandateDocument state={state} settings={settings} t={t} />
+      {signedOpen ? <SignedDialog state={state} settings={settings} onClose={() => setSignedOpen(false)} /> : null}
+      <MandateDocument state={state} settings={settings} t={t} onSigned={() => setSignedOpen(true)} />
       <div className="space-y-5">
         <ChangesCard {...props} t={t} />
         <RolesCard state={state} settings={settings} t={t} />
         <SafetyNetsCard state={state} settings={settings} act={act} skew={skew} t={t} />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- what was signed
+
+type Terms = { maxTradePct: number; maxDailyVolumePct: number; dailyLossPct: number; maxSlippagePct: number; minDefensivePct: number; maxLossStreak: number; cooldownMinutes: number };
+type SignedRule = { symbol: string; allowed: boolean; defensive: boolean; maxExposurePct: number; stopPrice: string | null };
+type SignedChange = { kind: string; at: string; tx: string; url: string; terms?: Terms; rule?: SignedRule; address?: string; seconds?: number };
+type Signed = { at: string; tx: string; url: string; terms: Terms | null; rules: SignedRule[]; agent: { address: string; expires: string } | null; changes: SignedChange[]; proposed: number; cancelled: number };
+
+/** Each term, how to show it, and which way is tighter. */
+function termRows(t: Strings): [keyof Terms, string, (v: number) => string, "lower" | "higher"][] {
+  const p = (v: number) => `${v}%`;
+  return [
+    ["maxTradePct", t.signed.fMaxTrade, p, "lower"],
+    ["maxDailyVolumePct", t.signed.fPerDay, p, "lower"],
+    ["dailyLossPct", t.signed.fLoss, p, "lower"],
+    ["maxSlippagePct", t.signed.fSlippage, p, "lower"],
+    ["minDefensivePct", t.signed.fFloor, p, "higher"],
+    ["maxLossStreak", t.signed.fStreak, (v) => String(v), "lower"],
+    ["cooldownMinutes", t.signed.fCooldown, (v) => fill(t.signed.minutes, { n: v }), "higher"],
+  ];
+}
+
+const ruleText = (r: SignedRule, t: Strings) =>
+  r.allowed ? [fill(t.signed.allowedCap, { n: r.maxExposurePct }), r.stopPrice ? fill(t.signed.stop, { price: Number(r.stopPrice) }) : null, r.defensive ? t.signed.defensive : null].filter(Boolean).join(", ") : t.signed.notAllowed;
+
+/** One line per change since signing, with whether it lowered or raised the risk. */
+function describeChanges(signed: Signed, t: Strings): { at: string; url: string; lines: string[]; tone: "less" | "more" | "neutral" }[] {
+  let terms = signed.terms;
+  const rules = new Map(signed.rules.map((r) => [r.symbol, r]));
+  const out: { at: string; url: string; lines: string[]; tone: "less" | "more" | "neutral" }[] = [];
+  for (const c of signed.changes) {
+    if (c.kind === "PolicyChanged" && c.terms && terms) {
+      let looser = false;
+      let tighter = false;
+      const lines: string[] = [];
+      for (const [key, label, show, tight] of termRows(t)) {
+        const a = terms[key];
+        const b = c.terms[key];
+        if (a === b) continue;
+        lines.push(`${label}: ${show(a)} → ${show(b)}`);
+        if ((tight === "lower") === b < a) tighter = true;
+        else looser = true;
+      }
+      terms = c.terms;
+      if (lines.length) out.push({ at: c.at, url: c.url, lines, tone: looser ? "more" : tighter ? "less" : "neutral" });
+    } else if (c.kind === "AssetRuleChanged" && c.rule) {
+      const before = rules.get(c.rule.symbol);
+      rules.set(c.rule.symbol, c.rule);
+      const looser = !before || (c.rule.allowed && !before.allowed) || c.rule.maxExposurePct > before.maxExposurePct || (before.stopPrice !== null && (c.rule.stopPrice === null || Number(c.rule.stopPrice) < Number(before.stopPrice)));
+      out.push({ at: c.at, url: c.url, lines: [`${c.rule.symbol}: ${before ? ruleText(before, t) : "—"} → ${ruleText(c.rule, t)}`], tone: looser ? "more" : "less" });
+    } else if (c.kind === "GuardianChanged") {
+      const removed = !c.address || /^0x0+$/.test(c.address);
+      out.push({ at: c.at, url: c.url, lines: [removed ? t.signed.cGuardianRemoved : fill(t.signed.cGuardian, { address: short(c.address ?? "") })], tone: removed ? "more" : "neutral" });
+    } else if (c.kind === "WithdrawalAddressChanged") {
+      out.push({ at: c.at, url: c.url, lines: [fill(t.signed.cWithdrawal, { address: short(c.address ?? "") })], tone: "more" });
+    } else if (c.kind === "LoosenDelayChanged") {
+      out.push({ at: c.at, url: c.url, lines: [fill(t.signed.cDelay, { n: fill(t.signed.minutes, { n: Math.round((c.seconds ?? 0) / 60) }) })], tone: "neutral" });
+    } else if (c.kind === "AgentSet") {
+      out.push({ at: c.at, url: c.url, lines: [fill(t.signed.cAgent, { agent: BRAND.agent })], tone: "neutral" });
+    } else if (c.kind === "AgentRevoked") {
+      out.push({ at: c.at, url: c.url, lines: [fill(t.signed.cRevoked, { agent: BRAND.agent })], tone: "less" });
+    }
+  }
+  return out;
+}
+
+export function SignedDialog({ state, settings, onClose }: { state: AppState; settings: Settings; onClose: () => void }) {
+  const t = strings(settings.language, settings.role);
+  const [data, setData] = useState<{ signed?: Signed | null; error?: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/mandate", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setData)
+      .catch((err) => setData({ error: String(err) }));
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const s = data?.signed;
+  const current = state.portfolio.mandate;
+  const nowTerms: Terms = {
+    maxTradePct: current.maxTradePct,
+    maxDailyVolumePct: current.maxDailyVolumePct,
+    dailyLossPct: current.dailyLossPct,
+    maxSlippagePct: current.maxSlippagePct,
+    minDefensivePct: current.minDefensivePct,
+    maxLossStreak: current.maxLossStreak,
+    cooldownMinutes: Math.round(current.cooldownSeconds / 60),
+  };
+  const day = (iso: string) => new Date(iso).toLocaleDateString(LOCALE[settings.language], { day: "numeric", month: "long", year: "numeric" });
+  const stamp = (iso: string) => `${new Date(iso).toLocaleDateString(LOCALE[settings.language], { day: "numeric", month: "short" })} ${new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  const toneClass = { less: "bg-mint text-leaf", more: "bg-sun-soft text-sun-ink", neutral: "bg-cream text-muted" } as const;
+  const toneText = { less: t.signed.lessRisk, more: t.signed.moreRisk, neutral: t.signed.mixed } as const;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={t.signed.eyebrow} className="slide-in max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-(--radius-card) bg-card p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <p className="eyebrow">{t.signed.eyebrow}</p>
+          <button onClick={onClose} aria-label={t.signed.close} className="-mt-2 -mr-2 rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+        {!data ? <p className="mt-4 text-sm text-muted">{t.signed.loading}</p> : null}
+        {data?.error ? <p className="mt-4 rounded-xl bg-sun-soft px-4 py-3 text-sm text-sun-ink">{fill(t.signed.failed, { error: data.error })}</p> : null}
+        {s ? (
+          <>
+            <h2 className="mt-2 font-serif text-[1.9rem] leading-tight">{fill(t.signed.title, { date: day(s.at) })}</h2>
+            <p className="mt-2 text-sm text-muted">{fill(t.signed.by, { who: settings.role === "owner" ? t.signed.you : settings.language === "bn" ? BRAND.ownerBn : BRAND.owner })}</p>
+            <a href={s.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-leaf hover:bg-paper">
+              <span className="num">{t.signed.viewTx} {short(s.tx)}</span>
+              <Icon name="arrowUpRight" size={13} />
+            </a>
+
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              <div>
+                <p className="eyebrow">{t.signed.terms}</p>
+                <dl className="mt-2 divide-y divide-line border-y border-line text-sm">
+                  {s.terms
+                    ? termRows(t).map(([key, label, show]) => {
+                        const was = s.terms![key];
+                        const now = nowTerms[key];
+                        return (
+                          <div key={key} className="flex items-baseline justify-between gap-3 py-2">
+                            <dt className="text-muted">{label}</dt>
+                            <dd className="num text-right font-semibold">
+                              {show(was)}
+                              {was !== now ? <span className="ml-1.5 text-xs font-normal text-sun-ink">({fill(t.signed.now, { value: show(now) })})</span> : null}
+                            </dd>
+                          </div>
+                        );
+                      })
+                    : null}
+                </dl>
+              </div>
+              <div>
+                <p className="eyebrow">{t.signed.assets}</p>
+                <dl className="mt-2 divide-y divide-line border-y border-line text-sm">
+                  {s.rules.map((r) => (
+                    <div key={r.symbol} className="flex items-baseline justify-between gap-3 py-2">
+                      <dt className="font-semibold">{r.symbol}</dt>
+                      <dd className="text-right text-muted">{ruleText(r, t)}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {s.agent ? <p className="mt-3 text-xs text-muted">{fill(t.signed.agentKey, { agent: BRAND.agent, date: day(s.agent.expires) })}</p> : null}
+              </div>
+            </div>
+
+            <p className="eyebrow mt-7">{t.signed.changes}</p>
+            {(() => {
+              const list = describeChanges(s, t);
+              return list.length ? (
+                <ol className="mt-3 space-y-3 border-l-2 border-line pl-4">
+                  {list.map((c, i) => (
+                    <li key={i} className="relative">
+                      <span className="absolute top-1.5 -left-[1.4rem] size-2.5 rounded-full border-2 border-card bg-sage" />
+                      <p className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="num text-faint">{stamp(c.at)}</span>
+                        <span className={`rounded-md px-1.5 py-0.5 font-semibold ${toneClass[c.tone]}`}>{toneText[c.tone]}</span>
+                        <a href={c.url} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 text-leaf hover:underline">
+                          tx
+                          <Icon name="arrowUpRight" size={11} />
+                        </a>
+                      </p>
+                      {c.lines.map((l) => (
+                        <p key={l} className="num mt-1 text-sm font-semibold">
+                          {l}
+                        </p>
+                      ))}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-2 text-sm text-muted">{t.signed.noChanges}</p>
+              );
+            })()}
+            {s.proposed ? <p className="mt-5 text-xs text-muted">{fill(t.signed.asked, { proposed: s.proposed, cancelled: s.cancelled })}</p> : null}
+          </>
+        ) : null}
       </div>
     </div>
   );

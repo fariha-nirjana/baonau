@@ -18,7 +18,7 @@ import { PortfolioHeader, PortfolioView } from "./Portfolio";
 import { MandateHeader, MandateView } from "./Mandate";
 import { ApprovalsHeader, ApprovalsView } from "./Approvals";
 import { ActivityHeader, ActivityView, ReceiptDialog } from "./Activity";
-import { RoleAvatar, RoleDialog, RolePicker } from "./Roles";
+import { PauseDialog, RoleAvatar, RoleDialog, RolePicker } from "./Roles";
 import { SecurityHeader, SecurityView } from "./Security";
 
 type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
@@ -109,6 +109,7 @@ export function Dashboard() {
   const [planOpen, setPlanOpen] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [switchTo, setSwitchTo] = useState<Settings["role"] | null>(null);
+  const [confirm, setConfirm] = useState<{ role: Settings["role"]; action: "pause" | "unpause" } | null>(null);
   const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -229,17 +230,17 @@ export function Dashboard() {
   };
 
   const pauseControl = !p.agent.paused ? (
-    <button onClick={() => act(settings.role, "pause")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-forest px-3 py-2.5 text-sm font-semibold text-white hover:bg-forest-soft">
+    <button onClick={() => setConfirm({ role: settings.role, action: "pause" })} className="flex w-full items-center justify-center gap-2 rounded-xl bg-forest px-3 py-2.5 text-sm font-semibold text-white hover:bg-forest-soft">
       <Icon name="pause" size={16} />
       {t.shell.pause}
     </button>
   ) : guardian ? (
-    <Button onClick={() => act("guardian", "unpause")} className="w-full py-2! text-sm!">
+    <Button onClick={() => setConfirm({ role: "guardian", action: "unpause" })} className="w-full py-2! text-sm!">
       <Icon name="play" size={14} />
       {t.shell.liftPause}
     </Button>
   ) : p.agent.pausedBy === "owner" ? (
-    <Button onClick={() => act("owner", "unpause")} className="w-full py-2! text-sm!">
+    <Button onClick={() => setConfirm({ role: "owner", action: "unpause" })} className="w-full py-2! text-sm!">
       <Icon name="play" size={14} />
       {t.shell.unpause}
     </Button>
@@ -445,6 +446,19 @@ export function Dashboard() {
             </button>
           ) : null}
         </>
+      ) : null}
+
+      {confirm ? (
+        <PauseDialog
+          action={confirm.action}
+          settings={settings}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const c = confirm;
+            setConfirm(null);
+            act(c.role, c.action);
+          }}
+        />
       ) : null}
 
       {switchTo ? (

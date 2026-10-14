@@ -45,6 +45,8 @@ const SECTIONS: Record<string, [string, string]> = {
   proof: ["Proof screen", "The harness results and the contract test numbers."],
   demo: ["Security demo screen", "The compromised-agent run and the market lab. The attacker's goals are translated here too."],
   roles: ["Role switch", "The 'Viewing as' picker in the sidebar and the dialog shown before switching."],
+  signed: ["The mandate you signed", "Opens from the Mandate page: the signed terms and every change since, read from the chain."],
+  pause: ["Pause and unpause", "The question asked before pausing or unpausing the AI."],
   chat: ["Chat with Mimo", "The floating chat and its full-window mode."],
   launcher: ["Chat button in the corner", "The line under \"Talk to Mimo\", one per mood."],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],

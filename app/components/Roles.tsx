@@ -116,3 +116,35 @@ export function RoleDialog({ to, settings, onCancel, onConfirm }: { to: Role; se
     </div>
   );
 }
+
+/** Asks before pausing or unpausing, and says what happens. A mis-tap should not stop or start the AI. */
+export function PauseDialog({ action, settings, onCancel, onConfirm }: { action: "pause" | "unpause"; settings: Settings; onCancel: () => void; onConfirm: () => void }) {
+  const t = strings(settings.language, settings.role);
+  const pausing = action === "pause";
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4 backdrop-blur-sm" onClick={onCancel}>
+      <div role="dialog" aria-modal="true" aria-label={pausing ? t.pause.pauseTitle : t.pause.unpauseTitle} className="slide-in w-full max-w-md rounded-(--radius-card) bg-card p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <span className="flex size-11 items-center justify-center rounded-xl bg-mint text-forest">
+          <Icon name={pausing ? "pause" : "play"} size={20} />
+        </span>
+        <h2 className="mt-4 font-serif text-[1.8rem] leading-tight">{fill(pausing ? t.pause.pauseTitle : t.pause.unpauseTitle, { agent: BRAND.agent })}</h2>
+        <p className="mt-2 text-[0.95rem] text-muted">{fill(pausing ? t.pause.pauseBody : t.pause.unpauseBody, { agent: BRAND.agent })}</p>
+        {pausing ? <p className="mt-3 rounded-xl bg-paper px-4 py-3 text-xs text-muted">{settings.role === "guardian" ? t.pause.pauseContactNote : t.pause.pauseOwnerNote}</p> : null}
+        <div className="mt-6 flex justify-end gap-2.5">
+          <button onClick={onCancel} className="rounded-xl border border-line px-4 py-2.5 text-sm font-semibold hover:bg-paper">
+            {t.pause.cancel}
+          </button>
+          <button onClick={onConfirm} className="flex items-center gap-2 rounded-xl bg-forest px-4 py-2.5 text-sm font-semibold text-white hover:bg-forest-soft">
+            <Icon name={pausing ? "pause" : "play"} size={15} />
+            {pausing ? t.pause.pauseConfirm : t.pause.unpauseConfirm}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
