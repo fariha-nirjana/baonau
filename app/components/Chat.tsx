@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Receipt } from "@/lib/receipts";
 import { Icon } from "./icons";
 import { Mascot } from "./Mascot";
-import type { MimoSay } from "./mimo";
+import { soundsStressed, type MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
 import { Chip, type Tone } from "./ui";
 
@@ -105,6 +105,7 @@ export function Chat({
   go,
   refresh,
   onBusy,
+  onStressed,
 }: {
   state: AppState;
   settings: Settings;
@@ -113,6 +114,8 @@ export function Chat({
   go: (v: View) => void;
   refresh: () => void;
   onBusy: (busy: boolean) => void;
+  /** Tells the page when the investor's latest message sounds stressed (its place in the chat), or not (null). */
+  onStressed: (at: number | null) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -131,6 +134,7 @@ export function Chat({
     setInput("");
     setBusy(true);
     onBusy(true);
+    onStressed(soundsStressed(content) ? next.length : null);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",

@@ -81,6 +81,7 @@ export function Dashboard() {
   const [settings, setSettings] = useState<Settings>({ currency: "BDT", language: "en", role: "owner" });
   const [attacking, setAttacking] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
+  const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
   const [market, setMarket] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -161,7 +162,7 @@ export function Dashboard() {
 
   const p = state.portfolio;
   const waiting = waitingCount(state);
-  const mimo = mimoOf({ state, role: settings.role, attacking, thinking: chatBusy || inFlight > 0, seen, dismissed });
+  const mimo = mimoOf({ state, role: settings.role, attacking, thinking: chatBusy || inFlight > 0, seen, dismissed, stressedAt });
   const ack = () => {
     if (mimo.receiptRefs.length) setSeen((s) => new Set([...s, ...mimo.receiptRefs]));
     if (mimo.dismissKey && mimo.dismissKey !== "receipts") setDismissed((d) => new Set([...d, mimo.dismissKey as string]));
@@ -343,7 +344,7 @@ export function Dashboard() {
             </div>
           </main>
 
-          {settings.role === "owner" ? <Chat state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} refresh={refresh} onBusy={setChatBusy} /> : null}
+          {settings.role === "owner" ? <Chat state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} refresh={refresh} onBusy={setChatBusy} onStressed={setStressedAt} /> : null}
         </div>
       </div>
     </div>

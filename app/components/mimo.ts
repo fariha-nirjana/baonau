@@ -20,6 +20,13 @@ export type MimoSay = {
   receiptRefs: string[];
 };
 
+/** Words that suggest the investor is stressed, in English, Bangla and Chinese. A cue for the mascot only, never for a decision. */
+const STRESS = /scared|afraid|worried|worry|panic|anxious|stress|nervous|upset|terrified|lost (so much|money|everything)|losing money|help me|ভয়|চিন্তা|টেনশন|দুশ্চিন্তা|害怕|担心|焦虑|紧张|亏/i;
+
+export function soundsStressed(message: string): boolean {
+  return STRESS.test(message);
+}
+
 export type MimoInputs = {
   state: AppState;
   role: Role;
@@ -31,6 +38,8 @@ export type MimoInputs = {
   seen: ReadonlySet<string>;
   /** Alerts the person has acknowledged with "Got it". */
   dismissed: ReadonlySet<string>;
+  /** When the investor's latest chat message sounded stressed, an id for that message; null otherwise. */
+  stressedAt?: number | null;
 };
 
 /** From the handoff: shield, then warning, holding, worried, thinking, watching, calm. */
@@ -70,7 +79,7 @@ function waitingKey(state: AppState): string {
   ].join("|");
 }
 
-export function mimoOf({ state, role, attacking, thinking, seen, dismissed }: MimoInputs): MimoSay {
+export function mimoOf({ state, role, attacking, thinking, seen, dismissed, stressedAt = null }: MimoInputs): MimoSay {
   const p = state.portfolio;
   const options: MimoSay[] = [];
   const add = (mood: Mood, line: string, status: string, dismissKey: string | null = null, extra: Partial<MimoSay> = {}) =>
@@ -107,6 +116,8 @@ export function mimoOf({ state, role, attacking, thinking, seen, dismissed }: Mi
 
   const worryAt = Math.max(1, p.mandate.dailyLossPct / 4);
   if (p.today.lossPct >= worryAt) add("worried", `Down ${p.today.lossPct}% today. Your limits are holding.`, "Rough day", `down:${Math.floor(p.today.lossPct)}`);
+
+  if (stressedAt !== null) add("worried", "That sounds stressful. Take a breath, your rules are still holding.", "Here for you", `stressed:${stressedAt}`);
 
   if (thinking) add("thinking", "Let me check that against your mandate.", "Thinking");
   if (p.agent.paused) add("watching", "I'm paused. I won't trade until the pause is lifted.", "Paused");

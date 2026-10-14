@@ -81,6 +81,16 @@ test("the shield outranks everything, and thinking does not hide a waiting chang
   assert.equal(mimoOf(inputs({ patch: waitingOnly, thinking: true })).mood, "holding");
 });
 
+test("a stressed message makes the mascot worried until it is acknowledged", async () => {
+  const { soundsStressed } = await import("./mimo");
+  assert.ok(soundsStressed("I'm scared, I lost money today"));
+  assert.ok(soundsStressed("আমার খুব ভয় লাগছে"));
+  assert.ok(!soundsStressed("what's in my portfolio?"));
+  const shown = mimoOf(inputs({ stressedAt: 5, thinking: true }));
+  assert.equal(shown.mood, "worried");
+  assert.equal(mimoOf(inputs({ stressedAt: 5, thinking: true, dismissed: new Set([shown.dismissKey as string]) })).mood, "thinking");
+});
+
 test("a dismissed alert gives way to the next one, and a new request alerts again", () => {
   const at = (iso: string) => (p: Portfolio) => {
     p.pending.mandate = { ...p.mandate, appliesFrom: iso };
