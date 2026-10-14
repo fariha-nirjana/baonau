@@ -10,7 +10,7 @@ import { Icon, type IconName } from "./icons";
 import { Mascot } from "./Mascot";
 import { mimoOf, waitingCount } from "./mimo";
 import type { Act, AppState, Settings, View } from "./types";
-import { OverviewHeader, OverviewView } from "./Overview";
+import { OverviewHeader, OverviewView, PlanDialog } from "./Overview";
 import { Button, Card, short } from "./ui";
 import { ProofView } from "./Proof";
 import { ActivityView, ApprovalsView, DemoView, Holdings, MandateView } from "./views";
@@ -105,6 +105,9 @@ export function Dashboard() {
   const [attacking, setAttacking] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(false);
+  const [prefill, setPrefill] = useState<{ id: number; text: string } | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
   const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
   const [market, setMarket] = useState<string | null>(null);
@@ -143,7 +146,9 @@ export function Dashboard() {
       if (query.get("role") === "guardian") setSettings((s) => ({ ...s, role: "guardian" }));
       const lang = query.get("lang");
       if (lang === "bn" || lang === "zh" || lang === "en") setSettings((s) => ({ ...s, language: lang }));
-      if (query.get("chat") === "open") setChatOpen(true);
+      if (query.get("chat") === "open" || query.get("chat") === "full") setChatOpen(true);
+      if (query.get("chat") === "full") setChatExpanded(true);
+      if (query.get("plan") === "open") setPlanOpen(true);
       refresh();
     }, 0);
     const id = setInterval(refresh, 6000);
@@ -152,6 +157,13 @@ export function Dashboard() {
       clearInterval(id);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!chatExpanded) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setChatExpanded(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chatExpanded]);
 
   const act: Act = useCallback(
     async (role, action, arg) => {
@@ -333,7 +345,7 @@ export function Dashboard() {
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[88rem] px-8 pt-8 pb-28">
             {view === "portfolio" ? (
-              <OverviewHeader settings={settings} go={setView} />
+              <OverviewHeader settings={settings} openPlan={() => setPlanOpen(true)} />
             ) : (
               <div>
                 <h1 className="font-display text-[2.2rem] font-semibold tracking-[-0.03em]">{title}</h1>
@@ -375,22 +387,54 @@ export function Dashboard() {
       {/* the chat floats over the page; it stays mounted while minimised so the conversation is kept */}
       {!guardian ? (
         <>
-          <div className={`fixed right-6 bottom-6 z-40 h-[min(46rem,calc(100vh-3rem))] w-[26rem] ${chatOpen ? "slide-in" : "hidden"}`}>
-            <Chat state={state} settings={settings} mimo={mimo} go={setView} refresh={refresh} onBusy={setChatBusy} onStressed={setStressedAt} onClose={() => setChatOpen(false)} />
+          {chatOpen && chatExpanded ? <div className="fixed inset-0 z-40 bg-ink/20 backdrop-blur-sm" onClick={() => setChatExpanded(false)} /> : null}
+          <div className={`fixed z-50 ${chatExpanded ? "inset-4" : "right-6 bottom-6 h-[min(46rem,calc(100vh-3rem))] w-[27rem]"} ${chatOpen ? "slide-in" : "hidden"}`}>
+            <Chat
+              state={state}
+              settings={settings}
+              mimo={mimo}
+              go={(v) => {
+                setChatExpanded(false);
+                setView(v);
+              }}
+              refresh={refresh}
+              onBusy={setChatBusy}
+              onStressed={setStressedAt}
+              onClose={() => {
+                setChatOpen(false);
+                setChatExpanded(false);
+              }}
+              expanded={chatExpanded}
+              onExpand={setChatExpanded}
+              prefill={prefill}
+            />
           </div>
           {!chatOpen ? (
             <button onClick={() => setChatOpen(true)} className={`mood-${mimo.mood} group fixed right-6 bottom-6 z-40 flex items-center gap-3`}>
-              <span className="card-shadow rounded-xl border border-line bg-card px-3.5 py-2 text-left">
+              <span className="card-shadow rounded-xl border border-line bg-card px-4 py-2.5 text-left">
                 <span className="block text-sm font-semibold">{fill(t.shell.talk, { agent: BRAND.agent })}</span>
-                <span className="block text-xs text-muted">{mimo.mood === "calm" ? t.shell.hereForYou : mimo.status}</span>
+                <span className="block text-xs text-muted">{p.agent.paused ? t.chat.paused : t.launcher[mimo.mood]}</span>
               </span>
-              <span className="relative rounded-full border-2 border-card bg-mint shadow-[0_10px_24px_-10px_rgb(25_60_50/0.5)] transition-transform group-hover:-translate-y-0.5">
-                <Mascot mood={mimo.mood} size={60} still />
-                <span className="absolute right-0.5 bottom-0.5 size-3 rounded-full border-2 border-card" style={{ background: "var(--mood)" }} />
+              <span className="relative rounded-full border-[3px] border-card bg-mint shadow-[0_14px_30px_-12px_rgb(25_60_50/0.55)] transition-transform group-hover:-translate-y-0.5">
+                <Mascot mood={mimo.mood} size={84} still />
+                <span className="absolute right-1 bottom-1 size-3.5 rounded-full border-2 border-card" style={{ background: "var(--mood)" }} />
               </span>
             </button>
           ) : null}
         </>
+      ) : null}
+
+      {planOpen ? (
+        <PlanDialog
+          state={state}
+          settings={settings}
+          onClose={() => setPlanOpen(false)}
+          onChange={(text) => {
+            setPlanOpen(false);
+            setPrefill({ id: Date.now(), text });
+            setChatOpen(true);
+          }}
+        />
       ) : null}
     </div>
   );

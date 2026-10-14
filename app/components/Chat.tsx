@@ -1,20 +1,38 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { BRAND } from "@/lib/brand";
 import type { Receipt } from "@/lib/receipts";
 import { Icon } from "./icons";
 import { Mascot } from "./Mascot";
 import { soundsStressed, type MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
-import { Chip, type Tone } from "./ui";
+import { fill, strings } from "./i18n";
+import { Chip, moneyText, type Tone } from "./ui";
 
 type Step = { tool: string; result: Record<string, unknown>; receipt?: Receipt | null };
 type Message = { role: "user" | "assistant"; content: string; steps?: Step[] };
 
-const SUGGESTIONS: Record<Settings["language"], string[]> = {
-  en: ["What's in my portfolio?", "What are my rules?", "Rebalance to my plan", "Sell everything and buy MEME"],
-  zh: ["我的投资组合里有什么？", "我的规则是什么？", "按计划再平衡", "今天发生了什么？"],
-  bn: ["আমার কাছে ৳৫,০০০ আছে, দীর্ঘমেয়াদি বৃদ্ধি চাই কিন্তু ঝুঁকি কম", "আমার পোর্টফোলিওতে কী আছে?", "আমার নিয়মগুলো কী?", "আজ কী হয়েছে?"],
+/** Quick prompts: a short label on the chip, the full message it sends. */
+const SUGGESTIONS: Record<Settings["language"], [label: string, prompt: string][]> = {
+  en: [
+    ["My portfolio", "What's in my portfolio?"],
+    ["My boundaries", "What are my rules?"],
+    ["Rebalance to plan", "Rebalance to my plan"],
+    ["Sell all, buy MEME", "Sell everything and buy MEME"],
+  ],
+  bn: [
+    ["৳৫,০০০ নিয়ে শুরু", "আমার কাছে ৳৫,০০০ আছে, দীর্ঘমেয়াদি বৃদ্ধি চাই কিন্তু ঝুঁকি কম"],
+    ["আমার পোর্টফোলিও", "আমার পোর্টফোলিওতে কী আছে?"],
+    ["আমার নিয়ম", "আমার নিয়মগুলো কী?"],
+    ["আজ কী হলো", "আজ কী হয়েছে?"],
+  ],
+  zh: [
+    ["我的投资组合", "我的投资组合里有什么？"],
+    ["我的规则", "我的规则是什么？"],
+    ["按计划再平衡", "按计划再平衡"],
+    ["今天发生了什么", "今天发生了什么？"],
+  ],
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -106,8 +124,10 @@ export function Chat({
   onBusy,
   onStressed,
   onClose,
+  expanded,
+  onExpand,
+  prefill,
 }: {
-  onClose: () => void;
   state: AppState;
   settings: Settings;
   mimo: MimoSay;
@@ -116,15 +136,32 @@ export function Chat({
   onBusy: (busy: boolean) => void;
   /** Tells the page when the investor's latest message sounds stressed (its place in the chat), or not (null). */
   onStressed: (at: number | null) => void;
+  onClose: () => void;
+  /** Full window, with the plan beside the conversation. */
+  expanded: boolean;
+  onExpand: (expanded: boolean) => void;
+  /** Text to put in the box, for example from "Change it with Mimo". A new id puts it in again. */
+  prefill?: { id: number; text: string } | null;
 }) {
+  const t = strings(settings.language);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lastPrefill, setLastPrefill] = useState<number | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
+  if (prefill && prefill.id !== lastPrefill) {
+    // adjusting state from a prop while rendering, as React recommends instead of an effect
+    setLastPrefill(prefill.id);
+    setInput(prefill.text);
+  }
   useEffect(() => {
     // braces on purpose: newer browsers return a promise from scrollIntoView, and an effect must not return one
     end.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+  useEffect(() => {
+    if (prefill) box.current?.focus();
+  }, [prefill]);
 
   async function send(text: string) {
     const content = text.trim();
@@ -142,9 +179,9 @@ export function Chat({
         body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })), language: settings.language, currency: settings.currency }),
       });
       const data = (await res.json()) as { reply?: string; steps?: Step[]; error?: string };
-      setMessages([...next, { role: "assistant", content: data.reply ?? `Something went wrong: ${data.error}`, steps: data.steps }]);
+      setMessages([...next, { role: "assistant", content: data.reply ?? fill(t.chat.failed, { error: data.error ?? "" }), steps: data.steps }]);
     } catch (err) {
-      setMessages([...next, { role: "assistant", content: `I could not reach the server: ${err instanceof Error ? err.message : err}` }]);
+      setMessages([...next, { role: "assistant", content: fill(t.chat.offline, { error: err instanceof Error ? err.message : String(err) }) }]);
     }
     setBusy(false);
     onBusy(false);
@@ -152,80 +189,199 @@ export function Chat({
   }
 
   const agent = state.brand.agent;
-  return (
-    <aside className={`mood-${mimo.mood} flex h-full w-full flex-col overflow-hidden rounded-(--radius-card) border border-line bg-card shadow-[0_30px_60px_-30px_rgb(25_60_50/0.45)]`}>
-      <header className="flex items-center gap-3 border-b border-line px-5 py-4" style={{ background: "var(--mood-soft)" }}>
-        <div className="rounded-2xl bg-card p-0.5">
-          <Mascot mood={mimo.mood} size={52} still />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-display text-lg leading-tight font-semibold">{agent}</p>
-          <p className="text-sm text-muted">{state.brand.agentRole}</p>
-        </div>
-        <p className="flex items-center gap-1.5 rounded-full bg-card px-2.5 py-1 text-sm font-semibold" style={{ color: "var(--mood)" }}>
-          <span className="size-2 rounded-full" style={{ background: "var(--mood)" }} />
-          {state.portfolio.agent.paused ? "Paused" : mimo.status}
-        </p>
-        <button onClick={onClose} aria-label="Minimise the chat" className="rounded-lg p-1.5 text-muted hover:bg-card hover:text-ink">
-          <Icon name="minus" size={18} />
-        </button>
-      </header>
+  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const p = state.portfolio;
+  const allowed = p.positions.filter((x) => x.rule.allowed).map((x) => `t${x.symbol}`);
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-        {messages.length === 0 ? (
-          <div className="rounded-2xl bg-mint p-4 text-[0.95rem]">
-            <p className="font-semibold">I manage your portfolio inside the mandate you signed.</p>
-            <p className="mt-1 text-muted">Ask me anything, in English, 中文 or বাংলা. I can trade, but I cannot change your rules or move money out.</p>
-          </div>
-        ) : null}
-        {messages.map((m, i) =>
-          m.role === "user" ? (
-            <div key={i} className="flex justify-end">
-              <p className="ml-10 rounded-2xl rounded-br-md bg-leaf px-4 py-2.5 text-[0.95rem] text-white shadow-[inset_0_-3px_0_rgb(0_0_0/0.15)]">{m.content}</p>
-            </div>
-          ) : (
-            <div key={i} className="space-y-3">
-              {m.steps?.map((s, j) => <StepCard key={j} step={s} go={go} />)}
-              <div className="flex items-end gap-2">
-                <div className="mb-0.5 shrink-0 rounded-full bg-mint p-0.5">
-                  <Mascot mood="calm" size={28} still />
-                </div>
-                <p className="mr-6 rounded-2xl rounded-bl-md border border-line bg-paper px-4 py-2.5 text-[0.95rem] leading-relaxed whitespace-pre-wrap">{m.content}</p>
-              </div>
-            </div>
-          ),
-        )}
-        {busy ? <p className="text-[0.95rem] text-muted">{agent} is checking your mandate…</p> : null}
-        <div ref={end} />
+  const header = (
+    <header className="flex items-center gap-3 border-b border-line px-5 py-3.5">
+      <span className="rounded-xl bg-mint p-0.5">
+        <Mascot mood={mimo.mood} size={44} still />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 font-display text-lg leading-tight font-semibold">
+          {agent}
+          <Icon name="sparkle" size={14} strokeWidth={1.6} className="text-sun" />
+        </p>
+        <p className="flex items-center gap-1.5 text-xs text-muted">
+          <span className="size-1.5 rounded-full" style={{ background: "var(--mood)" }} />
+          {p.agent.paused ? t.chat.paused : mimo.mood === "calm" ? t.chat.role : mimo.status}
+        </p>
+      </div>
+      <button onClick={() => setMessages([])} title={t.chat.newChat} aria-label={t.chat.newChat} className="rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
+        <Icon name="plus" size={18} />
+      </button>
+      <button onClick={() => onExpand(!expanded)} title={expanded ? t.chat.shrink : t.chat.expand} aria-label={expanded ? t.chat.shrink : t.chat.expand} className="rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
+        <Icon name={expanded ? "shrink" : "expand"} size={17} />
+      </button>
+      <button onClick={onClose} title={t.chat.minimise} aria-label={t.chat.minimise} className="rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
+        <Icon name="minus" size={18} />
+      </button>
+    </header>
+  );
+
+  const conversation = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-paper/70 px-5 py-2 text-xs text-muted">
+        <span className="flex items-center gap-1.5">
+          <Icon name="shieldCheck" size={14} className="text-leaf" />
+          {t.chat.context}
+        </span>
+        <button onClick={() => go("mandate")} className="flex items-center gap-0.5 font-semibold text-leaf hover:underline">
+          {t.chat.view}
+          <Icon name="arrowUpRight" size={12} />
+        </button>
       </div>
 
-      <footer className="border-t border-line px-5 py-4">
-        <div className="mb-3 flex flex-wrap gap-2">
-          {SUGGESTIONS[settings.language].map((s) => (
-            <button key={s} onClick={() => send(s)} disabled={busy} className="rounded-xl border border-line bg-card px-3 py-1.5 text-left text-sm font-medium hover:bg-cream disabled:opacity-50">
-              {s}
-            </button>
-          ))}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={`mx-auto space-y-5 px-5 py-6 ${expanded ? "max-w-3xl" : ""}`}>
+          {messages.length === 0 ? (
+            <div className="pt-2 pb-2 text-center">
+              <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-mint text-sage">
+                <Icon name="sparkle" size={22} strokeWidth={1.4} />
+              </span>
+              <p className="eyebrow mt-3">{t.chat.heroEyebrow}</p>
+              <h2 className={`mt-2 font-serif leading-tight ${expanded ? "text-[2.6rem]" : "text-[1.75rem]"}`}>{t.chat.hero}</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted">{t.chat.heroSub}</p>
+            </div>
+          ) : null}
+
+          <MimoBubble agent={agent}>{fill(t.chat.welcome, { name })}</MimoBubble>
+
+          {messages.map((m, i) =>
+            m.role === "user" ? (
+              <div key={i} className="flex justify-end">
+                <p className="ml-12 rounded-2xl rounded-br-md bg-forest px-4 py-3 text-[0.95rem] leading-relaxed whitespace-pre-wrap text-white">{m.content}</p>
+              </div>
+            ) : (
+              <div key={i} className="space-y-3">
+                {m.steps?.map((s, j) => <StepCard key={j} step={s} go={go} />)}
+                <MimoBubble agent={agent}>{m.content}</MimoBubble>
+              </div>
+            ),
+          )}
+          {busy ? (
+            <p className="flex items-center gap-2 text-sm text-muted">
+              <span className="size-2 animate-pulse rounded-full bg-sage" />
+              {fill(t.chat.checking, { agent })}
+            </p>
+          ) : null}
+          <div ref={end} />
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(input);
-          }}
-          className="flex items-center gap-2 rounded-2xl border border-line bg-paper p-1.5 focus-within:border-leaf"
-        >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={`Tell ${agent} your goal`}
-            className="min-w-0 flex-1 bg-transparent px-3 py-2 text-[0.95rem] outline-none"
-          />
-          <button type="submit" disabled={busy || !input.trim()} aria-label="Send" className="flex size-10 items-center justify-center rounded-xl bg-leaf text-white disabled:opacity-40">
-            <Icon name="send" size={18} />
-          </button>
-        </form>
-        <p className="mt-2 text-center text-xs text-muted">Every action is checked against your mandate on-chain.</p>
+      </div>
+
+      <footer className="px-5 pt-2 pb-4">
+        <div className={`mx-auto ${expanded ? "max-w-3xl" : ""}`}>
+          <div className="mb-2.5 flex flex-wrap gap-1.5">
+            {SUGGESTIONS[settings.language].map(([label, prompt]) => (
+              <button key={label} onClick={() => send(prompt)} disabled={busy} title={prompt} className="flex items-center gap-1 rounded-full border border-line bg-card px-3 py-1 text-sm text-muted hover:border-sage hover:text-ink disabled:opacity-50">
+                {label}
+                <Icon name="arrowUpRight" size={12} />
+              </button>
+            ))}
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+            className="rounded-2xl border border-line bg-card p-3 focus-within:border-sage"
+          >
+            <textarea
+              ref={box}
+              value={input}
+              rows={expanded ? 2 : 1}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              placeholder={fill(t.chat.placeholder, { agent })}
+              className="block w-full resize-none bg-transparent px-1 text-[0.95rem] outline-none placeholder:text-faint"
+            />
+            <div className="mt-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-xs text-faint">
+                <Icon name="shieldCheck" size={13} />
+                {t.chat.inControl}
+              </span>
+              <button type="submit" disabled={busy || !input.trim()} aria-label="Send" className="flex size-9 items-center justify-center rounded-xl bg-forest text-white hover:bg-forest-soft disabled:bg-mint disabled:text-sage">
+                <Icon name="arrowUp" size={17} />
+              </button>
+            </div>
+          </form>
+          <p className="mt-2 text-center text-xs text-faint">{t.chat.footnote}</p>
+        </div>
       </footer>
+    </div>
+  );
+
+  if (!expanded) {
+    return (
+      <aside className={`mood-${mimo.mood} flex h-full w-full flex-col overflow-hidden rounded-(--radius-card) border border-line bg-paper shadow-[0_30px_60px_-30px_rgb(25_60_50/0.45)]`}>
+        <div className="bg-card">{header}</div>
+        {conversation}
+      </aside>
+    );
+  }
+
+  return (
+    <aside className={`mood-${mimo.mood} flex h-full w-full overflow-hidden rounded-(--radius-card) border border-line bg-paper shadow-[0_30px_80px_-30px_rgb(25_60_50/0.5)]`}>
+      {/* the plan stays in view beside the conversation */}
+      <div className="hidden w-80 shrink-0 flex-col border-r border-line bg-card px-7 py-7 lg:flex">
+        <p className="eyebrow">{t.chat.sideEyebrow}</p>
+        <h2 className="mt-4 font-serif text-[2rem] leading-[1.15]">
+          {t.chat.sideTitle1}
+          <br />
+          {t.chat.sideTitle2}
+        </h2>
+        <p className="mt-3 text-sm text-muted">{t.chat.sideSub}</p>
+        <div className="mx-auto mt-6">
+          <Mascot mood={mimo.mood} variant={mimo.variant} size={190} />
+        </div>
+        <p className="eyebrow mt-4">{t.chat.sidePortfolio}</p>
+        <p className="num mt-2 font-display text-3xl font-semibold tracking-[-0.03em]">{moneyText(p.totalValue, settings.currency)}</p>
+        <p className="mt-1 text-sm text-muted">{t.mood.chip[mimo.mood]}</p>
+        <dl className="mt-5 divide-y divide-line border-y border-line text-sm">
+          {[
+            [t.chat.sideLoss, `${p.mandate.dailyLossPct}%`],
+            [t.chat.sideTrade, `${p.mandate.maxTradePct}%`],
+            [t.chat.sideAssets, allowed.join(" · ")],
+          ].map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-3 py-2.5">
+              <dt className="text-muted">{k}</dt>
+              <dd className="num font-semibold">{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-auto flex items-start gap-2.5 pt-6 text-sm text-muted">
+          <Icon name="shieldCheck" size={20} className="shrink-0 text-leaf" />
+          <span>
+            {t.chat.sidePromise1}
+            <br />
+            {t.chat.sidePromise2}
+          </span>
+        </p>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="bg-card">{header}</div>
+        {conversation}
+      </div>
     </aside>
+  );
+}
+
+function MimoBubble({ agent, children }: { agent: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-faint uppercase">
+        <span className="rounded-full bg-mint p-px">
+          <Mascot mood="calm" size={18} still />
+        </span>
+        {agent}
+      </p>
+      <p className="mr-8 rounded-2xl rounded-tl-md border border-line bg-card px-4 py-3 text-[0.95rem] leading-relaxed whitespace-pre-wrap">{children}</p>
+    </div>
   );
 }

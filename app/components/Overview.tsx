@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useEffect, type ReactNode } from "react";
 import type { AssetSymbol } from "@/lib/assets";
 import { BRAND } from "@/lib/brand";
 import { CURRENCIES, type Currency } from "@/lib/money";
@@ -367,7 +367,7 @@ function greetingKey(date: Date): "morning" | "afternoon" | "evening" {
   return h >= 5 && h < 12 ? "morning" : h >= 12 && h < 17 ? "afternoon" : "evening";
 }
 
-export function OverviewHeader({ settings, go }: { settings: Settings; go: (v: View) => void }) {
+export function OverviewHeader({ settings, openPlan }: { settings: Settings; openPlan: () => void }) {
   const t = strings(settings.language);
   const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
   return (
@@ -382,9 +382,9 @@ export function OverviewHeader({ settings, go }: { settings: Settings; go: (v: V
         </h1>
         <p className="mt-1.5 text-[1.05rem] text-muted">{fill(t.overview.subtitle, { agent: BRAND.agent })}</p>
       </div>
-      <button onClick={() => go("mandate")} className="card-shadow flex items-center gap-2.5 rounded-xl border border-line bg-card px-4 py-3 text-[0.95rem] font-semibold hover:bg-paper">
-        <Icon name="mandate" size={18} />
-        {t.overview.mandateButton}
+      <button onClick={openPlan} className="card-shadow flex items-center gap-2.5 rounded-xl border border-line bg-card px-4 py-3 text-[0.95rem] font-semibold hover:bg-paper">
+        <Icon name="sliders" size={18} />
+        {t.plan.button}
         <Icon name="arrowUpRight" size={16} className="text-muted" />
       </button>
     </div>
@@ -451,6 +451,81 @@ export function OverviewView({ state, settings, mimo, onAck, go, openChat }: Pro
       </div>
       <div className="border-t border-line pt-4">
         <ProofBar state={state} settings={settings} go={go} t={t} />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- plan dialog
+
+const MIX_TONE: Record<AssetSymbol | "USD", string> = { USD: "bg-forest", IDX: "bg-sage", BOND: "bg-mint-line", GOLD: "bg-sun", MEME: "bg-coral" };
+
+/** The strategy the agent works toward, inside the mandate. Changing it goes through the chat. */
+export function PlanDialog({ state, settings, onClose, onChange }: { state: AppState; settings: Settings; onClose: () => void; onChange: (prompt: string) => void }) {
+  const t = strings(settings.language);
+  const plan = state.plan;
+  const names = ASSET_NAME[settings.language];
+  const targets = (Object.entries(plan.targets) as [AssetSymbol, number][]).filter(([, v]) => v > 0);
+  const cash = Math.max(0, 100 - targets.reduce((a, [, v]) => a + v, 0));
+  const mix: [AssetSymbol | "USD", string, number][] = [...targets.map(([k, v]) => [k, names[k], v] as [AssetSymbol, string, number]), ["USD", t.plan.cashRest, cash]];
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={t.plan.eyebrow} className="slide-in w-full max-w-lg rounded-(--radius-card) bg-card p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <p className="eyebrow">{t.plan.eyebrow}</p>
+          <button onClick={onClose} aria-label={t.plan.close} className="-mt-2 -mr-2 rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+        <h2 className="mt-2 font-serif text-[2rem] leading-tight">{fill(t.plan.title, { agent: BRAND.agent })}</h2>
+        <p className="mt-2 text-sm text-muted">{fill(t.plan.sub, { agent: BRAND.agent })}</p>
+
+        <p className="mt-6 text-sm font-semibold">{t.plan.targets}</p>
+        <div className="mt-2 flex h-3 gap-0.5 overflow-hidden rounded-full">
+          {mix.map(([k, , v]) => (
+            <div key={k} className={MIX_TONE[k]} style={{ width: `${v}%` }} />
+          ))}
+        </div>
+        <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+          {mix.map(([k, label, v]) => (
+            <li key={k} className="flex items-center gap-1.5">
+              <span className={`size-2.5 rounded-full ${MIX_TONE[k]}`} />
+              {label} <span className="num font-semibold">{v}%</span>
+            </li>
+          ))}
+        </ul>
+
+        <dl className="mt-6 divide-y divide-line border-y border-line text-sm">
+          <div className="flex justify-between gap-4 py-3">
+            <dt className="text-muted">{t.plan.recurring}</dt>
+            <dd className="text-right font-semibold">
+              {plan.recurring.length
+                ? plan.recurring.map((r) => (
+                    <span key={r.symbol} className="block">
+                      {fill(r.everyHours === 24 ? t.plan.everyDay : t.plan.every, { amount: money(r.usd, settings.currency), asset: names[r.symbol], hours: r.everyHours })}
+                    </span>
+                  ))
+                : t.plan.none}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4 py-3">
+            <dt className="text-muted">{t.plan.drift}</dt>
+            <dd className="font-semibold">{fill(t.plan.driftValue, { n: plan.driftPct })}</dd>
+          </div>
+        </dl>
+        <p className="mt-4 flex items-start gap-2 text-xs text-muted">
+          <Icon name="shieldCheck" size={14} className="mt-0.5 shrink-0 text-leaf" />
+          {t.plan.note}
+        </p>
+        <button onClick={() => onChange(t.plan.changePrompt)} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-forest px-4 py-3 font-semibold text-white hover:bg-forest-soft">
+          {fill(t.plan.change, { agent: BRAND.agent })}
+          <Icon name="arrowUpRight" size={16} />
+        </button>
       </div>
     </div>
   );
