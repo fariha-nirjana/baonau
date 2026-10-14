@@ -13,7 +13,6 @@ import type { MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
 import { Card, short } from "./ui";
 import { OUTCOME_ICON, OUTCOME_TEXT } from "./Activity";
-import { Change } from "./views";
 
 type Props = { state: AppState; settings: Settings; mimo: MimoSay; onAck: () => void; go: (v: View) => void; openChat: () => void; onOpen: (r: Receipt) => void };
 
@@ -39,6 +38,18 @@ function BigMoney({ usd, currency }: { usd: string; currency: Currency }) {
 export function money(usd: string | number, currency: Currency) {
   const c = CURRENCIES[currency];
   return `${c.sign}${trim(Number(usd) * c.perUsd, c.decimals)}`;
+}
+
+/** A change shown without red or green: neutral ink with an arrow and a sign (in China red means up). */
+export function Change({ pct, suffix = "today" }: { pct: number; suffix?: string }) {
+  const flat = Math.abs(pct) < 0.005;
+  const mark = flat ? "" : pct > 0 ? "▲ +" : "▼ −";
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-line bg-card px-3 py-1 text-sm font-semibold text-ink">
+      {mark}
+      {Math.abs(pct).toFixed(2)}% {suffix}
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------- value chart

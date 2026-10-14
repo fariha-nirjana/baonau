@@ -43,6 +43,7 @@ const SECTIONS: Record<string, [string, string]> = {
   actors: ["Who acted (on receipts)", "Shown on every receipt."],
   gates: ["Rule check names (on receipts)", "The list of checks on every receipt. Replaces the English-only list in Part 4."],
   proof: ["Proof screen", "The harness results and the contract test numbers."],
+  demo: ["Security demo screen", "The compromised-agent run and the market lab. The attacker's goals are translated here too."],
   chat: ["Chat with Mimo", "The floating chat and its full-window mode."],
   launcher: ["Chat button in the corner", "The line under \"Talk to Mimo\", one per mood."],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],
@@ -176,9 +177,9 @@ for (const [title, where, file, from, to] of EVENT_FILES) {
   out();
 }
 
-out("## Not in this file yet");
+out("## Not translated yet");
 out();
-out("Security demo still have their old text. Each one is added here when it is redone.");
+out("The detail sentences inside receipts, rule checks and contract refusals (Part 4) are English in every language. They get translated once, after this review.");
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, lines.join("\n") + "\n");

@@ -18,7 +18,7 @@ import { PortfolioHeader, PortfolioView } from "./Portfolio";
 import { MandateHeader, MandateView } from "./Mandate";
 import { ApprovalsHeader, ApprovalsView } from "./Approvals";
 import { ActivityHeader, ActivityView, ReceiptDialog } from "./Activity";
-import { DemoView } from "./views";
+import { SecurityHeader, SecurityView } from "./Security";
 
 type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
 
@@ -45,13 +45,6 @@ const TITLES: Record<View, [string, string]> = {
   proof: ["Proof", "Six markets, three kinds of agent, a calm owner and a panicking one. Did the boundaries hold?"],
   demo: ["Security demo", "See what a stolen agent key can and cannot do."],
 };
-
-/** The demo market switch moves the index fund's simulated price. The stop-loss in the demo mandate is at 102. */
-const MARKETS: { id: string; label: string; idx: number }[] = [
-  { id: "calm", label: "Calm", idx: 120 },
-  { id: "dip", label: "Dip", idx: 108 },
-  { id: "crash", label: "Crash", idx: 100 },
-];
 
 function Segmented<T extends string>({ value, options, onChange, label }: { value: T | null; options: [T, string][]; onChange: (v: T) => void; label: string }) {
   return (
@@ -116,7 +109,6 @@ export function Dashboard() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
-  const [market, setMarket] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // what the mascot has already been acknowledged for; receipts already there when the page opened count as seen
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
@@ -223,22 +215,9 @@ export function Dashboard() {
   const toSign = state.drafts.length + state.requests.length;
   const [title, subtitle] = TITLES[view];
   const stale = p.positions.some((x) => x.priceIsStale && (x.rule.allowed || Number(x.amount) > 0));
-  const idx = p.positions.find((x) => x.symbol === "IDX");
-  const marketNow = market ?? (idx ? (Number(idx.price) >= 118 ? "calm" : Number(idx.price) <= 102 ? "crash" : "dip") : null);
   const guardian = settings.role === "guardian";
   const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
   const crumb = [...NAV, ...NAV_TEST].find((n) => n.view === view);
-
-  async function moveMarket(id: string) {
-    const target = MARKETS.find((m) => m.id === id);
-    if (!target) return;
-    setMarket(id);
-    try {
-      await act("demo", "price", `IDX=${target.idx}`);
-    } finally {
-      setMarket(null);
-    }
-  }
 
   const askMimo = (text: string) => {
     setPrefill({ id: Date.now(), text });
@@ -374,6 +353,8 @@ export function Dashboard() {
               <ActivityHeader settings={settings} />
             ) : view === "proof" ? (
               <ProofHeader settings={settings} />
+            ) : view === "demo" ? (
+              <SecurityHeader settings={settings} />
             ) : (
               <div>
                 <h1 className="font-display text-[2.2rem] font-semibold tracking-[-0.03em]">{title}</h1>
@@ -383,7 +364,7 @@ export function Dashboard() {
 
             {notice ? <p className="slide-in mt-5 rounded-2xl bg-coral-soft p-4 text-lg text-coral">{notice}</p> : null}
             {error ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{fill(t.shell.refreshFailed, { error })}</p> : null}
-            {stale && view === "demo" ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{t.shell.stale}</p> : null}
+            {stale && view === "demo" ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{t.shell.staleHere}</p> : null}
             {guardian ? <p className="mt-5 rounded-2xl border border-line bg-card p-4 text-base text-muted">{t.shell.guardianNote}</p> : null}
             {guardian && waiting > 0 ? (
               <button onClick={() => setView("approvals")} className="slide-in mt-4 block w-full rounded-2xl border border-sun bg-sun-soft p-4 text-left text-base text-sun-ink">
@@ -392,13 +373,6 @@ export function Dashboard() {
             ) : null}
             {!/^0x0+$/.test(p.agent.address) || !p.mandateSigned ? null : <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{t.shell.noKey}</p>}
 
-            {view === "demo" && idx ? (
-              <div className="mt-5 flex items-center gap-3" title="Moves the simulated index fund price on the demo feed">
-                <span className="text-sm font-semibold text-muted">Demo market</span>
-                <Segmented label="Demo market" value={marketNow} options={MARKETS.map((m) => [m.id, m.label] as [string, string])} onChange={moveMarket} />
-              </div>
-            ) : null}
-
             <div className="mt-7">
               {view === "portfolio" ? <OverviewView state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} openChat={() => setChatOpen(true)} onOpen={setReceipt} /> : null}
               {view === "holdings" ? <PortfolioView state={state} settings={settings} onAsk={askMimo} /> : null}
@@ -406,7 +380,7 @@ export function Dashboard() {
               {view === "approvals" ? <ApprovalsView state={state} settings={settings} act={act} skew={skew} /> : null}
               {view === "activity" ? <ActivityView state={state} settings={settings} onOpen={setReceipt} /> : null}
               {view === "proof" ? <ProofView settings={settings} /> : null}
-              {view === "demo" ? <DemoView state={state} settings={settings} act={act} skew={skew} onAttack={setAttacking} /> : null}
+              {view === "demo" ? <SecurityView state={state} settings={settings} act={act} onAttack={setAttacking} /> : null}
             </div>
           </div>
         </main>
