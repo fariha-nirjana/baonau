@@ -101,7 +101,6 @@ export function Chat({
   state,
   settings,
   mimo,
-  onAck,
   go,
   refresh,
   onBusy,
@@ -112,7 +111,6 @@ export function Chat({
   state: AppState;
   settings: Settings;
   mimo: MimoSay;
-  onAck: () => void;
   go: (v: View) => void;
   refresh: () => void;
   onBusy: (busy: boolean) => void;
@@ -172,14 +170,6 @@ export function Chat({
           <Icon name="minus" size={18} />
         </button>
       </header>
-      {mimo.dismissKey ? (
-        <div className="flex items-center gap-3 border-b border-line px-5 py-2.5 text-sm" style={{ background: "var(--mood-soft)" }}>
-          <p className="flex-1">{mimo.line}</p>
-          <button onClick={onAck} className="shrink-0 rounded-lg bg-card px-2.5 py-1 font-semibold hover:bg-cream">
-            Got it
-          </button>
-        </div>
-      ) : null}
 
       <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
         {messages.length === 0 ? (

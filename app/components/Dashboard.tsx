@@ -86,7 +86,7 @@ function NavButton({ item, active, count, onClick, t }: { item: NavItem; active:
     <button
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[0.95rem] transition-colors ${active ? "bg-mint font-semibold text-forest" : "text-muted hover:bg-cream hover:text-ink"}`}
+      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[0.92rem] transition-colors ${active ? "bg-mint font-semibold text-forest" : "text-muted hover:bg-cream hover:text-ink"}`}
     >
       <Icon name={item.icon} size={19} strokeWidth={1.7} />
       <span className="flex-1">{t.nav[item.key]}</span>
@@ -250,9 +250,7 @@ export function Dashboard() {
             <span className="text-sage">.</span>
           </p>
         </div>
-        <p className="eyebrow mt-3 px-2 text-[0.68rem]! text-faint!">{state.brand.agentRole}</p>
-
-        <div className="mt-7 space-y-1">
+        <div className="mt-9 space-y-1">
           {NAV.map((item) => (
             <NavButton
               key={item.view}
@@ -285,7 +283,6 @@ export function Dashboard() {
             <span className="block text-sm font-semibold">{t.shell.circle}</span>
             <span className="block text-xs text-muted">{guardian ? t.shell.circleGuardian : t.shell.circleOwner}</span>
           </span>
-          <Icon name="swap" size={15} className="text-faint" />
           {guardian && waiting ? <span className="num rounded-md bg-sun-soft px-1.5 text-xs font-semibold text-sun-ink">{waiting}</span> : null}
         </button>
 
@@ -321,6 +318,12 @@ export function Dashboard() {
             <span className="font-semibold text-ink">{crumb ? t.nav[crumb.key] : ""}</span>
           </p>
           <div className="ml-auto flex items-center gap-3">
+            {stale ? (
+              <button onClick={() => setView("demo")} title={t.shell.stale} className="flex items-center gap-1.5 rounded-full bg-sun-soft px-3 py-1 text-sm font-semibold text-sun-ink">
+                <Icon name="alert" size={14} />
+                {t.shell.staleShort}
+              </button>
+            ) : null}
             <SyncedAgo at={syncedAt} t={t} />
             <Segmented<Currency> label="Currency" value={settings.currency} options={[["BDT", "৳"], ["CNY", "¥"], ["USD", "$"]]} onChange={(currency) => setSettings((s) => ({ ...s, currency }))} />
             <Segmented<Language> label="Language" value={settings.language} options={[["en", "EN"], ["bn", "বাংলা"], ["zh", "中文"]]} onChange={(language) => setSettings((s) => ({ ...s, language }))} />
@@ -340,7 +343,7 @@ export function Dashboard() {
 
             {notice ? <p className="slide-in mt-5 rounded-2xl bg-coral-soft p-4 text-lg text-coral">{notice}</p> : null}
             {error ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{fill(t.shell.refreshFailed, { error })}</p> : null}
-            {stale ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{t.shell.stale}</p> : null}
+            {stale && view === "demo" ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{t.shell.stale}</p> : null}
             {guardian ? <p className="mt-5 rounded-2xl border border-line bg-card p-4 text-base text-muted">{t.shell.guardianNote}</p> : null}
             {guardian && waiting > 0 ? (
               <button onClick={() => setView("approvals")} className="slide-in mt-4 block w-full rounded-2xl border border-sun bg-sun-soft p-4 text-left text-base text-sun-ink">
@@ -373,7 +376,7 @@ export function Dashboard() {
       {!guardian ? (
         <>
           <div className={`fixed right-6 bottom-6 z-40 h-[min(46rem,calc(100vh-3rem))] w-[26rem] ${chatOpen ? "slide-in" : "hidden"}`}>
-            <Chat state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} refresh={refresh} onBusy={setChatBusy} onStressed={setStressedAt} onClose={() => setChatOpen(false)} />
+            <Chat state={state} settings={settings} mimo={mimo} go={setView} refresh={refresh} onBusy={setChatBusy} onStressed={setStressedAt} onClose={() => setChatOpen(false)} />
           </div>
           {!chatOpen ? (
             <button onClick={() => setChatOpen(true)} className={`mood-${mimo.mood} group fixed right-6 bottom-6 z-40 flex items-center gap-3`}>

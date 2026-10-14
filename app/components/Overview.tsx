@@ -89,7 +89,6 @@ function ValueChart({ points, settings, t }: { points: ValuePoint[]; settings: S
       </div>
       <div className="num flex flex-col justify-between text-xs text-faint">
         <span>{money(hi, settings.currency)}</span>
-        <span>{money(mid, settings.currency)}</span>
         <span>{money(lo, settings.currency)}</span>
       </div>
       <div className="num flex justify-between text-xs tracking-wide text-faint uppercase">
@@ -140,8 +139,7 @@ function ValueCard({ state, settings, t }: { state: AppState; settings: Settings
         <div className="mt-3">
           <Change pct={change} suffix={t.overview.today} />
         </div>
-        <p className="mt-6 text-sm text-muted">{t.overview.chartTitle}</p>
-        <div className="mt-3 mb-6 h-52">
+        <div className="mt-8 mb-6 h-56">
           <ValueChart points={state.history.slice(-240)} settings={settings} t={t} />
         </div>
       </div>
@@ -197,10 +195,15 @@ function MimoCard({ state, mimo, onAck, openChat, t }: { state: AppState; mimo: 
         <span className="relative -mt-5 inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1 text-sm font-semibold text-ink shadow">
           <span className="size-2 rounded-full" style={{ background: "var(--mood)" }} />
           {t.mood.chip[mimo.mood]}
+          {mimo.dismissKey ? (
+            <button onClick={onAck} title={t.overview.gotIt} aria-label={t.overview.gotIt} className="-mr-1 ml-0.5 rounded-full p-0.5 text-muted hover:bg-cream hover:text-ink">
+              <Icon name="close" size={13} strokeWidth={2.4} />
+            </button>
+          ) : null}
         </span>
       </div>
 
-      <div className="relative mt-5 px-8 text-center">
+      <div className="relative mt-5 mb-7 px-8 text-center">
         <h2 className="font-serif text-[2rem] leading-[1.15] tracking-[-0.01em]">
           {headline.map((l, i) => (
             <Fragment key={i}>
@@ -209,12 +212,7 @@ function MimoCard({ state, mimo, onAck, openChat, t }: { state: AppState; mimo: 
             </Fragment>
           ))}
         </h2>
-        <p className="mx-auto mt-3 max-w-sm text-[0.95rem] leading-relaxed text-white/75">{mimo.line}</p>
-        {mimo.dismissKey ? (
-          <button onClick={onAck} className="mt-3 rounded-full border border-white/25 px-3.5 py-1 text-sm font-semibold hover:bg-white/10">
-            {t.overview.gotIt}
-          </button>
-        ) : null}
+        <p className="mx-auto mt-3 max-w-xs text-[0.92rem] leading-relaxed text-white/70">{mimo.line}</p>
       </div>
 
       <button onClick={openChat} className="relative mt-auto flex items-center justify-between border-t border-white/12 px-6 py-4 text-left text-[0.95rem] font-semibold hover:bg-white/5">
@@ -252,36 +250,26 @@ function BoundariesCard({ state, settings, go, t }: { state: AppState; settings:
         </button>
       </div>
 
-      <div className="mt-5 grid gap-6 sm:grid-cols-[1.1fr_1fr]">
+      <div className="mt-6 grid gap-8 sm:grid-cols-2">
         <div>
           <p className="eyebrow">{t.overview.hacked}</p>
-          <p className="mt-2 text-[0.95rem] text-muted">{t.overview.hackedLead}</p>
-          <p className="num mt-1 font-display text-4xl font-semibold tracking-[-0.03em]">{money(p.agentExposure.maxCost, settings.currency)}</p>
-          <dl className="mt-4 grid grid-cols-2 gap-2.5">
-            <div className="rounded-xl bg-mint/70 p-3">
-              <dt className="text-xs text-muted">{t.overview.sendOut}</dt>
-              <dd className="num mt-0.5 text-lg font-semibold text-leaf">{money(0, settings.currency)}</dd>
-            </div>
-            <div className="rounded-xl bg-paper p-3">
-              <dt className="text-xs text-muted">{t.overview.tradeLeft}</dt>
-              <dd className="num mt-0.5 text-lg font-semibold">{money(p.agentExposure.tradable, settings.currency)}</dd>
-            </div>
-          </dl>
+          <p className="num mt-3 font-display text-[2.6rem] leading-none font-semibold tracking-[-0.03em]">{money(p.agentExposure.maxCost, settings.currency)}</p>
+          <p className="mt-2 text-sm text-muted">
+            {t.overview.hackedLead} <span className="font-semibold text-leaf">{money(0, settings.currency)}</span> {t.overview.sendOutShort}
+          </p>
         </div>
-
         <div>
           <p className="eyebrow">{t.overview.lossLimit}</p>
-          <p className="mt-2 flex items-baseline gap-1">
-            <span className="num font-display text-4xl font-semibold tracking-[-0.03em]">{p.today.lossPct.toFixed(1)}</span>
+          <p className="mt-3 flex items-baseline gap-1">
+            <span className="num font-display text-[2.6rem] leading-none font-semibold tracking-[-0.03em]">{p.today.lossPct.toFixed(1)}</span>
             <span className="num text-lg text-faint">/ {m.dailyLossPct}%</span>
           </p>
-          <p className="text-sm text-muted">{t.overview.downToday}</p>
           {/* four segments, filled up to today's loss; amber once protect mode is on, never red or green for a loss */}
           <div className="mt-3 grid grid-cols-4 gap-1">
             {[0, 1, 2, 3].map((i) => {
               const part = Math.max(0, Math.min(1, lossFill * 4 - i));
               return (
-                <div key={i} className="h-2 overflow-hidden rounded-full bg-cream">
+                <div key={i} className="h-1.5 overflow-hidden rounded-full bg-cream">
                   <div className={`h-full rounded-full ${p.protect.active ? "bg-sun" : "bg-sage"}`} style={{ width: `${part * 100}%` }} />
                 </div>
               );
@@ -293,22 +281,20 @@ function BoundariesCard({ state, settings, go, t }: { state: AppState; settings:
         </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-7 flex flex-wrap gap-2">
         {[
           [`${m.maxTradePct}%`, t.overview.perTrade],
           [String(allowed), t.overview.approvedAssets],
           [delayMin >= 1 ? fill(t.overview.minutes, { n: delayMin }) : fill(t.overview.seconds, { n: p.settings.loosenDelaySeconds }), t.overview.toLoosen],
         ].map(([v, l]) => (
-          <span key={l} className="rounded-lg border border-line bg-paper px-3 py-1.5 text-sm text-muted">
+          <span key={l} className="rounded-lg border border-line px-2.5 py-1 text-xs text-muted">
             <span className="num font-semibold text-ink">{v}</span> {l}
           </span>
         ))}
       </div>
-      <p className="mt-4 flex items-start gap-2 text-sm text-muted">
-        <Icon name="shieldCheck" size={16} className="mt-0.5 text-leaf" />
-        <span>
-          {fill(t.overview.atLimit, { agent: BRAND.agent })} {t.overview.notMarket}
-        </span>
+      <p className="mt-4 flex items-center gap-2 text-xs text-faint">
+        <Icon name="shieldCheck" size={14} className="text-leaf" />
+        {fill(t.overview.atLimit, { agent: BRAND.agent })}
       </p>
     </Card>
   );
@@ -337,7 +323,7 @@ const OUTCOME_TEXT: Record<Receipt["outcome"], string> = {
 };
 
 function RecentCard({ state, go, t }: { state: AppState; go: (v: View) => void; t: Strings }) {
-  const recent = state.receipts.slice(0, 4);
+  const recent = state.receipts.slice(0, 3);
   return (
     <Card className="p-7!">
       <div className="flex items-center justify-between gap-3">
@@ -355,20 +341,15 @@ function RecentCard({ state, go, t }: { state: AppState; go: (v: View) => void; 
             const [icon, tone] = OUTCOME_ICON[r.outcome];
             return (
               <li key={r.ref + r.at}>
-                <button onClick={() => go("activity")} className="flex w-full items-start gap-3.5 py-3.5 text-left">
-                  <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl ${tone}`}>
+                <button onClick={() => go("activity")} className="flex w-full items-center gap-3.5 py-4 text-left">
+                  <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${tone}`}>
                     <Icon name={icon} size={16} strokeWidth={2.2} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[0.95rem] font-semibold">{r.what}</span>
-                    <span className="mt-0.5 line-clamp-1 text-sm text-muted">{r.refusal ?? r.why}</span>
+                    <span className={`mt-0.5 block text-sm ${OUTCOME_TEXT[r.outcome]}`}>{t.outcome[r.outcome]}</span>
                   </span>
-                  <span className="shrink-0 text-right">
-                    <span className="num block text-xs text-faint">
-                      {clock(r.at)}
-                    </span>
-                    <span className={`mt-0.5 block text-xs font-semibold ${OUTCOME_TEXT[r.outcome]}`}>{t.outcome[r.outcome]}</span>
-                  </span>
+                  <span className="num shrink-0 pt-0.5 text-xs text-faint">{clock(r.at)}</span>
                 </button>
               </li>
             );
