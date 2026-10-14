@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    Mimo / Warning expression
+    Matches the hold pose of mimo_warning.json.
+    Leaning slightly away from the warning sign (3deg, pivot 256,470), arms pulled up a little,
+    ears back, concerned brows, small frown, eyes glancing toward the sign.
+    Each part is its own group with an id; pivots noted for rigging.
+  -->
+
+  <!-- Ground shadow -->
+  <g id="shadow">
+    <ellipse cx="256" cy="483" rx="140" ry="11" fill="#2E6B57" opacity="0.12"/>
+  </g>
+
+  <!-- Feet -->
+  <g id="feet">
+    <ellipse id="foot_left" cx="180" cy="466" rx="46" ry="18" fill="#256F59"/>
+    <ellipse id="foot_right" cx="332" cy="466" rx="46" ry="18" fill="#256F59"/>
+  </g>
+
+  <!-- Everything above the feet leans away from the sign (pivot: 256,470) -->
+  <g id="lean" transform="rotate(-3 256 470)">
+
+    <!-- Lower body -->
+    <g id="body">
+      <path d="M188 300 H324 C366 300 394 328 394 370 V410 C394 446 368 470 330 470 H182 C144 470 118 446 118 410 V370 C118 328 146 300 188 300 Z" fill="#2A7A62"/>
+    </g>
+
+    <!-- Whole head (pivot: 256,390) -->
+    <g id="head_group">
+      <!-- Ears pulled back (pivots: 150,108 and 362,108) -->
+      <g id="ear_left" transform="rotate(-7 150 108)">
+        <circle cx="132" cy="74" r="40" fill="#2A7A62"/>
+        <circle cx="140" cy="81" r="18" fill="#1F6450"/>
+      </g>
+      <g id="ear_right" transform="rotate(7 362 108)">
+        <circle cx="380" cy="74" r="40" fill="#2A7A62"/>
+        <circle cx="372" cy="81" r="18" fill="#1F6450"/>
+      </g>
+
+      <g id="head">
+        <path d="M256 50 C373 50 451 128 451 225 C451 330 373 400 256 400 C139 400 61 330 61 225 C61 128 139 50 256 50 Z" fill="#2A7A62"/>
+      </g>
+
+      <g id="face">
+        <path d="M256 128 C268 122 290 120 312 121 C370 125 404 172 404 236 C404 306 350 352 256 352 C162 352 108 306 108 236 C108 172 142 125 200 121 C222 120 244 122 256 128 Z" fill="#FCF6EA"/>
+      </g>
+
+      <!-- Facial features, shifted slightly toward the sign -->
+      <g id="features" transform="translate(6 1)">
+        <g id="blush">
+          <ellipse id="blush_left" cx="158" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+          <ellipse id="blush_right" cx="354" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+        </g>
+
+        <!-- Eyes glance toward the sign (pivot: each eye center; scale Y to ~10% for blinks) -->
+        <g id="eye_left">
+          <circle cx="199" cy="229" r="16" fill="#1B1F22"/>
+          <circle id="eye_left_shine" cx="194" cy="223" r="5" fill="#FFFFFF"/>
+        </g>
+        <g id="eye_right">
+          <circle cx="323" cy="229" r="16" fill="#1B1F22"/>
+          <circle id="eye_right_shine" cx="318" cy="223" r="5" fill="#FFFFFF"/>
+        </g>
+
+        <!-- Concerned brows: inner ends gently lowered -->
+        <g id="brow_left">
+          <path d="M178 200 C190 200 201 202 211 205" fill="none" stroke="#2B1E16" stroke-width="4.5" stroke-linecap="round"/>
+        </g>
+        <g id="brow_right">
+          <path d="M334 200 C322 200 311 202 301 205" fill="none" stroke="#2B1E16" stroke-width="4.5" stroke-linecap="round"/>
+        </g>
+
+        <!-- Small frown -->
+        <g id="mouth">
+          <path d="M245 266 C248 256 264 256 267 266 C263 262 249 262 245 266 Z" fill="#F0A32A" stroke="#F0A32A" stroke-width="2" stroke-linejoin="round"/>
+        </g>
+
+        <g id="nose">
+          <ellipse cx="256" cy="248" rx="15" ry="7.5" fill="#2B1E16"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- Belly patch -->
+    <g id="belly">
+      <path d="M256 360 C320 358 352 380 352 410 C352 446 314 466 256 466 C198 466 160 446 160 410 C160 380 192 358 256 360 Z" fill="#FBF3E3"/>
+    </g>
+
+    <!-- Padlock badge -->
+    <g id="lock">
+      <path d="M243 414 v-8 a13 13 0 0 1 26 0 v8" fill="none" stroke="#D9A21B" stroke-width="6" stroke-linecap="round"/>
+      <rect x="234" y="411" width="44" height="34" rx="8" fill="#F2C230"/>
+      <circle cx="256" cy="425" r="5" fill="#6B4A10"/>
+      <rect x="254" y="427" width="4" height="10" rx="2" fill="#6B4A10"/>
+    </g>
+
+    <!-- Arms pulled up toward the chest (pivots: shoulders 97,305 and 415,305) -->
+    <g id="arm_left" transform="rotate(-6 97 305)">
+      <ellipse cx="134" cy="337" rx="54" ry="31" fill="#1F6450" opacity="0.35" transform="rotate(37 134 337)"/>
+      <ellipse cx="132" cy="332" rx="54" ry="31" fill="#2F8269" transform="rotate(37 132 332)"/>
+    </g>
+    <g id="arm_right" transform="rotate(6 415 305)">
+      <ellipse cx="378" cy="337" rx="54" ry="31" fill="#1F6450" opacity="0.35" transform="rotate(-37 378 337)"/>
+      <ellipse cx="380" cy="332" rx="54" ry="31" fill="#2F8269" transform="rotate(-37 380 332)"/>
+    </g>
+  </g>
+
+  <!-- Warning sign, resting over the right paw (pivot: 414,369, the bottom center) -->
+  <g id="warning_icon">
+    <path d="M414 266 L474 369 L354 369 Z" fill="#F26B4F" stroke="#F26B4F" stroke-width="18" stroke-linejoin="round"/>
+    <path id="warning_shine" d="M405 283 L377 330" fill="none" stroke="#FF9A85" stroke-width="7" stroke-linecap="round"/>
+    <rect id="warning_bar" x="407.5" y="295" width="13" height="45" rx="6.5" fill="#FFFFFF"/>
+    <circle id="warning_dot" cx="414" cy="354" r="7.5" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Amber pulse ring (hidden in the static pose; shown for reference when animating) -->
+  <g id="pulse_ring" opacity="0">
+    <circle cx="414" cy="330" r="74" fill="none" stroke="#F5B23D" stroke-width="6"/>
+  </g>
+</svg>

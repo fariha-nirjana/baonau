@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="36 12 440 440" width="440" height="440">
+  <!--
+    Mimo avatar / worried
+    Head-only, for chat bubbles and the sidebar. The square viewBox keeps the whole head inside a circle crop,
+    so it can be shown in a round frame (border-radius: 50%). Features are enlarged so they read at 32px.
+  -->
+  <g id="avatar" transform="rotate(0 256 300)">
+  <!-- Ears (pivots: 150,108 and 362,108) -->
+  <g id="ear_left" transform="translate(12 12) rotate(-6 150 108)">
+    <circle cx="132" cy="74" r="40" fill="#2A7A62"/>
+    <circle cx="140" cy="81" r="18" fill="#1F6450"/>
+  </g>
+  <g id="ear_right" transform="translate(-12 12) rotate(6 362 108)">
+    <circle cx="380" cy="74" r="40" fill="#2A7A62"/>
+    <circle cx="372" cy="81" r="18" fill="#1F6450"/>
+  </g>
+  <g id="head">
+    <path d="M256 50 C373 50 451 128 451 225 C451 330 373 400 256 400 C139 400 61 330 61 225 C61 128 139 50 256 50 Z" fill="#2A7A62"/>
+  </g>
+  <g id="face">
+    <path d="M256 128 C268 122 290 120 312 121 C370 125 404 172 404 236 C404 306 350 352 256 352 C162 352 108 306 108 236 C108 172 142 125 200 121 C222 120 244 122 256 128 Z" fill="#FCF6EA"/>
+  </g>
+  <!-- Facial features, enlarged ~22% around the face center so they read at 32px -->
+    <g id="blush">
+      <ellipse cx="158" cy="270" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+      <ellipse cx="354" cy="270" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+    </g>
+  <g id="features" transform="translate(256 244) scale(1.22) translate(-256 -244)">
+    <g id="brows">
+      <path d="M174 200 C186 196 196 191 210 184" fill="none" stroke="#2B1E16" stroke-width="7" stroke-linecap="round"/>
+      <path d="M338 200 C326 196 316 191 302 184" fill="none" stroke="#2B1E16" stroke-width="7" stroke-linecap="round"/>
+    </g>
+    <g id="eyes">
+      <circle cx="196" cy="230" r="17" fill="#1B1F22"/><circle cx="191" cy="224" r="5.5" fill="#FFFFFF"/><circle cx="202" cy="236" r="3" fill="#FFFFFF"/>
+      <circle cx="316" cy="230" r="17" fill="#1B1F22"/><circle cx="311" cy="224" r="5.5" fill="#FFFFFF"/><circle cx="322" cy="236" r="3" fill="#FFFFFF"/>
+    </g>
+    <g id="mouth"><path d="M243 268 C247 256 265 256 269 268 C264 263 248 263 243 268 Z" fill="#F0A32A" stroke="#F0A32A" stroke-width="2" stroke-linejoin="round"/></g>
+    <g id="nose"><ellipse cx="256" cy="248" rx="15" ry="7.5" fill="#2B1E16"/></g>
+  </g>
+  </g>
+</svg>

@@ -92,3 +92,40 @@ body {
     animation: none;
   }
 }
+
+/* the soft green tile around Mimo, after the team's prototype */
+.mimo-tile {
+  background: linear-gradient(145deg, #e4edcf, #c9dcb4);
+  border: 1px solid #b9ceab;
+  overflow: hidden;
+}
+
+/* a quick crossfade when Mimo's face changes */
+@keyframes face-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes face-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.face-in {
+  animation: face-in 150ms ease-out both;
+}
+.face-out {
+  animation: face-out 150ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .face-in,
+  .face-out {
+    animation: none;
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AnimationItem, LottiePlayer } from "lottie-web";
 import { PRIORITY } from "./mimo";
 import type { Mood, ShieldVariant } from "./types";
@@ -28,13 +28,13 @@ const ALERTS: Partial<Record<Mood, Segments>> = {
   holding: { intro: [0, 52], hold: [52, 142], outro: [142, 170] },
 };
 
-/** Static art per state. There is no warning SVG yet, so warning uses the worried face. */
+/** Static art per state, one SVG for each animation. */
 const STILL: Record<Mood, string> = {
   calm: "calm",
   thinking: "thinking",
   watching: "watching",
   worried: "worried",
-  warning: "worried",
+  warning: "warning",
   shield: "shield",
   holding: "holding",
 };
@@ -199,4 +199,72 @@ function StillMascot({ mood, size }: { mood: Mood; size: number }) {
 export function Mascot({ mood, variant = "code", size = 150, still = false }: { mood: Mood; variant?: ShieldVariant; size?: number; still?: boolean }) {
   if (still || size < 80) return <StillMascot mood={mood} size={size} />;
   return <AnimatedMascot mood={mood} variant={variant} size={size} />;
+}
+
+/** The full-body Mimo waving, for good news and empty states. Same 512 x 512 canvas as the other stills. */
+export function HappyMascot({ size = 150 }: { size?: number }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/mascot/happy.svg" alt="" width={size} height={size} />;
+}
+
+// ---------------------------------------------------------------- head-only avatars
+
+/** The head-only faces from the graphics team, readable down to 32 px. */
+export type Face = "calm" | "happy" | "thinking" | "worried" | "alert" | "determined";
+
+/** Which face goes with which state, from the graphics handoff. */
+export function faceOf(mood: Mood): Face {
+  switch (mood) {
+    case "thinking":
+      return "thinking";
+    case "worried":
+      return "worried";
+    case "warning":
+      return "alert";
+    case "shield":
+    case "holding":
+      return "determined";
+    default:
+      return "calm";
+  }
+}
+
+const FACE_FADE_MS = 150;
+
+/**
+ * Mimo's head, cross-faded (150 ms) when the face changes. The square art keeps the
+ * head inside a circle, so it sits in any round or rounded frame.
+ */
+export function Avatar({ face, size }: { face: Face; size: number }) {
+  const [shown, setShown] = useState(face);
+  const [leaving, setLeaving] = useState<Face | null>(null);
+  if (face !== shown) {
+    // adjusting state from a prop while rendering, as React recommends instead of an effect
+    setLeaving(shown);
+    setShown(face);
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const id = setTimeout(() => setLeaving(null), FACE_FADE_MS);
+    return () => clearTimeout(id);
+  }, [leaving]);
+  return (
+    <span aria-hidden className="relative block shrink-0" style={{ width: size, height: size }}>
+      {leaving ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={`out-${leaving}`} src={`/mascot/avatar-${leaving}.svg`} alt="" width={size} height={size} className="face-out absolute inset-0" />
+      ) : null}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img key={`in-${shown}`} src={`/mascot/avatar-${shown}.svg`} alt="" width={size} height={size} className={`absolute inset-0 ${leaving ? "face-in" : ""}`} />
+    </span>
+  );
+}
+
+/** The soft green rounded tile the prototype puts Mimo in. */
+export function MimoTile({ size, children, className = "" }: { size: number; children: ReactNode; className?: string }) {
+  return (
+    <span className={`mimo-tile relative grid shrink-0 place-items-center ${className}`} style={{ width: size, height: size, borderRadius: Math.round(size * 0.34) }}>
+      {children}
+    </span>
+  );
 }

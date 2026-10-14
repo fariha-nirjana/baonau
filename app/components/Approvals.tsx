@@ -6,7 +6,7 @@ import { BRAND } from "@/lib/brand";
 import type { Draft } from "@/lib/drafts";
 import { clock, fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
-import { Mascot } from "./Mascot";
+import { HappyMascot } from "./Mascot";
 import { ASSET, ASSET_NAME, money } from "./Overview";
 import type { Act, AppState, Settings } from "./types";
 import { Card, short, useSecondsLeft } from "./ui";
@@ -608,7 +608,7 @@ export function ApprovalsView(props: Props) {
       <div className="space-y-8">
         {toSign === 0 && queue.length === 0 ? (
           <Card className="flex flex-wrap items-center gap-6 p-8!">
-            <Mascot mood="calm" size={130} still />
+            <HappyMascot size={140} />
             <div className="max-w-md">
               <h2 className="font-serif text-[1.9rem] leading-tight">
                 {t.approvals.emptyTitle}

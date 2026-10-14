@@ -8,7 +8,7 @@ import { BRAND } from "@/lib/brand";
 import { Chat } from "./Chat";
 import { fill, strings, type Strings } from "./i18n";
 import { Icon, type IconName } from "./icons";
-import { Mascot } from "./Mascot";
+import { Avatar, faceOf, Mascot, MimoTile } from "./Mascot";
 import { mimoOf, waitingCount } from "./mimo";
 import type { Act, AppState, Settings, View } from "./types";
 import { OverviewHeader, OverviewView, PlanDialog } from "./Overview";
@@ -296,6 +296,18 @@ export function Dashboard() {
         </button>
 
         <div className="mt-auto space-y-3 pt-5">
+          <button onClick={() => setChatOpen(true)} className={`mood-${mimo.mood} flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left hover:bg-cream`}>
+            <MimoTile size={40}>
+              <Avatar face={chatBusy ? "thinking" : faceOf(mimo.mood)} size={36} />
+            </MimoTile>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">{BRAND.agent}</span>
+              <span className="flex items-center gap-1.5 truncate text-xs text-muted">
+                <span className="size-1.5 shrink-0 rounded-full" style={{ background: "var(--mood)" }} />
+                {p.agent.paused ? t.chat.paused : t.launcher[mimo.mood]}
+              </span>
+            </span>
+          </button>
           <div className="rounded-2xl border border-line bg-[radial-gradient(ellipse_at_90%_0%,var(--color-mint),transparent_70%)] p-4">
             <Icon name="sparkle" size={18} strokeWidth={1.4} className="text-sage" />
             <p className="mt-2 text-[0.95rem] leading-snug font-semibold">
@@ -417,9 +429,11 @@ export function Dashboard() {
                 <span className="block text-sm font-semibold">{fill(t.shell.talk, { agent: BRAND.agent })}</span>
                 <span className="block text-xs text-muted">{p.agent.paused ? t.chat.paused : t.launcher[mimo.mood]}</span>
               </span>
-              <span className="relative rounded-full border-[3px] border-card bg-mint shadow-[0_14px_30px_-12px_rgb(25_60_50/0.55)] transition-transform group-hover:-translate-y-0.5">
-                <Mascot mood={mimo.mood} size={84} still />
-                <span className="absolute right-1 bottom-1 size-3.5 rounded-full border-2 border-card" style={{ background: "var(--mood)" }} />
+              <span className="relative transition-transform group-hover:-translate-y-0.5">
+                <MimoTile size={76} className="shadow-[0_8px_25px_rgb(23_63_50/0.16),0_2px_3px_rgb(23_63_50/0.06)]">
+                  <Mascot mood={mimo.mood} size={68} still />
+                </MimoTile>
+                <span className="absolute right-1 bottom-1 size-3.5 rounded-full border-2 border-[#f8fbf1]" style={{ background: "var(--mood)" }} />
               </span>
             </button>
           ) : null}

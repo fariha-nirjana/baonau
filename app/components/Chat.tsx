@@ -4,14 +4,23 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
 import type { Receipt } from "@/lib/receipts";
 import { Icon } from "./icons";
-import { Mascot } from "./Mascot";
+import { Avatar, faceOf, Mascot, MimoTile, type Face } from "./Mascot";
 import { soundsStressed, type MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
 import { fill, strings } from "./i18n";
 import { Chip, moneyText, type Tone } from "./ui";
 
 type Step = { tool: string; result: Record<string, unknown>; receipt?: Receipt | null };
-type Message = { role: "user" | "assistant"; content: string; steps?: Step[] };
+/** An assistant message keeps the face Mimo had when it was sent; old messages never change. */
+type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; face?: Face };
+
+/** The face for a reply: happy when something was done, determined when something was refused or declined, worried after a stressed message. */
+function replyFace(steps: Step[] | undefined, stressed: boolean): Face {
+  const results = (steps ?? []).map((s) => ({ tool: s.tool, r: s.result }));
+  if (results.some(({ tool, r }) => tool === "decline" || (r.ok !== true && typeof r.draft_id !== "string"))) return "determined";
+  if (results.some(({ r }) => r.ok === true && !r.escalated)) return "happy";
+  return stressed ? "worried" : "calm";
+}
 
 /** Quick prompts: a short label on the chip, the full message it sends. */
 const SUGGESTIONS: Record<Settings["language"], [label: string, prompt: string][]> = {
@@ -179,9 +188,9 @@ export function Chat({
         body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })), language: settings.language, currency: settings.currency }),
       });
       const data = (await res.json()) as { reply?: string; steps?: Step[]; error?: string };
-      setMessages([...next, { role: "assistant", content: data.reply ?? fill(t.chat.failed, { error: data.error ?? "" }), steps: data.steps }]);
+      setMessages([...next, { role: "assistant", content: data.reply ?? fill(t.chat.failed, { error: data.error ?? "" }), steps: data.steps, face: data.reply ? replyFace(data.steps, soundsStressed(content)) : "worried" }]);
     } catch (err) {
-      setMessages([...next, { role: "assistant", content: fill(t.chat.offline, { error: err instanceof Error ? err.message : String(err) }) }]);
+      setMessages([...next, { role: "assistant", content: fill(t.chat.offline, { error: err instanceof Error ? err.message : String(err) }), face: "worried" }]);
     }
     setBusy(false);
     onBusy(false);
@@ -195,9 +204,9 @@ export function Chat({
 
   const header = (
     <header className="flex items-center gap-3 border-b border-line px-5 py-3.5">
-      <span className="rounded-xl bg-mint p-0.5">
-        <Mascot mood={mimo.mood} size={44} still />
-      </span>
+      <MimoTile size={46}>
+        <Avatar face={busy ? "thinking" : faceOf(mimo.mood)} size={42} />
+      </MimoTile>
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 font-display text-lg leading-tight font-semibold">
           {agent}
@@ -246,7 +255,9 @@ export function Chat({
             </div>
           ) : null}
 
-          <MimoBubble agent={agent}>{fill(t.chat.welcome, { name })}</MimoBubble>
+          <MimoBubble agent={agent} face="calm">
+            {fill(t.chat.welcome, { name })}
+          </MimoBubble>
 
           {messages.map((m, i) =>
             m.role === "user" ? (
@@ -256,14 +267,19 @@ export function Chat({
             ) : (
               <div key={i} className="space-y-3">
                 {m.steps?.map((s, j) => <StepCard key={j} step={s} go={go} />)}
-                <MimoBubble agent={agent}>{m.content}</MimoBubble>
+                <MimoBubble agent={agent} face={m.face ?? "calm"}>
+                  {m.content}
+                </MimoBubble>
               </div>
             ),
           )}
           {busy ? (
-            <p className="flex items-center gap-2 text-sm text-muted">
-              <span className="size-2 animate-pulse rounded-full bg-sage" />
+            <p className="flex items-center gap-2.5 text-sm text-muted">
+              <MimoTile size={30}>
+                <Avatar face="thinking" size={27} />
+              </MimoTile>
               {fill(t.chat.checking, { agent })}
+              <span className="size-1.5 animate-pulse rounded-full bg-sage" />
             </p>
           ) : null}
           <div ref={end} />
@@ -372,13 +388,13 @@ export function Chat({
   );
 }
 
-function MimoBubble({ agent, children }: { agent: string; children: ReactNode }) {
+function MimoBubble({ agent, face, children }: { agent: string; face: Face; children: ReactNode }) {
   return (
     <div>
-      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-faint uppercase">
-        <span className="rounded-full bg-mint p-px">
-          <Mascot mood="calm" size={18} still />
-        </span>
+      <p className="mb-1.5 flex items-center gap-2 text-xs font-semibold tracking-wide text-faint uppercase">
+        <MimoTile size={30}>
+          <Avatar face={face} size={27} />
+        </MimoTile>
         {agent}
       </p>
       <p className="mr-8 rounded-2xl rounded-tl-md border border-line bg-card px-4 py-3 text-[0.95rem] leading-relaxed whitespace-pre-wrap">{children}</p>
