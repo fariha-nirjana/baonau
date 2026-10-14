@@ -6,6 +6,7 @@ import { listDrafts } from "@/lib/drafts";
 import { isCurrency } from "@/lib/money";
 import { readPlan } from "@/lib/plan";
 import { recentReceipts } from "@/lib/receipts";
+import { recordValue } from "@/lib/values";
 import { getPortfolio } from "@/lib/vault";
 
 /** Everything the screens show, in one read. */
@@ -15,8 +16,10 @@ export async function GET(request: Request) {
     const plan = readPlan();
     const currency = isCurrency(asked) ? asked : plan.currency;
     const portfolio = await getPortfolio();
+    const history = recordValue({ at: portfolio.at, value: Number(portfolio.totalValue) });
     return Response.json({
       portfolio,
+      history,
       requests: listApprovals().filter((r) => r.status === "waiting" || r.status === "signed"),
       plan,
       drafts: listDrafts().filter((d) => d.status === "draft"),

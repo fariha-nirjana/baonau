@@ -1,9 +1,11 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { keccak256, toHex, type Hex } from "viem";
+import { nowIso } from "./clock";
 import type { Leg, Verdict } from "./risk";
+import { dataPath } from "./store";
 
-const LOG_PATH = join(process.cwd(), "data", "audit.jsonl");
+const logPath = () => dataPath("audit.jsonl");
 
 /** What the agent intended and why, written before anything is signed. */
 export type AuditRecord = {
@@ -25,7 +27,7 @@ export type AuditRecord = {
  * could not be used all mean nothing is sent.
  */
 export function logAbstention(what: string, reason: string, source: string) {
-  const record: AuditRecord = { at: new Date().toISOString(), tool: "abstain", args: { what }, reason, source, risk: null };
+  const record: AuditRecord = { at: nowIso(), tool: "abstain", args: { what }, reason, source, risk: null };
   appendAudit({ ref: refOf(record), record, result: { ok: true, abstained: true } });
 }
 
@@ -41,13 +43,13 @@ export function refOf(record: AuditRecord): Hex {
 }
 
 export function appendAudit(entry: AuditEntry) {
-  mkdirSync(dirname(LOG_PATH), { recursive: true });
-  appendFileSync(LOG_PATH, JSON.stringify(entry) + "\n");
+  mkdirSync(dirname(logPath()), { recursive: true });
+  appendFileSync(logPath(), JSON.stringify(entry) + "\n");
 }
 
 export function readAudit(): AuditEntry[] {
-  if (!existsSync(LOG_PATH)) return [];
-  return readFileSync(LOG_PATH, "utf8")
+  if (!existsSync(logPath())) return [];
+  return readFileSync(logPath(), "utf8")
     .split("\n")
     .filter(Boolean)
     .flatMap((line) => {

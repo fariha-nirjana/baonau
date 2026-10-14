@@ -1,4 +1,5 @@
 import { parseUnits, type Address, type Hex } from "viem";
+import { nowIso } from "./clock";
 import { listApprovals, updateApproval } from "./approvals";
 import { assets, SYMBOLS, type AssetSymbol } from "./assets";
 import { appendAudit, refOf, type AuditRecord } from "./audit";
@@ -51,7 +52,7 @@ const APPROVAL_SECONDS = 30 * 60;
 async function act(role: "owner" | "guardian", to: "vault" | "mandate", tool: string, reason: string, call: RawCall): Promise<TxResult> {
   const result = await sendAsRole(role, to, call);
   const args = JSON.parse(JSON.stringify(call.args, bigintToString)) as unknown[];
-  const record: AuditRecord = { at: new Date().toISOString(), tool, args: { call: call.functionName, args }, reason, source: role, risk: null };
+  const record: AuditRecord = { at: nowIso(), tool, args: { call: call.functionName, args }, reason, source: role, risk: null };
   appendAudit({ ref: refOf(record), record, result });
   return result;
 }
@@ -157,7 +158,7 @@ export async function approveRequest(id: string) {
   updateApproval(id, { status: "signed", nonce: approval.nonce.toString(), validFrom: Number(approval.validFrom), expiry: Number(approval.expiry), signature });
 
   const record: AuditRecord = {
-    at: new Date().toISOString(),
+    at: nowIso(),
     tool: "sign_approval",
     args: { request: id, nonce: approval.nonce.toString(), validForSeconds: APPROVAL_SECONDS },
     reason: `Owner signed for request ${id}: ${request.side} ${request.symbol}`,
@@ -176,7 +177,7 @@ export async function rejectRequest(id: string, by: "owner" | "guardian" = "owne
   if (request.nonce && request.status === "signed") {
     return act("owner", "vault", "cancel_approval", `Cancelled the signed approval for request ${id}`, { functionName: "cancelApproval", args: [BigInt(request.nonce)] });
   }
-  const record: AuditRecord = { at: new Date().toISOString(), tool: "reject_request", args: { request: id }, reason: `The ${by} rejected request ${id}`, source: by, risk: null };
+  const record: AuditRecord = { at: nowIso(), tool: "reject_request", args: { request: id }, reason: `The ${by} rejected request ${id}`, source: by, risk: null };
   appendAudit({ ref: refOf(record), record, result: { ok: true } });
   return { ok: true as const };
 }

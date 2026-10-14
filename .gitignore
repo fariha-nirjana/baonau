@@ -24,3 +24,7 @@ contracts/broadcast/**/*.lock
 
 # local audit log, exported deliberately as evidence later
 app/data/
+
+# design inputs from the team (the app keeps its own copies in app/public/mascot)
+/figma files/
+/ mascot design and animations/

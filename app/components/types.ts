@@ -3,10 +3,13 @@ import type { Currency } from "@/lib/money";
 import type { Language, Plan } from "@/lib/plan";
 import type { Receipt } from "@/lib/receipts";
 import type { ApprovalRequest } from "@/lib/approvals";
+import type { ValuePoint } from "@/lib/values";
 import type { Portfolio } from "@/lib/vault";
 
 export type AppState = {
   portfolio: Portfolio;
+  /** Portfolio value as read by the app over time. */
+  history: ValuePoint[];
   requests: ApprovalRequest[];
   plan: Plan;
   drafts: Draft[];
@@ -18,8 +21,11 @@ export type AppState = {
 };
 
 export type Role = "owner" | "guardian";
-export type View = "portfolio" | "mandate" | "approvals" | "activity" | "demo";
-export type Mood = "calm" | "watching" | "warning" | "shield";
+export type View = "portfolio" | "mandate" | "approvals" | "activity" | "proof" | "demo";
+/** The mascot's states, from MIMO_ANIMATIONS.md. Higher in the priority list wins: shield, warning, holding, worried, thinking, watching, calm. */
+export type Mood = "calm" | "thinking" | "watching" | "worried" | "warning" | "shield" | "holding";
+/** What hit the shield: a failed transaction, a blocked instruction, or a blocked malicious action. */
+export type ShieldVariant = "card" | "chat" | "code";
 
 export type Settings = { currency: Currency; language: Language; role: Role };
 

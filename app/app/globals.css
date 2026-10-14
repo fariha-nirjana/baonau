@@ -2,13 +2,29 @@
 @import "./theme.css";
 
 html {
-  font-size: 17px;
+  font-size: 16px;
 }
 
 body {
   background: var(--color-cream);
   color: var(--color-ink);
   font-family: var(--font-sans);
+}
+
+/* the faint dot grid behind the screens, as in the mockup */
+.dot-grid {
+  background-color: var(--color-paper);
+  background-image: radial-gradient(var(--color-dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.hand {
+  font-family: var(--font-hand);
+  line-height: 1.15;
+}
+
+.card-shadow {
+  box-shadow: 0 1px 0 rgb(27 42 38 / 0.04), 0 8px 24px -16px rgb(27 42 38 / 0.18);
 }
 
 /* money stays crisp and aligned */

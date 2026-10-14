@@ -11,14 +11,14 @@ const FILE = "prices.jsonl";
 
 export function recordPrices(point: PricePoint) {
   const path = dataPath(FILE);
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, JSON.stringify(point) + "\n");
+  mkdirSync(dirname(/* turbopackIgnore: true */ path), { recursive: true });
+  appendFileSync(/* turbopackIgnore: true */ path, JSON.stringify(point) + "\n");
 }
 
 export function readPrices(): PricePoint[] {
   const path = dataPath(FILE);
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
+  if (!existsSync(/* turbopackIgnore: true */ path)) return [];
+  return readFileSync(/* turbopackIgnore: true */ path, "utf8")
     .split("\n")
     .filter(Boolean)
     .flatMap((line) => {

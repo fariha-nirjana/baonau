@@ -3,14 +3,15 @@ import { dirname, join } from "node:path";
 
 /** Small JSON files under data/ (not committed). Enough for a single-user demo; a product would use a database. */
 export function dataPath(name: string) {
-  return join(process.cwd(), "data", name);
+  // DATA_DIR lets the evaluation harness keep its runs apart from the demo's own records
+  return join(/* turbopackIgnore: true */ process.env.DATA_DIR ?? join(process.cwd(), "data"), name);
 }
 
 export function readJson<T>(name: string, fallback: T): T {
   const path = dataPath(name);
-  if (!existsSync(path)) return fallback;
+  if (!existsSync(/* turbopackIgnore: true */ path)) return fallback;
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as T;
+    return JSON.parse(readFileSync(/* turbopackIgnore: true */ path, "utf8")) as T;
   } catch {
     return fallback;
   }
@@ -18,6 +19,6 @@ export function readJson<T>(name: string, fallback: T): T {
 
 export function writeJson(name: string, value: unknown) {
   const path = dataPath(name);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
+  mkdirSync(dirname(/* turbopackIgnore: true */ path), { recursive: true });
+  writeFileSync(/* turbopackIgnore: true */ path, JSON.stringify(value, null, 2) + "\n");
 }

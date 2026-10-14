@@ -1,0 +1,11 @@
+{
+  "note": "Written by hand from the Foundry runs. Re-run `FOUNDRY_PROFILE=deep forge test` in contracts/ and update this file if the contracts change.",
+  "date": "2026-10-13",
+  "compiler": "Solidity 0.8.11",
+  "tests": 140,
+  "invariants": 15,
+  "randomCalls": 750000,
+  "violations": 0,
+  "fuzzRunsPerTest": 10000,
+  "mutation": { "brokenChecks": 47, "caughtByUnitTests": 47, "caughtByInvariants": 46, "missed": "The slippage check, which the invariant suites cannot see because the mock exchange is honest. A unit test with a dishonest exchange catches it." }
+}

@@ -1,4 +1,5 @@
 import type { Address, Hex } from "viem";
+import { nowIso } from "./clock";
 import { listApprovals } from "./approvals";
 import { assets } from "./assets";
 import { appendAudit, refOf, type AuditRecord } from "./audit";
@@ -96,7 +97,7 @@ export async function runCompromisedAgent(onStep?: (outcome: AttackOutcome) => v
   const outcomes: AttackOutcome[] = [];
   for (const step of await buildPlaybook()) {
     const record: AuditRecord = {
-      at: new Date().toISOString(),
+      at: nowIso(),
       tool: step.call.functionName,
       args: { goal: step.goal, expected: step.expected },
       reason: step.goal,

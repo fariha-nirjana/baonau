@@ -1,50 +1,73 @@
 /*
  * The one place for colours, fonts and corner sizes.
- * The palette is not final: it is taken from the earlier mockup and will be
- * replaced when the graphics lead settles it. Change the values here and the
- * whole app follows. Nothing else in the app names a colour directly.
+ * The palette is not final: it follows the team's Figma exploration ("Like
+ * Dream", deep green with mint and sun) and will change when the graphics
+ * lead settles it. Change the values here and the whole app follows.
+ * Nothing else in the app names a colour directly.
  */
 @theme {
-  --color-forest: #1f4a40;
-  --color-forest-deep: #173a32;
-  --color-forest-soft: #2b5f52;
+  --color-forest: #1c4036;
+  --color-forest-deep: #15322a;
+  --color-forest-soft: #285446;
   --color-leaf: #2f7d62;
-  --color-mint: #e4f3ec;
+  --color-mint: #e2f2ea;
   --color-mint-line: #bfe0d2;
-  --color-cream: #f4f2ec;
-  --color-card: #ffffff;
-  --color-line: #e5e2d9;
-  --color-ink: #1c2b27;
+  --color-cream: #f3f3ec;
+  --color-paper: #f7f7f1;
+  --color-card: #fffffb;
+  --color-line: #e6e4da;
+  --color-ink: #1b2a26;
   --color-muted: #5c6b66;
   --color-sun: #f2c94c;
   --color-sun-soft: #fff4d6;
   --color-sun-ink: #7a5a00;
-  --color-coral: #e0634e;
-  --color-coral-soft: #fdeae6;
-  --color-sky: #4a6fd6;
-  --color-sky-soft: #e8eefc;
+  --color-coral: #d9534a;
+  --color-coral-soft: #fdecea;
+  --color-alarm: #b8404b;
+  --color-sky: #3f6fc4;
+  --color-sky-soft: #e6eefa;
+  --color-dot: #e2e2d8;
+
+  /*
+   * Charts. The guarded result is the one hue; the unguarded baseline is a
+   * grey that steps back. Checked with the dataviz palette validator: the pair
+   * separates under colour-blind simulation (dE 18) and in normal vision (dE 21).
+   * The grey is under 3:1 against the card, so every bar also carries its number.
+   */
+  --color-chart-guarded: #2f7d62;
+  --color-chart-plain: #a3aca8;
+  --color-chart-track: #f1efe9;
 
   --font-sans: var(--font-body), var(--font-bangla), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-display: var(--font-heading), var(--font-bangla), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  /* the mascot's speech bubble only */
+  --font-hand: var(--font-handwriting), var(--font-bangla), "PingFang SC", cursive;
 
   --radius-card: 1.5rem;
 }
 
-/* Mascot moods. Each mood only sets these three, so new art can reuse them or ignore them. */
+/* Mascot states. Each sets the same three values, used behind the mascot and on its status dot. */
 .mood-calm {
   --mood: var(--color-leaf);
   --mood-soft: var(--color-mint);
   --mood-line: var(--color-mint-line);
 }
+.mood-thinking,
 .mood-watching {
   --mood: var(--color-sky);
   --mood-soft: var(--color-sky-soft);
-  --mood-line: #c9d6f7;
+  --mood-line: #c9d6f2;
 }
-.mood-warning {
-  --mood: #d79a12;
+.mood-worried,
+.mood-holding {
+  --mood: #c98a0c;
   --mood-soft: var(--color-sun-soft);
   --mood-line: #f0d98a;
+}
+.mood-warning {
+  --mood: #d4731c;
+  --mood-soft: #fff0df;
+  --mood-line: #f3cf9f;
 }
 .mood-shield {
   --mood: var(--color-coral);

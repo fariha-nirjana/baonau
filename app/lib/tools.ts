@@ -1,4 +1,5 @@
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
+import { now, nowIso } from "./clock";
 import { parseUnits } from "viem";
 import { z } from "zod";
 import { assetBySymbol, type AssetSymbol } from "./assets";
@@ -277,7 +278,7 @@ async function trade(
   if ("error" in prepared) return { ok: false, stage: "input", message: prepared.error };
 
   const record: AuditRecord = {
-    at: new Date().toISOString(),
+    at: nowIso(),
     tool,
     args,
     reason: why,
@@ -319,7 +320,7 @@ async function trade(
 
   const result = await sendAsAgent(prepared.call(ref), ctx.send);
   appendAudit({ ref, record, result });
-  if (result.ok && ctx.source === "autopilot" && tool === "buy") markBought(prepared.legs[0].symbol, new Date());
+  if (result.ok && ctx.source === "autopilot" && tool === "buy") markBought(prepared.legs[0].symbol, now());
   return { ...result, audit_ref: ref };
 }
 
@@ -334,7 +335,7 @@ export async function executeApproved(request: ApprovalRequest, approval: TradeA
   const usd = request.side === "buy" ? Number(approval.amount) / 1e6 : usdOf(pos, approval.amount);
   const leg: Leg = { symbol: request.symbol, side: request.side, usd };
   const record: AuditRecord = {
-    at: new Date().toISOString(),
+    at: nowIso(),
     tool: "trade_with_approval",
     args: { request: request.id, nonce: approval.nonce.toString(), expiry: Number(approval.expiry) },
     reason: request.reason,

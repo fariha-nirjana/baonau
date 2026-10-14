@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scratch records of the evaluation harness
+/harness/.run-data/
+/harness/.run-data-last.log

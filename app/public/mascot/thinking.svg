@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    Mimo / Thinking expression
+    Same base as Calm. Changes: head tilted, eyes glancing up-right,
+    small "hmm" mouth, right arm raised with hand on chin, question mark,
+    yellow accent marks.
+  -->
+
+  <!-- Ground shadow -->
+  <g id="shadow">
+    <ellipse cx="256" cy="483" rx="140" ry="11" fill="#2E6B57" opacity="0.12"/>
+  </g>
+
+  <!-- Feet -->
+  <g id="feet">
+    <ellipse id="foot_left" cx="180" cy="466" rx="46" ry="18" fill="#256F59"/>
+    <ellipse id="foot_right" cx="332" cy="466" rx="46" ry="18" fill="#256F59"/>
+  </g>
+
+  <!-- Lower body -->
+  <g id="body">
+    <path d="M188 300 H324 C366 300 394 328 394 370 V410 C394 446 368 470 330 470 H182 C144 470 118 446 118 410 V370 C118 328 146 300 188 300 Z" fill="#2A7A62"/>
+  </g>
+
+  <!-- Whole head, small curious tilt around the head center (pivot: 256,240) -->
+  <g id="head_group" transform="rotate(-3 256 240)">
+    <!-- Ears tip back slightly when looking up -->
+    <g id="ear_left" transform="translate(-2 6)">
+      <circle cx="132" cy="74" r="40" fill="#2A7A62"/>
+      <circle cx="140" cy="81" r="18" fill="#1F6450"/>
+    </g>
+    <g id="ear_right" transform="translate(-2 6)">
+      <circle cx="380" cy="74" r="40" fill="#2A7A62"/>
+      <circle cx="372" cy="81" r="18" fill="#1F6450"/>
+    </g>
+
+    <g id="head">
+      <path d="M256 50 C373 50 451 128 451 225 C451 330 373 400 256 400 C139 400 61 330 61 225 C61 128 139 50 256 50 Z" fill="#2A7A62"/>
+    </g>
+
+    <!-- Looking up: face plate shifts up a little, features shift up more (parallax) -->
+    <g id="face" transform="translate(6 -14)">
+      <path d="M256 128 C268 122 290 120 312 121 C370 125 404 172 404 236 C404 306 350 352 256 352 C162 352 108 306 108 236 C108 172 142 125 200 121 C222 120 244 122 256 128 Z" fill="#FCF6EA"/>
+    </g>
+
+    <g id="features" transform="translate(10 -30)">
+    <g id="blush">
+      <ellipse id="blush_left" cx="158" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+      <ellipse id="blush_right" cx="354" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+    </g>
+
+    <!-- Eyes glancing up and to the right -->
+    <g id="eye_left">
+      <circle cx="200" cy="223" r="16" fill="#1B1F22"/>
+      <circle id="eye_left_shine" cx="206" cy="217" r="5" fill="#FFFFFF"/>
+    </g>
+    <g id="eye_right">
+      <circle cx="324" cy="223" r="16" fill="#1B1F22"/>
+      <circle id="eye_right_shine" cx="330" cy="217" r="5" fill="#FFFFFF"/>
+    </g>
+
+    <!-- Small "hmm" mouth, centered under the nose -->
+    <g id="mouth">
+      <path d="M247 250 C249 261 263 261 265 250 Z" fill="#F0A32A"/>
+    </g>
+
+    <g id="nose">
+      <ellipse cx="256" cy="248" rx="15" ry="7.5" fill="#2B1E16"/>
+    </g>
+    </g>
+  </g>
+
+  <!-- Belly patch -->
+  <g id="belly">
+    <path d="M256 360 C320 358 352 380 352 410 C352 446 314 466 256 466 C198 466 160 446 160 410 C160 380 192 358 256 360 Z" fill="#FBF3E3"/>
+  </g>
+
+  <!-- Padlock badge -->
+  <g id="lock">
+    <path d="M243 414 v-8 a13 13 0 0 1 26 0 v8" fill="none" stroke="#D9A21B" stroke-width="6" stroke-linecap="round"/>
+    <rect x="234" y="411" width="44" height="34" rx="8" fill="#F2C230"/>
+    <circle cx="256" cy="425" r="5" fill="#6B4A10"/>
+    <rect x="254" y="427" width="4" height="10" rx="2" fill="#6B4A10"/>
+  </g>
+
+  <!-- Left arm, same hug pose as Calm (pivot: 97,305) -->
+  <g id="arm_left">
+    <ellipse cx="134" cy="337" rx="54" ry="31" fill="#1F6450" opacity="0.35" transform="rotate(37 134 337)"/>
+    <ellipse cx="132" cy="332" rx="54" ry="31" fill="#2F8269" transform="rotate(37 132 332)"/>
+  </g>
+
+  <!-- Right arm raised, hand on chin (pivot: shoulder 400,330; elbow 392,392) -->
+  <g id="arm_right">
+    <g id="arm_right_upper">
+      <ellipse cx="398" cy="368" rx="28" ry="42" fill="#2F8269"/>
+    </g>
+    <g id="arm_right_forearm">
+      <ellipse cx="360" cy="360" rx="56" ry="29" fill="#1F6450" opacity="0.35" transform="rotate(45 360 360)"/>
+      <ellipse cx="358" cy="355" rx="56" ry="29" fill="#2F8269" transform="rotate(45 358 355)"/>
+    </g>
+    <g id="hand_right">
+      <circle cx="324" cy="322" r="26" fill="#2F8269"/>
+    </g>
+  </g>
+
+  <!-- Accent marks (yellow for thinking) -->
+  <g id="fx">
+    <rect x="28" y="181" width="28" height="9" rx="4.5" fill="#F5C842" transform="rotate(35 42 185)"/>
+    <rect x="18" y="220" width="28" height="9" rx="4.5" fill="#F5C842"/>
+  </g>
+
+  <!-- Question mark (pivot: 477,92 for a little pop or wobble) -->
+  <g id="question">
+    <path d="M454 38 C454 24 465 14 477 14 C490 14 500 23 500 36 C500 50 486 55 478 63 L478 72" fill="none" stroke="#4CC3A0" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="478" cy="90" r="6.5" fill="#4CC3A0"/>
+  </g>
+</svg>

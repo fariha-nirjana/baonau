@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    Mimo / Watching expression
+    Same base as Calm. Changes: binoculars held up over the right eye,
+    both arms raised holding them, left eye peeking out, yellow alert burst.
+    Nose, mouth and right eye are still drawn under the binoculars,
+    so they appear correctly if the binoculars are lowered in animation.
+  -->
+
+  <!-- Ground shadow -->
+  <g id="shadow">
+    <ellipse cx="256" cy="483" rx="140" ry="11" fill="#2E6B57" opacity="0.12"/>
+  </g>
+
+  <!-- Feet -->
+  <g id="feet">
+    <ellipse id="foot_left" cx="180" cy="466" rx="46" ry="18" fill="#256F59"/>
+    <ellipse id="foot_right" cx="332" cy="466" rx="46" ry="18" fill="#256F59"/>
+  </g>
+
+  <!-- Lower body -->
+  <g id="body">
+    <path d="M188 300 H324 C366 300 394 328 394 370 V410 C394 446 368 470 330 470 H182 C144 470 118 446 118 410 V370 C118 328 146 300 188 300 Z" fill="#2A7A62"/>
+  </g>
+
+  <!-- Whole head (pivot: 256,320) -->
+  <g id="head_group">
+    <g id="ear_left">
+      <circle cx="132" cy="74" r="40" fill="#2A7A62"/>
+      <circle cx="140" cy="81" r="18" fill="#1F6450"/>
+    </g>
+    <g id="ear_right">
+      <circle cx="380" cy="74" r="40" fill="#2A7A62"/>
+      <circle cx="372" cy="81" r="18" fill="#1F6450"/>
+    </g>
+
+    <g id="head">
+      <path d="M256 50 C373 50 451 128 451 225 C451 330 373 400 256 400 C139 400 61 330 61 225 C61 128 139 50 256 50 Z" fill="#2A7A62"/>
+    </g>
+
+    <g id="face">
+      <path d="M256 128 C268 122 290 120 312 121 C370 125 404 172 404 236 C404 306 350 352 256 352 C162 352 108 306 108 236 C108 172 142 125 200 121 C222 120 244 122 256 128 Z" fill="#FCF6EA"/>
+    </g>
+
+    <g id="blush">
+      <ellipse id="blush_left" cx="158" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+      <ellipse id="blush_right" cx="354" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+    </g>
+
+    <!-- Left eye peeks out, glancing toward the binoculars -->
+    <g id="eye_left">
+      <circle cx="198" cy="226" r="16" fill="#1B1F22"/>
+      <circle id="eye_left_shine" cx="203" cy="220" r="5" fill="#FFFFFF"/>
+    </g>
+    <!-- Right eye, hidden behind the binoculars -->
+    <g id="eye_right">
+      <circle cx="318" cy="228" r="16" fill="#1B1F22"/>
+      <circle id="eye_right_shine" cx="313" cy="222" r="5" fill="#FFFFFF"/>
+    </g>
+
+    <g id="mouth">
+      <path d="M242 249 C246 266 266 266 270 249 Z" fill="#F0A32A"/>
+    </g>
+
+    <g id="nose">
+      <ellipse cx="256" cy="248" rx="15" ry="7.5" fill="#2B1E16"/>
+    </g>
+  </g>
+
+  <!-- Belly patch -->
+  <g id="belly">
+    <path d="M256 360 C320 358 352 380 352 410 C352 446 314 466 256 466 C198 466 160 446 160 410 C160 380 192 358 256 360 Z" fill="#FBF3E3"/>
+  </g>
+
+  <!-- Padlock badge -->
+  <g id="lock">
+    <path d="M243 414 v-8 a13 13 0 0 1 26 0 v8" fill="none" stroke="#D9A21B" stroke-width="6" stroke-linecap="round"/>
+    <rect x="234" y="411" width="44" height="34" rx="8" fill="#F2C230"/>
+    <circle cx="256" cy="425" r="5" fill="#6B4A10"/>
+    <rect x="254" y="427" width="4" height="10" rx="2" fill="#6B4A10"/>
+  </g>
+
+  <!-- Binoculars (pivot: 330,240; lenses can glint separately) -->
+  <g id="binoculars">
+    <g id="binoculars_bridge">
+      <rect x="306" y="200" width="52" height="28" rx="9" fill="#1C4F42"/>
+      <rect x="320" y="186" width="24" height="18" rx="5" fill="#24604F"/>
+    </g>
+    <g id="barrel_left">
+      <rect x="234" y="190" width="88" height="96" rx="34" fill="#1C4F42"/>
+      <circle cx="278" cy="238" r="34" fill="#13382F"/>
+      <circle cx="278" cy="238" r="27" fill="#6FD9B8"/>
+      <circle cx="282" cy="242" r="17" fill="#A4F0D9" opacity="0.6"/>
+      <ellipse id="lens_left_glint" cx="267" cy="226" rx="8" ry="5" fill="#FFFFFF" opacity="0.85" transform="rotate(-30 267 226)"/>
+    </g>
+    <g id="barrel_right">
+      <rect x="338" y="190" width="88" height="96" rx="34" fill="#1C4F42"/>
+      <circle cx="382" cy="238" r="34" fill="#13382F"/>
+      <circle cx="382" cy="238" r="27" fill="#6FD9B8"/>
+      <circle cx="386" cy="242" r="17" fill="#A4F0D9" opacity="0.6"/>
+      <ellipse id="lens_right_glint" cx="371" cy="226" rx="8" ry="5" fill="#FFFFFF" opacity="0.85" transform="rotate(-30 371 226)"/>
+    </g>
+  </g>
+
+  <!-- Left arm raised, holding the left barrel (pivot: shoulder 108,322; elbow 128,360) -->
+  <g id="arm_left">
+    <g id="arm_left_upper">
+      <ellipse cx="120" cy="352" rx="28" ry="40" fill="#2F8269"/>
+    </g>
+    <g id="arm_left_forearm">
+      <ellipse cx="192" cy="333" rx="68" ry="29" fill="#1F6450" opacity="0.35" transform="rotate(-24 192 333)"/>
+      <ellipse cx="190" cy="328" rx="68" ry="29" fill="#2F8269" transform="rotate(-24 190 328)"/>
+    </g>
+    <g id="hand_left">
+      <circle cx="252" cy="300" r="27" fill="#2F8269"/>
+    </g>
+  </g>
+
+  <!-- Right arm raised, holding the right barrel (pivot: shoulder 400,340) -->
+  <g id="arm_right">
+    <g id="arm_right_forearm">
+      <ellipse cx="404" cy="337" rx="30" ry="50" fill="#1F6450" opacity="0.35" transform="rotate(-8 404 337)"/>
+      <ellipse cx="402" cy="332" rx="30" ry="50" fill="#2F8269" transform="rotate(-8 402 332)"/>
+    </g>
+    <g id="hand_right">
+      <circle cx="392" cy="300" r="27" fill="#2F8269"/>
+    </g>
+  </g>
+
+  <!-- Yellow alert burst (pivot: 405,95 for a little pulse) -->
+  <g id="fx">
+    <rect x="409" y="18.5" width="30" height="9" rx="4.5" fill="#F5C842" transform="rotate(-75 424 23)"/>
+    <rect x="447" y="42.5" width="30" height="9" rx="4.5" fill="#F5C842" transform="rotate(-40 462 47)"/>
+    <rect x="464" y="80.5" width="30" height="9" rx="4.5" fill="#F5C842" transform="rotate(-8 479 85)"/>
+  </g>
+</svg>

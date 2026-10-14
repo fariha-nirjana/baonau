@@ -23,7 +23,8 @@ function build() {
   const agentAccount = privateKeyToAccount(cfg.AGENT_PRIVATE_KEY);
   return {
     agentAccount,
-    publicClient: createPublicClient({ chain: chain(), transport }),
+    // a local node mines at once, so there is no reason to wait seconds between polls
+    publicClient: createPublicClient({ chain: chain(), transport, pollingInterval: cfg.CHAIN_ID === baseSepolia.id ? undefined : 20 }),
     agentClient: createWalletClient({ account: agentAccount, chain: chain(), transport }),
   };
 }

@@ -1,5 +1,5 @@
 {
-  "name": "pocketpilot-app",
+  "name": "paws-for-thought-app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,13 +11,15 @@
     "smoke": "tsx --env-file=../.env scripts/smoke.ts",
     "chat": "tsx --env-file=../.env scripts/chat.ts",
     "ask": "tsx --env-file=../.env scripts/ask.ts",
-    "test": "tsx --test lib/*.test.ts",
+    "test": "tsx --test lib/*.test.ts components/*.test.ts",
     "keeper": "tsx --env-file=../.env scripts/keeper.ts",
     "attack": "tsx --env-file=../.env scripts/attack.ts",
     "owner": "tsx --env-file=../.env scripts/owner.ts",
-    "autopilot": "tsx --env-file=../.env scripts/autopilot.ts"
+    "autopilot": "tsx --env-file=../.env scripts/autopilot.ts",
+    "harness": "tsx harness/run.ts"
   },
   "dependencies": {
+    "lottie-web": "5.13.0",
     "next": "16.4.0",
     "openai": "^7.32.0",
     "react": "19.3.0",

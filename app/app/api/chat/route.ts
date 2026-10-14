@@ -1,5 +1,7 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { runAgent } from "@/lib/agent";
+import { readAudit } from "@/lib/audit";
+import { recentReceipts } from "@/lib/receipts";
 import { isCurrency } from "@/lib/money";
 import type { Language } from "@/lib/plan";
 
@@ -25,7 +27,13 @@ export async function POST(request: Request) {
         if (e.type === "tool_result" && !e.name.startsWith("get_")) steps.push({ tool: e.name, result: e.result });
       },
     });
-    return Response.json({ reply, steps });
+    // each card carries the receipt of its action, so the chat can show the same checks as the activity screen
+    const receipts = recentReceipts(readAudit(), 40, currency);
+    const withReceipts = steps.map((s) => {
+      const ref = (s.result as { audit_ref?: string } | null)?.audit_ref;
+      return { ...s, receipt: ref ? (receipts.find((r) => r.ref === ref) ?? null) : null };
+    });
+    return Response.json({ reply, steps: withReceipts });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

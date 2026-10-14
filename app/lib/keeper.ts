@@ -1,4 +1,5 @@
 import { parseUnits, type Abi } from "viem";
+import { nowIso } from "./clock";
 import { priceOracleAbi } from "./abi";
 import { assets, SYMBOLS, type AssetSymbol } from "./assets";
 import { appendAudit, refOf, type AuditRecord } from "./audit";
@@ -18,7 +19,7 @@ const oracle = () => ({ address: chainConfig().ORACLE_ADDRESS, abi: priceOracleA
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function log(tool: string, args: Record<string, unknown>, reason: string, result: TxResult) {
-  const record: AuditRecord = { at: new Date().toISOString(), tool, args, reason, source: "keeper", risk: null };
+  const record: AuditRecord = { at: nowIso(), tool, args, reason, source: "keeper", risk: null };
   appendAudit({ ref: refOf(record), record, result });
 }
 
@@ -60,7 +61,7 @@ export async function pushPrices(targets: Partial<Record<AssetSymbol, number>> =
   });
   const result = await sendAsRole("updater", "oracle", { functionName: "setPrices", args: [feeds.map((f) => f.address), next] });
   const prices = Object.fromEntries(feeds.map((f, i) => [f.symbol, Number(fromPrice(next[i]))])) as Record<AssetSymbol, number>;
-  if (result.ok) recordPrices({ at: new Date().toISOString(), prices });
+  if (result.ok) recordPrices({ at: nowIso(), prices });
   log("set_prices", { prices }, "Price update", result);
   return { result, prices, reached };
 }

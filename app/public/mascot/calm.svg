@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    Mimo / Calm expression (v2)
+    Flat 2D, layered for animation. Each part is its own group with an id.
+    Suggested pivot points for rigging are noted per group.
+  -->
+
+  <!-- Ground shadow (pivot: 256,482) -->
+  <g id="shadow">
+    <ellipse cx="256" cy="483" rx="140" ry="11" fill="#2E6B57" opacity="0.12"/>
+  </g>
+
+  <!-- Ears (pivot: base of each ear where it meets the head) -->
+  <g id="ear_left">
+    <circle cx="132" cy="74" r="40" fill="#2A7A62"/>
+    <circle cx="140" cy="81" r="18" fill="#1F6450"/>
+  </g>
+  <g id="ear_right">
+    <circle cx="380" cy="74" r="40" fill="#2A7A62"/>
+    <circle cx="372" cy="81" r="18" fill="#1F6450"/>
+  </g>
+
+  <!-- Feet (pivot: each foot center) -->
+  <g id="feet">
+    <ellipse id="foot_left" cx="180" cy="466" rx="46" ry="18" fill="#256F59"/>
+    <ellipse id="foot_right" cx="332" cy="466" rx="46" ry="18" fill="#256F59"/>
+  </g>
+
+  <!-- Lower body (pivot: 256,468 for squash & stretch) -->
+  <g id="body">
+    <path d="M188 300 H324 C366 300 394 328 394 370 V410 C394 446 368 470 330 470 H182 C144 470 118 446 118 410 V370 C118 328 146 300 188 300 Z" fill="#2A7A62"/>
+  </g>
+
+  <!-- Head / hood (pivot: 256,380 neck, for head tilts) -->
+  <g id="head">
+    <path d="M256 50 C373 50 451 128 451 225 C451 330 373 400 256 400 C139 400 61 330 61 225 C61 128 139 50 256 50 Z" fill="#2A7A62"/>
+  </g>
+
+  <!-- Face plate (notch at top center = hood seam) -->
+  <g id="face">
+    <path d="M256 128 C268 122 290 120 312 121 C370 125 404 172 404 236 C404 306 350 352 256 352 C162 352 108 306 108 236 C108 172 142 125 200 121 C222 120 244 122 256 128 Z" fill="#FCF6EA"/>
+  </g>
+
+  <!-- Blush -->
+  <g id="blush">
+    <ellipse id="blush_left" cx="158" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+    <ellipse id="blush_right" cx="354" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8"/>
+  </g>
+
+  <!-- Eyes (pivot: each eye center; scale Y to ~10% for blinks) -->
+  <g id="eye_left">
+    <circle cx="194" cy="228" r="16" fill="#1B1F22"/>
+    <circle id="eye_left_shine" cx="189" cy="222" r="5" fill="#FFFFFF"/>
+  </g>
+  <g id="eye_right">
+    <circle cx="318" cy="228" r="16" fill="#1B1F22"/>
+    <circle id="eye_right_shine" cx="313" cy="222" r="5" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Mouth (swap this group per expression) -->
+  <g id="mouth">
+    <path d="M242 249 C246 266 266 266 270 249 Z" fill="#F0A32A"/>
+  </g>
+
+  <!-- Nose (sits on top of the mouth) -->
+  <g id="nose">
+    <ellipse cx="256" cy="248" rx="15" ry="7.5" fill="#2B1E16"/>
+  </g>
+
+  <!-- Belly patch -->
+  <g id="belly">
+    <path d="M256 360 C320 358 352 380 352 410 C352 446 314 466 256 466 C198 466 160 446 160 410 C160 380 192 358 256 360 Z" fill="#FBF3E3"/>
+  </g>
+
+  <!-- Padlock badge (pivot: 256,428) -->
+  <g id="lock">
+    <path d="M243 414 v-8 a13 13 0 0 1 26 0 v8" fill="none" stroke="#D9A21B" stroke-width="6" stroke-linecap="round"/>
+    <rect x="234" y="411" width="44" height="34" rx="8" fill="#F2C230"/>
+    <circle cx="256" cy="425" r="5" fill="#6B4A10"/>
+    <rect x="254" y="427" width="4" height="10" rx="2" fill="#6B4A10"/>
+  </g>
+
+  <!-- Arms, hugging the belly (pivot: shoulder, the outer top end of each arm) -->
+  <g id="arm_left">
+    <ellipse cx="134" cy="337" rx="54" ry="31" fill="#1F6450" opacity="0.35" transform="rotate(37 134 337)"/>
+    <ellipse cx="132" cy="332" rx="54" ry="31" fill="#2F8269" transform="rotate(37 132 332)"/>
+  </g>
+  <g id="arm_right">
+    <ellipse cx="378" cy="337" rx="54" ry="31" fill="#1F6450" opacity="0.35" transform="rotate(-37 378 337)"/>
+    <ellipse cx="380" cy="332" rx="54" ry="31" fill="#2F8269" transform="rotate(-37 380 332)"/>
+  </g>
+
+  <!-- Accent marks (optional little pop) -->
+  <g id="fx">
+    <rect x="28" y="181" width="28" height="9" rx="4.5" fill="#6CCBA6" transform="rotate(35 42 185)"/>
+    <rect x="18" y="220" width="28" height="9" rx="4.5" fill="#6CCBA6"/>
+  </g>
+</svg>

@@ -1,44 +1,202 @@
-import type { Mood } from "./types";
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { AnimationItem, LottiePlayer } from "lottie-web";
+import { PRIORITY } from "./mimo";
+import type { Mood, ShieldVariant } from "./types";
 
 /**
- * The mascot slot. The real art (four moods, a shield and a lock animation)
- * is being made; until it arrives this draws a stand-in. To use the real
- * files, put them in public/mascot/ and list them here. Nothing else changes.
+ * The mascot, played from the graphics team's Lottie files in public/mascot/
+ * by the rules in their handoff (MIMO_ANIMATIONS.md):
+ * - calm, thinking, watching and worried loop;
+ * - warning, shield and holding play an intro once, then loop a hold segment
+ *   until the page stops asking for them. Shield and holding then play their
+ *   outro, which ends on the calm pose. Nothing here ends an alert on a timer:
+ *   the page decides when the situation is resolved;
+ * - a higher-priority state interrupts at once; a lower one waits for a
+ *   running intro to finish;
+ * - loops are crossfaded (200 ms) because they do not share start poses;
+ * - with reduced motion, each state is a still frame.
+ * Small sizes use the static SVGs, so the sidebar and chat header do not run extra players.
  */
-const ART: Record<Mood, string | null> = { calm: null, watching: null, warning: null, shield: null };
 
-export function Mascot({ mood, size = 150 }: { mood: Mood; size?: number }) {
-  const art = ART[mood];
-  if (art) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={art} alt="" width={size} height={size} className={mood === "shield" ? "shield-slam" : ""} />;
+type Segments = { intro: [number, number]; hold: [number, number]; outro?: [number, number] };
+
+const ALERTS: Partial<Record<Mood, Segments>> = {
+  warning: { intro: [0, 40], hold: [40, 150] },
+  shield: { intro: [0, 60], hold: [60, 150], outro: [150, 180] },
+  holding: { intro: [0, 52], hold: [52, 142], outro: [142, 170] },
+};
+
+/** Static art per state. There is no warning SVG yet, so warning uses the worried face. */
+const STILL: Record<Mood, string> = {
+  calm: "calm",
+  thinking: "thinking",
+  watching: "watching",
+  worried: "worried",
+  warning: "worried",
+  shield: "shield",
+  holding: "holding",
+};
+
+const FADE_MS = 200;
+
+type LottieFile = { layers: { nm: string; hd?: boolean }[] };
+
+let player: Promise<LottiePlayer> | null = null;
+const loadPlayer = () => (player ??= import("lottie-web/build/player/lottie_light").then((m) => m.default));
+
+const files = new Map<Mood, Promise<LottieFile>>();
+function loadFile(mood: Mood): Promise<LottieFile> {
+  let file = files.get(mood);
+  if (!file) {
+    file = fetch(`/mascot/${mood}.json`).then((r) => {
+      if (!r.ok) throw new Error(`mascot ${mood}: ${r.status}`);
+      return r.json() as Promise<LottieFile>;
+    });
+    file.catch(() => files.delete(mood));
+    files.set(mood, file);
   }
-  const eyes = mood === "watching" ? 3.2 : mood === "shield" ? 1.4 : 2.6;
-  return (
-    <svg viewBox="0 0 120 120" width={size} height={size} aria-hidden className={`mood-${mood} ${mood === "shield" ? "shield-slam" : ""}`}>
-      <ellipse cx="60" cy="104" rx="38" ry="9" fill="var(--color-sun)" />
-      <path d="M18 78 C18 38 36 16 60 16 C84 16 102 38 102 78 C102 96 84 104 60 104 C36 104 18 96 18 78 Z" fill="var(--color-forest)" />
-      <circle cx="33" cy="26" r="9" fill="var(--color-forest)" />
-      <circle cx="87" cy="26" r="9" fill="var(--color-forest)" />
-      <ellipse cx="60" cy="62" rx="31" ry="27" fill="#fbf7ee" />
-      <ellipse cx="48" cy="58" rx={2.6} ry={eyes} fill="var(--color-ink)" />
-      <ellipse cx="72" cy="58" rx={2.6} ry={eyes} fill="var(--color-ink)" />
-      <ellipse cx="41" cy="67" rx="4.5" ry="2.6" fill="var(--color-coral)" opacity="0.45" />
-      <ellipse cx="79" cy="67" rx="4.5" ry="2.6" fill="var(--color-coral)" opacity="0.45" />
-      {mood === "warning" || mood === "shield" ? (
-        <path d="M53 71 H67" stroke="var(--color-ink)" strokeWidth="2.2" strokeLinecap="round" />
-      ) : (
-        <path d="M54 69 Q60 74 66 69" stroke="var(--color-ink)" strokeWidth="2.2" strokeLinecap="round" fill="none" />
-      )}
-      {/* the lock on the belly; it turns into a shield when an attack is blocked */}
-      {mood === "shield" ? (
-        <path d="M60 80 L73 85 V93 C73 100 67 104 60 107 C53 104 47 100 47 93 V85 Z" fill="var(--mood)" stroke="#fff" strokeWidth="2.5" />
-      ) : (
-        <g>
-          <rect x="50" y="88" width="20" height="16" rx="4" fill="var(--mood)" stroke="#fff" strokeWidth="2.5" />
-          <path d="M55 88 V84 a5 5 0 0 1 10 0 V88" stroke="#fff" strokeWidth="2.5" fill="none" />
-        </g>
-      )}
-    </svg>
-  );
+  return file;
+}
+
+/** The shield file holds three projectiles; only the one for this cause is shown. */
+function withVariant(data: LottieFile, variant: ShieldVariant): LottieFile {
+  const copy = structuredClone(data);
+  for (const layer of copy.layers) {
+    if (layer.nm.startsWith("projectile_")) layer.hd = layer.nm !== `projectile_${variant}`;
+  }
+  return copy;
+}
+
+type Shown = { mood: Mood; variant: ShieldVariant; anim: AnimationItem; layer: HTMLDivElement; phase: "loop" | "intro" | "hold" | "outro" | "done" };
+
+function createMachine(container: HTMLDivElement, onFail: () => void) {
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let shown: Shown | null = null;
+  let wanted: { mood: Mood; variant: ShieldVariant } | null = null;
+  let loading = false;
+  let dead = false;
+
+  async function show(mood: Mood, variant: ShieldVariant) {
+    loading = true;
+    try {
+      const [lottie, raw] = await Promise.all([loadPlayer(), loadFile(mood)]);
+      if (dead) return;
+      // the player changes the data it is given, so every animation gets its own copy
+      const data = mood === "shield" ? withVariant(raw, variant) : structuredClone(raw);
+      const layer = document.createElement("div");
+      layer.style.cssText = `position:absolute;inset:0;opacity:0;transition:opacity ${FADE_MS}ms ease`;
+      container.appendChild(layer);
+      const seg = ALERTS[mood];
+      const anim = lottie.loadAnimation({ container: layer, renderer: "svg", loop: !seg && !still, autoplay: false, animationData: data });
+      const next: Shown = { mood, variant, anim, layer, phase: seg ? "intro" : "loop" };
+      if (still) {
+        anim.goToAndStop(seg ? seg.hold[0] : 0, true);
+        next.phase = seg ? "hold" : "loop";
+      } else if (seg) {
+        anim.playSegments(seg.intro, true);
+      } else {
+        anim.play();
+      }
+      anim.addEventListener("complete", () => onComplete(next));
+      const old = shown;
+      shown = next;
+      requestAnimationFrame(() => {
+        layer.style.opacity = "1";
+        if (old) old.layer.style.opacity = "0";
+      });
+      if (old) {
+        setTimeout(() => {
+          old.anim.destroy();
+          old.layer.remove();
+        }, FADE_MS + 40);
+      }
+    } catch {
+      dead = true;
+      onFail();
+      return;
+    } finally {
+      loading = false;
+    }
+    decide();
+  }
+
+  function onComplete(item: Shown) {
+    if (item !== shown || dead) return;
+    const seg = ALERTS[item.mood];
+    if (!seg) return;
+    if (item.phase === "intro" || item.phase === "hold") {
+      item.phase = "hold";
+      item.anim.playSegments(seg.hold, true);
+      decide();
+    } else if (item.phase === "outro") {
+      // the outro rests on the calm pose, so the next state starts without a jump
+      item.phase = "done";
+      decide();
+    }
+  }
+
+  function decide() {
+    if (dead || loading || !wanted) return;
+    if (!shown || shown.phase === "done") return void show(wanted.mood, wanted.variant);
+    if (shown.phase === "outro") return;
+    if (shown.mood === wanted.mood && (shown.mood !== "shield" || shown.variant === wanted.variant)) return;
+    const rank = PRIORITY[wanted.mood] - PRIORITY[shown.mood];
+    if (rank >= 0 || still) return void show(wanted.mood, wanted.variant);
+    // a lower state waits for a running intro to finish
+    if (shown.phase === "intro") return;
+    const outro = ALERTS[shown.mood]?.outro;
+    if (outro) {
+      shown.phase = "outro";
+      shown.anim.playSegments(outro, true);
+      return;
+    }
+    show(wanted.mood, wanted.variant);
+  }
+
+  return {
+    want(mood: Mood, variant: ShieldVariant) {
+      wanted = { mood, variant };
+      decide();
+    },
+    destroy() {
+      dead = true;
+      shown?.anim.destroy();
+      container.replaceChildren();
+    },
+  };
+}
+
+function AnimatedMascot({ mood, variant, size }: { mood: Mood; variant: ShieldVariant; size: number }) {
+  const box = useRef<HTMLDivElement>(null);
+  const machine = useRef<ReturnType<typeof createMachine> | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!box.current) return;
+    const m = createMachine(box.current, () => setFailed(true));
+    machine.current = m;
+    return () => {
+      m.destroy();
+      machine.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    machine.current?.want(mood, variant);
+  }, [mood, variant]);
+
+  if (failed) return <StillMascot mood={mood} size={size} />;
+  return <div ref={box} aria-hidden style={{ width: size, height: size, position: "relative" }} />;
+}
+
+function StillMascot({ mood, size }: { mood: Mood; size: number }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={`/mascot/${STILL[mood]}.svg`} alt="" width={size} height={size} />;
+}
+
+export function Mascot({ mood, variant = "code", size = 150, still = false }: { mood: Mood; variant?: ShieldVariant; size?: number; still?: boolean }) {
+  if (still || size < 80) return <StillMascot mood={mood} size={size} />;
+  return <AnimatedMascot mood={mood} variant={variant} size={size} />;
 }
