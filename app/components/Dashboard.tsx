@@ -13,7 +13,7 @@ import { mimoOf, waitingCount } from "./mimo";
 import type { Act, AppState, Settings, View } from "./types";
 import { OverviewHeader, OverviewView, PlanDialog } from "./Overview";
 import { Button, Card, short } from "./ui";
-import { ProofView } from "./Proof";
+import { ProofHeader, ProofView } from "./Proof";
 import { PortfolioHeader, PortfolioView } from "./Portfolio";
 import { MandateHeader, MandateView } from "./Mandate";
 import { ApprovalsHeader, ApprovalsView } from "./Approvals";
@@ -372,6 +372,8 @@ export function Dashboard() {
               <ApprovalsHeader settings={settings} />
             ) : view === "activity" ? (
               <ActivityHeader settings={settings} />
+            ) : view === "proof" ? (
+              <ProofHeader settings={settings} />
             ) : (
               <div>
                 <h1 className="font-display text-[2.2rem] font-semibold tracking-[-0.03em]">{title}</h1>
@@ -403,7 +405,7 @@ export function Dashboard() {
               {view === "mandate" ? <MandateView state={state} settings={settings} act={act} skew={skew} go={setView} onAsk={askMimo} /> : null}
               {view === "approvals" ? <ApprovalsView state={state} settings={settings} act={act} skew={skew} /> : null}
               {view === "activity" ? <ActivityView state={state} settings={settings} onOpen={setReceipt} /> : null}
-              {view === "proof" ? <ProofView /> : null}
+              {view === "proof" ? <ProofView settings={settings} /> : null}
               {view === "demo" ? <DemoView state={state} settings={settings} act={act} skew={skew} onAttack={setAttacking} /> : null}
             </div>
           </div>

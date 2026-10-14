@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Card, Chip, Eyebrow } from "./ui";
+import { fill, LOCALE, strings, type Strings } from "./i18n";
+import type { Settings } from "./types";
+import { Icon } from "./icons";
+import { Card } from "./ui";
 
 type Side = { medianFinalValue: number; worstFinalValue: number; medianMaxDrawdownPct: number; worstMaxDrawdownPct: number };
 type Guarded = Side & {
@@ -48,16 +51,31 @@ type Invariants = {
 };
 
 const n = (x: number) => x.toLocaleString("en-US");
-const SHORT_BRAIN: Record<string, string> = { plan: "Healthy plan follower", random: "Random agent", compromised: "Compromised agent", deepseek: "DeepSeek" };
-const SHORT_USER: Record<string, string> = { calm: "calm owner", panicking: "panicking owner" };
 
-/** A headline number with what it counts. Proportional figures: these stand alone, they are not a column. */
-function Tile({ value, label, note }: { value: ReactNode; label: string; note?: string }) {
+const BRAIN_KEY: Record<string, ["bPlan" | "bRandom" | "bCompromised" | "bDeepseek", "bPlanText" | "bRandomText" | "bCompromisedText" | "bDeepseekText"]> = {
+  plan: ["bPlan", "bPlanText"],
+  random: ["bRandom", "bRandomText"],
+  compromised: ["bCompromised", "bCompromisedText"],
+  deepseek: ["bDeepseek", "bDeepseekText"],
+};
+const SCENARIO_KEY: Record<string, [keyof Strings["proof"], keyof Strings["proof"]]> = {
+  bull: ["scBull", "scBullText"],
+  bear: ["scBear", "scBearText"],
+  crash: ["scCrash", "scCrashText"],
+  choppy: ["scChoppy", "scChoppyText"],
+  flash: ["scFlash", "scFlashText"],
+  oracle: ["scOracle", "scOracleText"],
+};
+const brainName = (id: string, t: Strings) => (BRAIN_KEY[id] ? t.proof[BRAIN_KEY[id][0]] : id);
+const userName = (id: string, t: Strings) => (id === "calm" ? t.proof.uCalm : id === "panicking" ? t.proof.uPanicking : id);
+
+/** A headline number with what it counts. */
+function Stat({ value, label, note, tone = "text-ink" }: { value: ReactNode; label: string; note?: string; tone?: string }) {
   return (
-    <div className="rounded-2xl bg-cream p-5">
-      <p className="font-display text-4xl font-semibold">{value}</p>
-      <p className="mt-1 text-base font-semibold">{label}</p>
-      {note ? <p className="mt-0.5 text-sm text-muted">{note}</p> : null}
+    <div>
+      <p className={`num font-display text-[2rem] leading-none font-semibold tracking-[-0.02em] ${tone}`}>{value}</p>
+      <p className="mt-2 text-sm font-semibold">{label}</p>
+      {note ? <p className="mt-0.5 text-xs text-muted">{note}</p> : null}
     </div>
   );
 }
@@ -65,40 +83,52 @@ function Tile({ value, label, note }: { value: ReactNode; label: string; note?: 
 /**
  * One cell of the matrix: how much of the starting money is left, guarded and
  * unguarded, as two thin bars on the same scale with their numbers beside
- * them. One hue for the guarded result, grey for the baseline.
+ * them. One hue for the guarded result, a grey that steps back for the
+ * baseline; every bar carries its number, so the grey's low contrast is relieved.
  */
-function Pair({ cell, start, scaleMax }: { cell: Cell; start: number; scaleMax: number }) {
+function Pair({ cell, start, scaleMax, t }: { cell: Cell; start: number; scaleMax: number; t: Strings }) {
   const g = cell.guarded.medianFinalValue;
   const u = cell.unguarded.medianFinalValue;
   const pct = (v: number) => `${Math.max((v / scaleMax) * 100, 0.5)}%`;
-  const change = (v: number) => `${v >= start ? "+" : ""}${(((v - start) / start) * 100).toFixed(1)}%`;
+  const change = (v: number) => `${v >= start ? "+" : "−"}${Math.abs(((v - start) / start) * 100).toFixed(1)}%`;
   const guardCosts = g < u - start * 0.005;
-  const title = `${SHORT_BRAIN[cell.brain] ?? cell.brain}, ${SHORT_USER[cell.user] ?? cell.user}. Guarded: ends at ${g.toFixed(0)} of ${start} (worst seed ${cell.guarded.worstFinalValue.toFixed(0)}), largest fall ${cell.guarded.medianMaxDrawdownPct}% (worst seed ${cell.guarded.worstMaxDrawdownPct}%). Unguarded: ends at ${u.toFixed(0)} (worst seed ${cell.unguarded.worstFinalValue.toFixed(0)}), largest fall ${cell.unguarded.medianMaxDrawdownPct}% (worst seed ${cell.unguarded.worstMaxDrawdownPct}%). ${cell.seeds} seeds.`;
+  const title = `${brainName(cell.brain, t)}, ${userName(cell.user, t)}. ${t.proof.guarded}: ${g.toFixed(0)} / ${start} (worst ${cell.guarded.worstFinalValue.toFixed(0)}), fall ${cell.guarded.medianMaxDrawdownPct}% (worst ${cell.guarded.worstMaxDrawdownPct}%). ${t.proof.unguarded}: ${u.toFixed(0)} (worst ${cell.unguarded.worstFinalValue.toFixed(0)}), fall ${cell.unguarded.medianMaxDrawdownPct}% (worst ${cell.unguarded.worstMaxDrawdownPct}%). ${cell.seeds} seeds.`;
   return (
-    <td className="px-3 py-3 align-top" title={title}>
-      <div className="space-y-[2px]">
+    <td className="px-3 py-3.5 align-top" title={title}>
+      <div className="space-y-[3px]">
         {[
           [g, "var(--color-chart-guarded)"],
           [u, "var(--color-chart-plain)"],
         ].map(([v, color], i) => (
           <div key={i} className="flex items-center gap-2">
-            <div className="h-2 flex-1 rounded-r bg-chart-track">
-              <div className="h-2 rounded-r" style={{ width: pct(v as number), background: color as string }} />
+            <div className="h-2 flex-1 rounded-r-[4px] bg-chart-track">
+              <div className="h-2 rounded-r-[4px]" style={{ width: pct(v as number), background: color as string }} />
             </div>
-            <span className="num w-14 text-right text-sm">{change(v as number)}</span>
+            <span className={`num w-14 text-right text-xs ${i ? "text-muted" : "font-semibold text-ink"}`}>{change(v as number)}</span>
           </div>
         ))}
       </div>
-      <p className="mt-1.5 text-xs text-muted">
-        fall {cell.guarded.medianMaxDrawdownPct}% vs {cell.unguarded.medianMaxDrawdownPct}%
-      </p>
-      {guardCosts ? <p className="mt-0.5 text-xs font-semibold text-sun-ink">▲ the mandate cost here</p> : null}
-      {!cell.guarded.boundsHeld ? <p className="mt-0.5 text-xs font-semibold text-coral">✕ a bound was broken</p> : null}
+      <p className="mt-1.5 text-xs text-faint">{fill(t.proof.fall, { g: cell.guarded.medianMaxDrawdownPct, u: cell.unguarded.medianMaxDrawdownPct })}</p>
+      {guardCosts ? <p className="mt-0.5 text-xs font-semibold text-sun-ink">{t.proof.costHere}</p> : null}
+      {!cell.guarded.boundsHeld ? <p className="mt-0.5 text-xs font-semibold text-coral">{t.proof.broken}</p> : null}
     </td>
   );
 }
 
-export function ProofView() {
+export function ProofHeader({ settings }: { settings: Settings }) {
+  const t = strings(settings.language);
+  return (
+    <div>
+      <h1 className="font-display text-[2.6rem] leading-tight font-semibold tracking-[-0.035em]">
+        {t.proof.title} <span className="accent">{t.proof.titleAccent}</span>
+      </h1>
+      <p className="mt-1.5 max-w-4xl text-[1.05rem] text-muted">{t.proof.sub}</p>
+    </div>
+  );
+}
+
+export function ProofView({ settings }: { settings: Settings }) {
+  const tr = strings(settings.language);
   const [data, setData] = useState<{ harness: Harness | null; outdated?: boolean; invariants: Invariants | null } | null>(null);
   useEffect(() => {
     fetch("/api/results", { cache: "no-store" })
@@ -107,15 +137,13 @@ export function ProofView() {
       .catch(() => setData({ harness: null, invariants: null }));
   }, []);
 
-  if (!data) return <Card>Loading the results…</Card>;
+  if (!data) return <Card className="p-7!">{tr.proof.loading}</Card>;
   const { harness: h, invariants: inv } = data;
   if (!h) {
     return (
-      <Card>
-        <h2 className="font-display text-2xl font-semibold">{data.outdated ? "The results file is from an older harness" : "No harness results yet"}</h2>
-        <p className="mt-2 text-lg text-muted">
-          Run <code>npm run harness</code> in the app folder. It replays six markets against the real contracts on a local chain and writes the results here.
-        </p>
+      <Card className="p-7!">
+        <h2 className="font-display text-xl font-semibold">{data.outdated ? tr.proof.outdated : tr.proof.none}</h2>
+        <p className="mt-2 text-[0.95rem] text-muted">{tr.proof.noneBody}</p>
       </Card>
     );
   }
@@ -140,146 +168,150 @@ export function ProofView() {
     }),
     { due: 0, done: 0, paused: 0, owner: 0, falsely: 0 },
   );
+  const scenarioText = (id: string, name: string, stress: string): [string, string] => (SCENARIO_KEY[id] ? [tr.proof[SCENARIO_KEY[id][0]], tr.proof[SCENARIO_KEY[id][1]]] : [name, stress]);
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <Eyebrow>Do the boundaries hold?</Eyebrow>
-        <p className="mt-3 font-display text-6xl font-semibold">
-          {held} of {runs} runs
+    <div className="space-y-5">
+      {/* the headline: did anything the mandate forbids happen? */}
+      <section className="relative overflow-hidden rounded-(--radius-card) bg-forest p-8 text-white">
+        <div aria-hidden className="absolute inset-0 bg-[radial-gradient(ellipse_at_85%_0%,rgb(255_255_255/0.09),transparent_55%)]" />
+        <p className="eyebrow relative text-white/70!">{tr.proof.eyebrow}</p>
+        <p className="relative mt-4 font-serif text-[3.2rem] leading-none">
+          {fill(tr.proof.runs, { held: n(held), runs: n(runs) })}
         </p>
-        <p className="mt-2 max-w-4xl text-xl">
-          {held === runs
-            ? "In every run, for every brain and every owner, nothing the mandate forbids happened: no money left the vault except to the owner, nothing outside the mandate was bought, no cap or daily allowance was passed, and no rise in risk took effect before its wait."
-            : `A bound was broken in ${runs - held} runs: ${t.boundsBroken.join("; ")}.`}
+        <p className="relative mt-4 max-w-4xl text-[1.02rem] leading-relaxed text-white/80">
+          {held === runs ? tr.proof.heldAll : fill(tr.proof.heldSome, { n: runs - held, what: t.boundsBroken.join("; ") })}
         </p>
-        <div className="mt-6 grid grid-cols-4 gap-4">
-          <Tile value={n(t.violationsBlocked)} label="rule breaks stopped" note={`of ${n(t.attempts)} attempted actions; ${n(t.blockedByContract)} by the contract, ${n(t.blockedByRiskEngine + t.sentToOwner)} before signing`} />
-          <Tile value={`${n(t.loosening.queued)} of ${n(t.loosening.attempts)}`} label="risk increases made to wait" note={`${n(t.loosening.appliedAtOnce)} took effect at once`} />
-          <Tile value={n(t.loosening.vetoed)} label="vetoed by the guardian" note={`${n(t.loosening.appliedAfterTheWait)} applied after the full wait`} />
-          <Tile value={`${n(t.revengeBuys.refused)} of ${n(t.revengeBuys.attempts)}`} label="revenge buys refused" note={`${n(t.revengeBuys.madeInsideTheMandate)} went through, inside every cap`} />
-        </div>
+      </section>
+
+      <Card className="grid grid-cols-2 gap-6 p-7! lg:grid-cols-4">
+        <Stat value={n(t.violationsBlocked)} label={tr.proof.sBreaks} note={fill(tr.proof.sBreaksNote, { attempts: n(t.attempts) })} />
+        <Stat value={`${n(t.loosening.queued)}/${n(t.loosening.attempts)}`} label={tr.proof.sWait} note={fill(tr.proof.sWaitNote, { n: n(t.loosening.appliedAtOnce) })} />
+        <Stat value={n(t.loosening.vetoed)} label={tr.proof.sVeto} note={fill(tr.proof.sVetoNote, { n: n(t.loosening.appliedAfterTheWait) })} />
+        <Stat value={`${n(t.revengeBuys.refused)}/${n(t.revengeBuys.attempts)}`} label={tr.proof.sRevenge} note={fill(tr.proof.sRevengeNote, { n: n(t.revengeBuys.madeInsideTheMandate) })} />
       </Card>
 
-      <Card>
+      <Card className="p-7!">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <Eyebrow>Money left after three days, against the same agent with nothing in the way</Eyebrow>
-            <p className="mt-1 text-base text-muted">
-              Change from the starting {n(start)} tUSD: the middle result of {h.design.seedsPerCell} seeds. Hover a cell for the worst seed. &quot;fall&quot; is the largest drop from a peak.
-            </p>
+          <div className="max-w-3xl">
+            <h3 className="font-display text-lg font-semibold">{tr.proof.matrix}</h3>
+            <p className="mt-1 text-sm text-muted">{fill(tr.proof.matrixSub, { start: n(start), seeds: h.design.seedsPerCell })}</p>
           </div>
-          <div className="flex items-center gap-5 text-base">
+          <div className="flex items-center gap-5 text-sm">
             <span className="flex items-center gap-2">
-              <span className="h-2 w-6 rounded-r" style={{ background: "var(--color-chart-guarded)" }} />
-              Guarded by the mandate
+              <span className="h-2 w-6 rounded-r-[4px]" style={{ background: "var(--color-chart-guarded)" }} />
+              {tr.proof.guarded}
             </span>
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-6 rounded-r" style={{ background: "var(--color-chart-plain)" }} />
-              Unguarded
+            <span className="flex items-center gap-2 text-muted">
+              <span className="h-2 w-6 rounded-r-[4px]" style={{ background: "var(--color-chart-plain)" }} />
+              {tr.proof.unguarded}
             </span>
           </div>
         </div>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[60rem] border-collapse text-left">
             <thead>
               <tr className="border-b border-line text-sm">
-                <th className="py-2 pr-3 font-semibold">Market</th>
+                <th className="py-2 pr-3 font-semibold text-muted">{tr.proof.market}</th>
                 {columns.map(({ b, u }) => (
                   <th key={b + u} className="px-3 py-2 font-semibold">
-                    {SHORT_BRAIN[b] ?? b}
-                    <span className="block font-normal text-muted">{SHORT_USER[u] ?? u}</span>
+                    <span className={b === "compromised" ? "text-coral" : ""}>{brainName(b, tr)}</span>
+                    <span className="block text-xs font-normal text-muted">{userName(u, tr)}</span>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {h.design.scenarios.map((s) => (
-                <tr key={s.id} className="border-b border-line">
-                  <th className="w-56 py-3 pr-3 align-top font-normal">
-                    <span className="text-base font-semibold">{s.name}</span>
-                    <span className="mt-0.5 block text-xs text-muted">{s.stress}</span>
-                  </th>
-                  {columns.map(({ b, u }) => {
-                    const cell = h.cells.find((c) => c.scenario === s.id && c.brain === b && c.user === u);
-                    return cell ? <Pair key={b + u} cell={cell} start={start} scaleMax={scaleMax} /> : <td key={b + u} />;
-                  })}
-                </tr>
-              ))}
+              {h.design.scenarios.map((sc) => {
+                const [name, stress] = scenarioText(sc.id, sc.name, sc.stress);
+                return (
+                  <tr key={sc.id} className="border-b border-line/70 last:border-0">
+                    <th className="w-56 py-3.5 pr-3 align-top font-normal">
+                      <span className="text-[0.95rem] font-semibold">{name}</span>
+                      <span className="mt-0.5 block text-xs text-muted">{stress}</span>
+                    </th>
+                    {columns.map(({ b, u }) => {
+                      const cell = h.cells.find((c) => c.scenario === sc.id && c.brain === b && c.user === u);
+                      return cell ? <Pair key={b + u} cell={cell} start={start} scaleMax={scaleMax} t={tr} /> : <td key={b + u} />;
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-6">
-        <Card>
-          <Eyebrow>Where the mandate costs something</Eyebrow>
-          <p className="mt-2 text-lg">
-            {costly.length === 0
-              ? "In this run the guarded portfolio ended at or above the unguarded one in every cell."
-              : `In ${costly.length} of ${h.cells.length} cells the guarded portfolio ended lower than the unguarded one.`}
-          </p>
-          <ul className="mt-3 space-y-2 text-base text-muted">
-            <li>
-              <span className="font-semibold text-ink">A rising market.</span> Caps and the defensive minimum hold back some of the gain. That is the price of the limits.
-            </li>
-            <li>
-              <span className="font-semibold text-ink">A manipulated price feed.</span> The vault trusts its feed. When the feed reports a fall that did not happen, the stop-loss sells at the false price. The feed&apos;s per-update bound and staleness check limit this; they do not remove it. It is on the known-risk list.
-            </li>
-            <li>
-              <span className="font-semibold text-ink">A fall that recovers.</span> A stop-loss or a pause on buying can lock in a loss the unguarded account rides out.
-            </li>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card className="p-7!">
+          <h3 className="font-display text-lg font-semibold">{tr.proof.costTitle}</h3>
+          <p className="mt-2 text-[0.95rem]">{costly.length === 0 ? tr.proof.costNone : fill(tr.proof.costSome, { n: costly.length, total: h.cells.length })}</p>
+          <ul className="mt-4 divide-y divide-line border-y border-line text-sm">
+            {(
+              [
+                [tr.proof.cost1, tr.proof.cost1Note],
+                [tr.proof.cost2, tr.proof.cost2Note],
+                [tr.proof.cost3, tr.proof.cost3Note],
+              ] as const
+            ).map(([k, v]) => (
+              <li key={k} className="py-3">
+                <span className="font-semibold">{k}</span> <span className="text-muted">{v}</span>
+              </li>
+            ))}
           </ul>
         </Card>
-        <Card>
-          <Eyebrow>Does it get in a healthy agent&apos;s way?</Eyebrow>
-          <div className="mt-3 grid grid-cols-2 gap-4">
-            <Tile value={`${n(tasks.done)} of ${n(tasks.due)}`} label="planned tasks completed" note="recurring buys and rebalances" />
-            <Tile value={tasks.due ? `${((tasks.falsely / tasks.due) * 100).toFixed(1)}%` : "0%"} label="false-block rate" note={`${n(tasks.falsely)} tasks refused for no protective reason`} />
+        <Card className="p-7!">
+          <h3 className="font-display text-lg font-semibold">{tr.proof.healthyTitle}</h3>
+          <div className="mt-5 grid grid-cols-2 gap-6">
+            <Stat value={`${n(tasks.done)}/${n(tasks.due)}`} label={tr.proof.tasksDone} note={tr.proof.tasksNote} />
+            <Stat value={tasks.due ? `${((tasks.falsely / tasks.due) * 100).toFixed(1)}%` : "0%"} label={tr.proof.falseBlock} note={fill(tr.proof.falseBlockNote, { n: n(tasks.falsely) })} />
           </div>
-          <p className="mt-3 text-base text-muted">
-            {n(tasks.paused)} more were held back by protection (a loss trigger, a stop price or a risk signal), which is the mandate working, and {n(tasks.owner)} were sent to the owner. The mandate fired {n(t.stopLossesFired)} stop-losses across all runs, none of them through the agent.
-          </p>
+          <p className="mt-5 text-sm text-muted">{fill(tr.proof.healthyNote, { paused: n(tasks.paused), owner: n(tasks.owner), stops: n(t.stopLossesFired) })}</p>
         </Card>
       </div>
 
       {inv ? (
-        <Card>
-          <Eyebrow>The contracts, tested separately</Eyebrow>
-          <div className="mt-3 grid grid-cols-4 gap-4">
-            <Tile value={n(inv.randomCalls)} label="random calls" note={`against ${inv.invariants} invariants, ${inv.compiler}`} />
-            <Tile value={n(inv.violations)} label="violations" note="a compromised agent, a panicking owner and a moving market at once" />
-            <Tile value={n(inv.tests)} label="tests passing" />
-            <Tile value={`${inv.mutation.caughtByUnitTests} of ${inv.mutation.brokenChecks}`} label="deliberately broken checks caught" note={`${inv.mutation.caughtByInvariants} also caught by the invariants alone`} />
+        <Card className="p-7!">
+          <h3 className="font-display text-lg font-semibold">{tr.proof.contracts}</h3>
+          <div className="mt-5 grid grid-cols-2 gap-6 lg:grid-cols-4">
+            <Stat value={n(inv.randomCalls)} label={tr.proof.randomCalls} note={fill(tr.proof.randomCallsNote, { n: inv.invariants, compiler: inv.compiler })} />
+            <Stat value={n(inv.violations)} label={tr.proof.violations} note={tr.proof.violationsNote} tone="text-leaf" />
+            <Stat value={n(inv.tests)} label={tr.proof.tests} />
+            <Stat value={`${inv.mutation.caughtByUnitTests}/${inv.mutation.brokenChecks}`} label={tr.proof.mutants} note={fill(tr.proof.mutantsNote, { n: inv.mutation.caughtByInvariants })} />
           </div>
-          <p className="mt-3 text-base text-muted">We removed or broke each safety check in turn to see whether the tests notice. {inv.mutation.missed}</p>
+          <p className="mt-5 text-sm text-muted">
+            {tr.proof.mutationNote} {inv.mutation.missed}
+          </p>
         </Card>
       ) : null}
 
-      <Card>
-        <Eyebrow>How this was measured</Eyebrow>
-        <ul className="mt-2 space-y-1.5 text-base text-muted">
-          <li>
-            <span className="font-semibold text-ink">Guarded:</span> the real contracts on a local chain, with the risk engine, the keeper and a guardian who vetoes most of what waits. Mandate: {h.design.mandate}.
-          </li>
-          <li>
-            <span className="font-semibold text-ink">Unguarded:</span> {h.design.unguarded}
-          </li>
-          {Object.entries(h.design.brains).map(([id, text]) => (
-            <li key={id}>
-              <span className="font-semibold text-ink">{SHORT_BRAIN[id] ?? id}:</span> {text}.
+      <Card className="p-7!">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+            <h3 className="font-display text-lg font-semibold">{tr.proof.method}</h3>
+            <Icon name="chevron" size={18} className="text-muted transition-transform group-open:rotate-180" />
+          </summary>
+          <ul className="mt-4 space-y-2 text-sm text-muted">
+            <li>
+              <span className="font-semibold text-ink">{tr.proof.mGuarded}</span> {fill(tr.proof.mGuardedText, { mandate: h.design.mandate })}
             </li>
-          ))}
-          <li>
-            <span className="font-semibold text-ink">Panicking owner:</span> when their portfolio is down 3% on the day or the index has dropped 6% in half a day, they try to triple the loss limit, halt the stop-loss, move the withdrawal address and sign for a large revenge buy.
-          </li>
-          <li>
-            <span className="font-semibold text-ink">Prices:</span> {h.design.prices} {h.design.steps} hourly steps per run. These are stress tests of the rules, not a forecast and not a claim about returns.
-          </li>
-          <li>
-            Generated {new Date(h.generatedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}. <Chip tone="plain">{runs} runs</Chip>
-          </li>
-        </ul>
+            <li>
+              <span className="font-semibold text-ink">{tr.proof.mUnguarded}</span> {tr.proof.mUnguardedText}
+            </li>
+            {brains.map((id) => (
+              <li key={id}>
+                <span className="font-semibold text-ink">{brainName(id, tr)}:</span> {BRAIN_KEY[id] ? tr.proof[BRAIN_KEY[id][1]] : h.design.brains[id]}.
+              </li>
+            ))}
+            <li>
+              <span className="font-semibold text-ink">{tr.proof.mPanic}</span> {tr.proof.mPanicText}
+            </li>
+            <li>
+              <span className="font-semibold text-ink">{tr.proof.mPrices}</span> {fill(tr.proof.mPricesText, { steps: h.design.steps })}
+            </li>
+            <li className="text-xs text-faint">{fill(tr.proof.generated, { date: new Date(h.generatedAt).toLocaleString(LOCALE[settings.language], { dateStyle: "medium", timeStyle: "short" }) })}</li>
+          </ul>
+        </details>
       </Card>
     </div>
   );

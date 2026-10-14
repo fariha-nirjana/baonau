@@ -42,6 +42,7 @@ const SECTIONS: Record<string, [string, string]> = {
   activity: ["Activity screen and receipts", "The decision journal and the receipt that opens from any move."],
   actors: ["Who acted (on receipts)", "Shown on every receipt."],
   gates: ["Rule check names (on receipts)", "The list of checks on every receipt. Replaces the English-only list in Part 4."],
+  proof: ["Proof screen", "The harness results and the contract test numbers."],
   chat: ["Chat with Mimo", "The floating chat and its full-window mode."],
   launcher: ["Chat button in the corner", "The line under \"Talk to Mimo\", one per mood."],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],
@@ -177,7 +178,7 @@ for (const [title, where, file, from, to] of EVENT_FILES) {
 
 out("## Not in this file yet");
 out();
-out("Proof and Security demo still have their old text. Each one is added here when it is redone.");
+out("Security demo still have their old text. Each one is added here when it is redone.");
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, lines.join("\n") + "\n");
