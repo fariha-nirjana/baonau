@@ -152,7 +152,7 @@ export function Chat({
   /** Text to put in the box, for example from "Change it with Mimo". A new id puts it in again. */
   prefill?: { id: number; text: string } | null;
 }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);

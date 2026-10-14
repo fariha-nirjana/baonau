@@ -14,7 +14,7 @@ type Row = { key: AssetSymbol | "USD"; name: string; usd: string; share: number;
 /** Current mix next to the plan's targets. Cash is whatever the plan leaves over. */
 function rowsOf(state: AppState, settings: Settings): Row[] {
   const p = state.portfolio;
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   const targets = state.plan.targets;
   const planned = Object.values(targets).reduce((a, v) => a + (v ?? 0), 0);
   return [
@@ -247,7 +247,7 @@ function PreviewDialog({ state, settings, t, onClose, onAsk }: { state: AppState
             ))}
           </ul>
         ) : null}
-        {off.length ? (
+        {off.length && settings.role === "owner" ? (
           <button onClick={() => onAsk(t.holdings.askPrompt)} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-forest px-4 py-3 font-semibold text-white hover:bg-forest-soft">
             {fill(t.holdings.ask, { agent: BRAND.agent })}
             <Icon name="arrowUpRight" size={16} />
@@ -265,7 +265,7 @@ function PreviewDialog({ state, settings, t, onClose, onAsk }: { state: AppState
 // ---------------------------------------------------------------- page
 
 export function PortfolioHeader({ settings }: { settings: Settings }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   return (
     <div>
       <h1 className="font-display text-[2.6rem] leading-tight font-semibold tracking-[-0.035em]">
@@ -277,7 +277,7 @@ export function PortfolioHeader({ settings }: { settings: Settings }) {
 }
 
 export function PortfolioView({ state, settings, onAsk }: { state: AppState; settings: Settings; onAsk: (prompt: string) => void }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   const [preview, setPreview] = useState(false);
   return (
     <div className="space-y-5">

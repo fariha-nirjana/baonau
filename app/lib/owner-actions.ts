@@ -120,7 +120,7 @@ export async function applyReady() {
   await consider("stop-loss halt", p.stopLoss.haltRequestAppliesFrom, "applyStopLossHalt");
   await consider("withdrawal address", p.pending.withdrawalAddress?.appliesFrom, "applyWithdrawalAddress");
   await consider("agent key", p.pending.agentKey?.appliesFrom, "applyAgent");
-  await consider("guardian change", p.pending.guardian?.appliesFrom, "applyGuardian");
+  await consider("trusted contact change", p.pending.guardian?.appliesFrom, "applyGuardian");
   await consider("waiting period", p.pending.waitingPeriod?.appliesFrom, "applyLoosenDelay");
   await consider("unpause", p.pending.unpause?.appliesFrom, "applyUnpause");
   return { applied, waiting };
@@ -199,7 +199,7 @@ export const ownerActions = {
   proposeWithdrawalAddress: (to: Address) =>
     act("owner", "mandate", "change_withdrawal_address", "Owner asked to change the withdrawal address", { functionName: "proposeWithdrawalAddress", args: [to] }),
   removeGuardian: () =>
-    act("owner", "mandate", "remove_guardian", "Owner asked to remove the guardian", { functionName: "setGuardian", args: ["0x0000000000000000000000000000000000000000"] }),
+    act("owner", "mandate", "remove_guardian", "Owner asked to remove the trusted contact", { functionName: "setGuardian", args: ["0x0000000000000000000000000000000000000000"] }),
 };
 
 /** Everything the guardian may cancel. Its own removal is not on the list: the contract refuses that. */
@@ -217,13 +217,13 @@ const VETO_KEYS: Record<Exclude<Vetoable, AssetSymbol>, Hex> = {
 export const guardianActions = {
   /** The guardian's "no": cancels a change that is waiting. */
   veto: (what: Vetoable) =>
-    act("guardian", "mandate", "veto", `Guardian cancelled the waiting change: ${what}`, { functionName: "cancelChange", args: [keyOf(what)] }),
+    act("guardian", "mandate", "veto", `Trusted contact cancelled the waiting change: ${what}`, { functionName: "cancelChange", args: [keyOf(what)] }),
   /** Shown in the demo to prove the point: the contract refuses this one. */
   vetoOwnRemoval: () =>
-    act("guardian", "mandate", "veto", "Guardian tried to cancel its own removal", { functionName: "cancelChange", args: [CHANGE_KEYS.guardian] }),
-  pause: () => act("guardian", "mandate", "pause_agent", "Guardian paused the agent", { functionName: "pause", args: [] }),
-  unpause: () => act("guardian", "mandate", "unpause_agent", "Guardian lifted the pause", { functionName: "unpause", args: [] }),
+    act("guardian", "mandate", "veto", "Trusted contact tried to cancel their own removal", { functionName: "cancelChange", args: [CHANGE_KEYS.guardian] }),
+  pause: () => act("guardian", "mandate", "pause_agent", "Trusted contact paused the agent", { functionName: "pause", args: [] }),
+  unpause: () => act("guardian", "mandate", "unpause_agent", "Trusted contact lifted the pause", { functionName: "unpause", args: [] }),
   haltStopLoss: () =>
-    act("guardian", "mandate", "halt_stop_loss", "Guardian halted the stop-loss (price feed emergency)", { functionName: "haltStopLoss", args: [] }),
-  resumeStopLoss: () => act("guardian", "mandate", "resume_stop_loss", "Guardian switched the stop-loss back on", { functionName: "resumeStopLoss", args: [] }),
+    act("guardian", "mandate", "halt_stop_loss", "Trusted contact halted the stop-loss (price feed emergency)", { functionName: "haltStopLoss", args: [] }),
+  resumeStopLoss: () => act("guardian", "mandate", "resume_stop_loss", "Trusted contact switched the stop-loss back on", { functionName: "resumeStopLoss", args: [] }),
 };

@@ -95,7 +95,7 @@ const descriptions: Record<ToolName, string> = {
   get_mandate: "Read the signed mandate: every limit, each asset's cap and stop price, who holds which key, and any change that is waiting.",
   get_market: "Read current prices, how far each has moved in the last hour, and any risk signals such as a token being on the scam list.",
   get_activity:
-    "Read the latest receipts, newest first: trades, refusals, stop-losses the keeper fired, changes the owner or guardian made. Use it when asked what happened.",
+    "Read the latest receipts, newest first: trades, refusals, stop-losses the keeper fired, changes the owner or trusted contact made. Use it when asked what happened.",
   buy: "Buy an asset with cash from the vault. The mandate decides whether it goes through.",
   sell: "Sell an asset into cash. Selling is always possible within the size limits, including while buying is paused.",
   rebalance:
@@ -103,9 +103,9 @@ const descriptions: Record<ToolName, string> = {
   request_owner_approval:
     "Ask the owner to sign for one exact trade that is above your size limits. Nothing is traded until they sign. Their signature lifts the size limits for that trade only; every other rule in the mandate still applies.",
   draft_mandate:
-    "Write a mandate for the owner to read and sign: from their goal when there is none yet, or as a change to the current one. You cannot sign it. Give every term each time. Anything that raises the risk only takes effect after a waiting period, and the guardian can cancel it.",
+    "Write a mandate for the owner to read and sign: from their goal when there is none yet, or as a change to the current one. You cannot sign it. Give every term each time. Anything that raises the risk only takes effect after a waiting period, and the trusted contact can cancel it.",
   request_stop_loss_halt:
-    "Prepare a request to switch the automatic stop-loss off, for the owner to sign. It does not take effect until a waiting period has passed, and the guardian can cancel it.",
+    "Prepare a request to switch the automatic stop-loss off, for the owner to sign. It does not take effect until a waiting period has passed, and the trusted contact can cancel it.",
   decline:
     "Record that you decided not to make a trade you were asked or scheduled to make, and why. Use it every time you say no to a trade, so the decision has a receipt.",
 };
@@ -188,7 +188,7 @@ function mandateView(p: Portfolio) {
         change_waiting: x.pendingRule,
       })),
     plan: readPlan(),
-    rules_of_change: `Lowering risk applies at once. Raising risk waits ${p.settings.loosenDelaySeconds} seconds, and the guardian can cancel it during the wait.`,
+    rules_of_change: `Lowering risk applies at once. Raising risk waits ${p.settings.loosenDelaySeconds} seconds, and the trusted contact can cancel it during the wait.`,
     leverage: "Not possible. The vault has no way to borrow.",
     keys: {
       owner: "sets the mandate, approves requests, deposits and withdraws",
@@ -491,7 +491,7 @@ function buildDraft(a: DraftArgs, p: Portfolio, ctx: ToolContext) {
       .filter((r) => rules[r.asset]?.stopPrice)
       .map((r) => `${findPosition(p, r.asset)!.name} is sold automatically at ${rules[r.asset]!.stopPrice} (now ${findPosition(p, r.asset)!.price})`),
     ...(recurring.length ? [`Recurring buy: ${show(recurring[0].usd, ctx)} of ${recurring[0].symbol} every ${recurring[0].everyHours} hours`] : []),
-    "No borrowing. Lowering risk is immediate, raising risk waits and the guardian can cancel it",
+    "No borrowing. Lowering risk is immediate, raising risk waits and the trusted contact can cancel it",
   ];
 
   if (p.mandateSigned && raises.length === 0 && lowers.length === 0 && recurring.length === 0) {
@@ -518,7 +518,7 @@ function buildDraft(a: DraftArgs, p: Portfolio, ctx: ToolContext) {
       risk === "first_mandate"
         ? "Nothing is in force yet. When the owner signs, the mandate goes on-chain and the agent can start."
         : risk === "raises"
-          ? `Nothing has changed. If the owner signs, the whole change waits ${wait} seconds before it can take effect, and the guardian can cancel it in that time. The current mandate stays in force meanwhile.`
+          ? `Nothing has changed. If the owner signs, the whole change waits ${wait} seconds before it can take effect, and the trusted contact can cancel it in that time. The current mandate stays in force meanwhile.`
           : "Nothing has changed yet. This only lowers risk, so it applies as soon as the owner signs.",
   };
 }
@@ -597,7 +597,7 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
         return {
           ok: true,
           draft_id: draft.id,
-          what_happens_next: `Nothing has changed and the stop-loss is still on. If the owner signs, the halt waits ${p.settings.loosenDelaySeconds} seconds before it can take effect, and the guardian can cancel it in that time.`,
+          what_happens_next: `Nothing has changed and the stop-loss is still on. If the owner signs, the halt waits ${p.settings.loosenDelaySeconds} seconds before it can take effect, and the trusted contact can cancel it in that time.`,
         };
       }
     }

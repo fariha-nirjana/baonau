@@ -313,7 +313,7 @@ function SafetyNetsCard({ state, settings, act, skew, t }: { state: AppState; se
 // ---------------------------------------------------------------- page
 
 export function MandateHeader({ settings }: { settings: Settings }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   return (
     <div>
       <h1 className="font-display text-[2.6rem] leading-tight font-semibold tracking-[-0.035em]">
@@ -326,7 +326,7 @@ export function MandateHeader({ settings }: { settings: Settings }) {
 
 export function MandateView(props: Props) {
   const { state, settings, act, skew } = props;
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
       <MandateDocument state={state} settings={settings} t={t} />

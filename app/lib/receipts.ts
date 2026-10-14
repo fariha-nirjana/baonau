@@ -92,9 +92,9 @@ function describeEvents(events: Result["events"], currency: Currency): string[] 
       case "AgentProposed":
         return [`New agent key signed for, waiting until ${clock(e.args.eta)}`];
       case "GuardianProposed":
-        return [`Guardian change signed for, waiting until ${clock(e.args.eta)}`];
+        return [`Trusted contact change signed for, waiting until ${clock(e.args.eta)}`];
       case "UnpauseProposed":
-        return [`Lifting the guardian's pause signed for, waiting until ${clock(e.args.eta)}`];
+        return [`Lifting the trusted contact's pause signed for, waiting until ${clock(e.args.eta)}`];
       case "LoosenDelayProposed":
         return [`Shorter waiting period signed for, waiting until ${clock(e.args.eta)}`];
       case "WithdrawalAddressProposed":

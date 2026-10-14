@@ -44,6 +44,7 @@ const SECTIONS: Record<string, [string, string]> = {
   gates: ["Rule check names (on receipts)", "The list of checks on every receipt. Replaces the English-only list in Part 4."],
   proof: ["Proof screen", "The harness results and the contract test numbers."],
   demo: ["Security demo screen", "The compromised-agent run and the market lab. The attacker's goals are translated here too."],
+  roles: ["Role switch", "The 'Viewing as' picker in the sidebar and the dialog shown before switching."],
   chat: ["Chat with Mimo", "The floating chat and its full-window mode."],
   launcher: ["Chat button in the corner", "The line under \"Talk to Mimo\", one per mood."],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],

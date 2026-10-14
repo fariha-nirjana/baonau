@@ -241,7 +241,7 @@ function MarketLab({ state, act, t }: { state: AppState; act: Act; t: Strings })
 // ---------------------------------------------------------------- page
 
 export function SecurityHeader({ settings }: { settings: Settings }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   return (
     <div>
       <h1 className="font-display text-[2.6rem] leading-tight font-semibold tracking-[-0.035em]">
@@ -253,7 +253,7 @@ export function SecurityHeader({ settings }: { settings: Settings }) {
 }
 
 export function SecurityView(props: Props) {
-  const t = strings(props.settings.language);
+  const t = strings(props.settings.language, props.settings.role);
   return (
     <div className="space-y-5">
       <AttackStage {...props} t={t} />

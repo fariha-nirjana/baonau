@@ -116,7 +116,7 @@ function Pair({ cell, start, scaleMax, t }: { cell: Cell; start: number; scaleMa
 }
 
 export function ProofHeader({ settings }: { settings: Settings }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   return (
     <div>
       <h1 className="font-display text-[2.6rem] leading-tight font-semibold tracking-[-0.035em]">
@@ -128,7 +128,7 @@ export function ProofHeader({ settings }: { settings: Settings }) {
 }
 
 export function ProofView({ settings }: { settings: Settings }) {
-  const tr = strings(settings.language);
+  const tr = strings(settings.language, settings.role);
   const [data, setData] = useState<{ harness: Harness | null; outdated?: boolean; invariants: Invariants | null } | null>(null);
   useEffect(() => {
     fetch("/api/results", { cache: "no-store" })

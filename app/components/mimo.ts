@@ -84,9 +84,14 @@ export const SAY: Record<string, Partial<Record<Language, (v: N) => [line: strin
     zh: () => ["价格数据已过期，交易将等待最新价格。", "风险信号"],
   },
   halt: {
-    en: () => ["Your guardian has halted the stop-loss for now.", "Risk signal"],
-    bn: () => ["আপনার অভিভাবক আপাতত স্টপ-লস স্থগিত করেছেন।", "ঝুঁকির সংকেত"],
-    zh: () => ["你的监护人暂时停用了止损。", "风险信号"],
+    en: () => ["Your trusted contact has halted the stop-loss for now.", "Risk signal"],
+    bn: () => ["আপনার বিশ্বস্ত ব্যক্তি আপাতত স্টপ-লস স্থগিত করেছেন।", "ঝুঁকির সংকেত"],
+    zh: () => ["你的信任联系人暂时停用了止损。", "风险信号"],
+  },
+  haltSelf: {
+    en: () => ["You've halted the stop-loss for now. It switches back on by itself.", "Risk signal"],
+    bn: () => ["আপনি আপাতত স্টপ-লস স্থগিত করেছেন। এটি নিজে থেকেই আবার চালু হবে।", "ঝুঁকির সংকেত"],
+    zh: () => ["你已暂时停用止损，它会自动恢复。", "风险信号"],
   },
   guardianWaiting: {
     en: ({ n }) => [`The owner asked to raise the risk (${n}). Nothing has changed. You can cancel it.`, "Needs you"],
@@ -203,7 +208,7 @@ export function mimoOf({ state, role, attacking, thinking, seen, dismissed, stre
   const stale = p.positions.some((x) => x.priceIsStale && (x.rule.allowed || Number(x.amount) > 0));
   if (p.protect.active) add("warning", say("protect", language), `protect:${p.protect.cooldownUntil ?? "day"}`);
   if (stale) add("warning", say("stale", language), "stale");
-  if (p.stopLoss.haltedUntil) add("warning", say("halt", language), `halt:${p.stopLoss.haltedUntil}`);
+  if (p.stopLoss.haltedUntil) add("warning", say(role === "guardian" ? "haltSelf" : "halt", language), `halt:${p.stopLoss.haltedUntil}`);
 
   const waiting = waitingCount(state);
   if (waiting && role === "guardian") {

@@ -18,6 +18,7 @@ import { PortfolioHeader, PortfolioView } from "./Portfolio";
 import { MandateHeader, MandateView } from "./Mandate";
 import { ApprovalsHeader, ApprovalsView } from "./Approvals";
 import { ActivityHeader, ActivityView, ReceiptDialog } from "./Activity";
+import { RoleAvatar, RoleDialog, RolePicker } from "./Roles";
 import { SecurityHeader, SecurityView } from "./Security";
 
 type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
@@ -79,16 +80,16 @@ function SyncedAgo({ at, t }: { at: number; t: Strings }) {
   );
 }
 
-function NavButton({ item, active, count, onClick, t }: { item: NavItem; active: boolean; count: number; onClick: () => void; t: Strings }) {
+function NavButton({ item, active, count, onClick, t, contact }: { item: NavItem; active: boolean; count: number; onClick: () => void; t: Strings; contact: boolean }) {
   return (
     <button
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[0.92rem] transition-colors ${active ? "bg-mint font-semibold text-forest" : "text-muted hover:bg-cream hover:text-ink"}`}
+      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[0.92rem] transition-colors ${active ? (contact ? "bg-sky-soft font-semibold text-sky" : "bg-mint font-semibold text-forest") : "text-muted hover:bg-cream hover:text-ink"}`}
     >
       <Icon name={item.icon} size={19} strokeWidth={1.7} />
       <span className="flex-1">{t.nav[item.key]}</span>
-      {count ? <span className="num rounded-md bg-sun-soft px-1.5 py-0.5 text-xs font-semibold text-sun-ink">{count}</span> : active ? <span className="size-1.5 rounded-full bg-leaf" /> : null}
+      {count ? <span className="num rounded-md bg-sun-soft px-1.5 py-0.5 text-xs font-semibold text-sun-ink">{count}</span> : active ? <span className={`size-1.5 rounded-full ${contact ? "bg-sky" : "bg-leaf"}`} /> : null}
     </button>
   );
 }
@@ -107,6 +108,7 @@ export function Dashboard() {
   const [prefill, setPrefill] = useState<{ id: number; text: string } | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [switchTo, setSwitchTo] = useState<Settings["role"] | null>(null);
   const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -116,7 +118,7 @@ export function Dashboard() {
   const firstRead = useRef(true);
   // ?receipt=2 opens that receipt once the first reading arrives, for screenshots
   const openReceiptAt = useRef<number | null>(null);
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
 
   const refresh = useCallback(async () => {
     try {
@@ -153,6 +155,8 @@ export function Dashboard() {
       if (query.get("chat") === "open" || query.get("chat") === "full") setChatOpen(true);
       if (query.get("chat") === "full") setChatExpanded(true);
       if (query.get("plan") === "open") setPlanOpen(true);
+      const sw = query.get("switch");
+      if (sw === "guardian" || sw === "owner") setSwitchTo(sw);
       openReceiptAt.current = query.get("receipt") ? Number(query.get("receipt")) : null;
       refresh();
     }, 0);
@@ -265,6 +269,7 @@ export function Dashboard() {
               key={item.view}
               item={item}
               t={t}
+              contact={guardian}
               active={view === item.view}
               count={item.view === "approvals" ? toSign + (guardian ? 0 : waiting) : 0}
               onClick={() => setView(item.view)}
@@ -274,29 +279,15 @@ export function Dashboard() {
         <p className="eyebrow mt-6 mb-2 px-3.5 text-[0.68rem]! text-faint!">{t.nav.testIt}</p>
         <div className="space-y-1">
           {NAV_TEST.map((item) => (
-            <NavButton key={item.view} item={item} t={t} active={view === item.view} count={0} onClick={() => setView(item.view)} />
+            <NavButton key={item.view} item={item} t={t} contact={guardian} active={view === item.view} count={0} onClick={() => setView(item.view)} />
           ))}
         </div>
 
-        <p className="eyebrow mt-6 mb-2 px-3.5 text-[0.68rem]! text-faint!">{t.shell.inCharge}</p>
-        <button
-          onClick={() => setSettings((s) => ({ ...s, role: s.role === "owner" ? "guardian" : "owner" }))}
-          title={t.shell.switchTo}
-          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-cream"
-        >
-          <span className="flex">
-            <span className={`flex size-7 items-center justify-center rounded-full border-2 border-card text-xs font-semibold ${guardian ? "bg-cream text-muted" : "bg-mint text-forest"}`}>{name.slice(0, 1)}</span>
-            <span className={`-ml-2 flex size-7 items-center justify-center rounded-full border-2 border-card text-xs font-semibold ${guardian ? "bg-sun-soft text-sun-ink" : "bg-cream text-muted"}`}>G</span>
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold">{t.shell.circle}</span>
-            <span className="block text-xs text-muted">{guardian ? t.shell.circleGuardian : t.shell.circleOwner}</span>
-          </span>
-          {guardian && waiting ? <span className="num rounded-md bg-sun-soft px-1.5 text-xs font-semibold text-sun-ink">{waiting}</span> : null}
-        </button>
+        <p className="eyebrow mt-6 mb-2 px-3.5 text-[0.68rem]! text-faint!">{t.roles.viewingAs}</p>
+        <RolePicker settings={settings} onPick={setSwitchTo} />
 
         <div className="mt-auto space-y-3 pt-5">
-          <button onClick={() => setChatOpen(true)} className={`mood-${mimo.mood} flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left hover:bg-cream`}>
+          <button onClick={() => (guardian ? undefined : setChatOpen(true))} className={`mood-${mimo.mood} flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left ${guardian ? "cursor-default" : "hover:bg-cream"}`}>
             <MimoTile size={40}>
               <Avatar face={chatBusy ? "thinking" : faceOf(mimo.mood)} size={36} />
             </MimoTile>
@@ -319,25 +310,34 @@ export function Dashboard() {
           </div>
           {pauseControl}
           <div className="flex items-center gap-2.5 border-t border-line px-1 pt-3">
-            <span className={`flex size-9 items-center justify-center rounded-full text-sm font-semibold ${guardian ? "bg-sun-soft text-sun-ink" : "bg-mint text-forest"}`}>{guardian ? "G" : name.slice(0, 1)}</span>
+            <RoleAvatar role={settings.role} settings={settings} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">{guardian ? t.shell.guardian : name}</span>
+              <span className="block truncate text-sm font-semibold">{guardian ? t.roles.contact : name}</span>
               <span className="block truncate text-xs text-muted">
                 {guardian ? short(p.keys.guardian) : `${t.shell.owner} · ${short(p.keys.owner)}`}
               </span>
             </span>
-            <span className="size-2 rounded-full bg-leaf" />
+            <span className={`size-2 rounded-full ${guardian ? "bg-sky" : "bg-leaf"}`} />
           </div>
         </div>
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center gap-4 border-b border-line bg-card/70 px-8">
+        <header className={`flex h-16 shrink-0 items-center gap-4 border-b px-8 ${guardian ? "border-sky/20 bg-sky-soft/70" : "border-line bg-card/70"}`}>
           <p className="text-sm text-faint">
             {state.brand.product}
             <span className="px-3 text-line">/</span>
             <span className="font-semibold text-ink">{crumb ? t.nav[crumb.key] : ""}</span>
           </p>
+          <button
+            onClick={() => setSwitchTo(guardian ? "owner" : "guardian")}
+            title={t.roles.switchEyebrow}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${guardian ? "bg-sky text-white" : "bg-mint text-forest"}`}
+          >
+            <Icon name={guardian ? "shieldCheck" : "user"} size={13} />
+            {guardian ? t.roles.contactView : t.roles.ownerView}
+            <Icon name="swap" size={12} className="opacity-70" />
+          </button>
           <div className="ml-auto flex items-center gap-3">
             {stale ? (
               <button onClick={() => setView("demo")} title={t.shell.stale} className="flex items-center gap-1.5 rounded-full bg-sun-soft px-3 py-1 text-sm font-semibold text-sun-ink">
@@ -377,7 +377,14 @@ export function Dashboard() {
             {notice ? <p className="slide-in mt-5 rounded-2xl bg-coral-soft p-4 text-lg text-coral">{notice}</p> : null}
             {error ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{fill(t.shell.refreshFailed, { error })}</p> : null}
             {stale && view === "demo" ? <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{t.shell.staleHere}</p> : null}
-            {guardian ? <p className="mt-5 rounded-2xl border border-line bg-card p-4 text-base text-muted">{t.shell.guardianNote}</p> : null}
+            {guardian ? (
+              <p className="mt-5 flex items-start gap-3 rounded-2xl border border-sky/30 bg-sky-soft px-5 py-4 text-[0.95rem] text-sky">
+                <Icon name="shieldCheck" size={20} className="mt-0.5 shrink-0" />
+                <span>
+                  <span className="font-semibold">{t.roles.contactView}.</span> {t.shell.guardianNote}
+                </span>
+              </p>
+            ) : null}
             {guardian && waiting > 0 ? (
               <button onClick={() => setView("approvals")} className="slide-in mt-4 block w-full rounded-2xl border border-sun bg-sun-soft p-4 text-left text-base text-sun-ink">
                 <span className="font-semibold">{fill(t.shell.guardianAlert, { n: waiting })}</span> {t.shell.guardianAlertMore}
@@ -438,6 +445,19 @@ export function Dashboard() {
             </button>
           ) : null}
         </>
+      ) : null}
+
+      {switchTo ? (
+        <RoleDialog
+          to={switchTo}
+          settings={settings}
+          onCancel={() => setSwitchTo(null)}
+          onConfirm={() => {
+            setSettings((x) => ({ ...x, role: switchTo }));
+            setSwitchTo(null);
+            setChatOpen(false);
+          }}
+        />
       ) : null}
 
       {receipt ? <ReceiptDialog receipt={receipt} settings={settings} onClose={() => setReceipt(null)} /> : null}

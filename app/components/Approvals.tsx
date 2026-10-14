@@ -584,7 +584,7 @@ function Group({
 }
 
 export function ApprovalsHeader({ settings }: { settings: Settings }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   return (
     <div>
       <h1 className="font-display text-[2.6rem] leading-tight font-semibold tracking-[-0.035em]">
@@ -600,7 +600,7 @@ export function ApprovalsHeader({ settings }: { settings: Settings }) {
 
 export function ApprovalsView(props: Props) {
   const { state, settings, act } = props;
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   const queue = queueOf(state, settings, t);
   const toSign = state.drafts.length + state.requests.length;
   return (

@@ -19,7 +19,7 @@ const asset = (v: unknown) => assetByAddress(String(v))?.name ?? `the token at $
 
 const explain: Record<string, (a: readonly unknown[]) => string> = {
   NotOwner: () => "Only the owner key can do this. The agent key cannot.",
-  NotOwnerOrGuardian: () => "Only the owner or the guardian can do this.",
+  NotOwnerOrGuardian: () => "Only the owner or the trusted contact can do this.",
   NotAgent: () => "This key is not the vault's agent key.",
   NotVault: () => "Only the vault itself can end its mandate.",
   AgentKeyExpired: () => "The agent's session key has expired. The owner must issue a new one.",
@@ -32,7 +32,7 @@ const explain: Record<string, (a: readonly unknown[]) => string> = {
   InvalidExpiry: () => "The agent key's expiry must be in the future and at most 90 days away.",
   InvalidPolicy: () => "Those mandate values are outside what the mandate accepts.",
   InvalidDelay: () => "The waiting period must be between one minute and 30 days.",
-  NotVetoable: () => "The guardian cannot cancel its own removal or replacement.",
+  NotVetoable: () => "The trusted contact cannot cancel their own removal or replacement.",
   BadApproval: () => "This is not an approval the owner signed for exactly this trade on this vault.",
   ApprovalAlreadyUsed: (a) => `Approval ${a[0]} has already been used or cancelled. Each approval works once.`,
   ApprovalNotValidNow: (a) => `This approval is only valid from ${when(a[0])} to ${when(a[1])}.`,
@@ -56,7 +56,7 @@ const explain: Record<string, (a: readonly unknown[]) => string> = {
   InsufficientBalance: (a) => `The vault holds less than this trade needs (asked for ${a[1]}, available ${a[2]}, in the token's smallest units).`,
   SlippageTooHigh: () => "The exchange offered a worse price than the mandate accepts.",
   NoPendingChange: () => "There is no change waiting.",
-  ChangeNotReady: (a) => `This change raises the risk, so it waits. It can be applied from ${when(a[0])}, unless the guardian cancels it.`,
+  ChangeNotReady: (a) => `This change raises the risk, so it waits. It can be applied from ${when(a[0])}, unless the trusted contact cancels it.`,
   // price oracle
   NotUpdater: () => "Only the oracle's updater key can set prices.",
   NoFeed: () => "The oracle has no price for that token.",

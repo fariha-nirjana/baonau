@@ -72,7 +72,7 @@ export function ReceiptDialog({
   settings: Settings;
   onClose: () => void;
 }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   const [icon, tone] = OUTCOME_ICON[r.outcome];
   const gateLabel = (id: string, fallback: string) =>
     (t.gates as Record<string, string>)[id] ?? fallback;
@@ -303,7 +303,7 @@ function dayLabel(iso: string, settings: Settings, t: Strings) {
 }
 
 export function ActivityHeader({ settings }: { settings: Settings }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   return (
     <div>
       <h1 className="font-display text-[2.6rem] leading-tight font-semibold tracking-[-0.035em]">
@@ -324,7 +324,7 @@ export function ActivityView({
   settings: Settings;
   onOpen: (r: Receipt) => void;
 }) {
-  const t = strings(settings.language);
+  const t = strings(settings.language, settings.role);
   const [filter, setFilter] = useState<(typeof FILTERS)[number][0]>("fAll");
   const receipts = state.receipts;
   const shown = receipts.filter(
