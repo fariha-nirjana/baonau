@@ -12,9 +12,10 @@ import { Mascot } from "./Mascot";
 import type { MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
 import { Card, short } from "./ui";
+import { OUTCOME_ICON, OUTCOME_TEXT } from "./Activity";
 import { Change } from "./views";
 
-type Props = { state: AppState; settings: Settings; mimo: MimoSay; onAck: () => void; go: (v: View) => void; openChat: () => void };
+type Props = { state: AppState; settings: Settings; mimo: MimoSay; onAck: () => void; go: (v: View) => void; openChat: () => void; onOpen: (r: Receipt) => void };
 
 const trim = (n: number, decimals: number) => n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: decimals });
 
@@ -302,27 +303,7 @@ function BoundariesCard({ state, settings, go, t }: { state: AppState; settings:
 
 // ---------------------------------------------------------------- recent moves
 
-const OUTCOME_ICON: Record<Receipt["outcome"], [IconName, string]> = {
-  done: ["check", "bg-mint text-leaf"],
-  "blocked by the risk engine": ["shield", "bg-coral-soft text-coral"],
-  "reverted by the contract": ["shield", "bg-coral-soft text-coral"],
-  "sent to the owner": ["clock", "bg-sun-soft text-sun-ink"],
-  "waiting out the delay": ["clock", "bg-sun-soft text-sun-ink"],
-  "decided not to act": ["x", "bg-cream text-muted"],
-  failed: ["alert", "bg-sun-soft text-sun-ink"],
-};
-
-const OUTCOME_TEXT: Record<Receipt["outcome"], string> = {
-  done: "text-muted",
-  "blocked by the risk engine": "text-coral",
-  "reverted by the contract": "text-coral",
-  "sent to the owner": "text-sun-ink",
-  "waiting out the delay": "text-sun-ink",
-  "decided not to act": "text-muted",
-  failed: "text-sun-ink",
-};
-
-function RecentCard({ state, go, t }: { state: AppState; go: (v: View) => void; t: Strings }) {
+function RecentCard({ state, go, onOpen, t }: { state: AppState; go: (v: View) => void; onOpen: (r: Receipt) => void; t: Strings }) {
   const recent = state.receipts.slice(0, 3);
   return (
     <Card className="p-7!">
@@ -341,7 +322,7 @@ function RecentCard({ state, go, t }: { state: AppState; go: (v: View) => void; 
             const [icon, tone] = OUTCOME_ICON[r.outcome];
             return (
               <li key={r.ref + r.at}>
-                <button onClick={() => go("activity")} className="flex w-full items-center gap-3.5 py-4 text-left">
+                <button onClick={() => onOpen(r)} className="flex w-full items-center gap-3.5 py-4 text-left">
                   <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${tone}`}>
                     <Icon name={icon} size={16} strokeWidth={2.2} />
                   </span>
@@ -417,7 +398,7 @@ function ProofBar({ state, settings, go, t }: { state: AppState; settings: Setti
   );
 }
 
-export function OverviewView({ state, settings, mimo, onAck, go, openChat }: Props) {
+export function OverviewView({ state, settings, mimo, onAck, go, openChat, onOpen }: Props) {
   const t = strings(settings.language);
   const p = state.portfolio;
   if (!p.mandateSigned) {
@@ -447,7 +428,7 @@ export function OverviewView({ state, settings, mimo, onAck, go, openChat }: Pro
       </div>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(22rem,1fr)]">
         <BoundariesCard state={state} settings={settings} go={go} t={t} />
-        <RecentCard state={state} go={go} t={t} />
+        <RecentCard state={state} go={go} onOpen={onOpen} t={t} />
       </div>
       <div className="border-t border-line pt-4">
         <ProofBar state={state} settings={settings} go={go} t={t} />

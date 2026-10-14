@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Currency } from "@/lib/money";
 import type { Language } from "@/lib/plan";
+import type { Receipt } from "@/lib/receipts";
 import { BRAND } from "@/lib/brand";
 import { Chat } from "./Chat";
 import { fill, strings, type Strings } from "./i18n";
@@ -16,7 +17,8 @@ import { ProofView } from "./Proof";
 import { PortfolioHeader, PortfolioView } from "./Portfolio";
 import { MandateHeader, MandateView } from "./Mandate";
 import { ApprovalsHeader, ApprovalsView } from "./Approvals";
-import { ActivityView, DemoView } from "./views";
+import { ActivityHeader, ActivityView, ReceiptDialog } from "./Activity";
+import { DemoView } from "./views";
 
 type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
 
@@ -111,6 +113,7 @@ export function Dashboard() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [prefill, setPrefill] = useState<{ id: number; text: string } | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
   const [market, setMarket] = useState<string | null>(null);
@@ -119,6 +122,8 @@ export function Dashboard() {
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const firstRead = useRef(true);
+  // ?receipt=2 opens that receipt once the first reading arrives, for screenshots
+  const openReceiptAt = useRef<number | null>(null);
   const t = strings(settings.language);
 
   const refresh = useCallback(async () => {
@@ -131,6 +136,10 @@ export function Dashboard() {
         setSeen(new Set(data.receipts.map((r) => r.ref + r.at)));
       }
       setState(data);
+      if (openReceiptAt.current !== null) {
+        setReceipt(data.receipts[openReceiptAt.current] ?? null);
+        openReceiptAt.current = null;
+      }
       setSkew(Date.now() - new Date(data.portfolio.at).getTime());
       setSyncedAt(Date.now());
       setError(null);
@@ -152,6 +161,7 @@ export function Dashboard() {
       if (query.get("chat") === "open" || query.get("chat") === "full") setChatOpen(true);
       if (query.get("chat") === "full") setChatExpanded(true);
       if (query.get("plan") === "open") setPlanOpen(true);
+      openReceiptAt.current = query.get("receipt") ? Number(query.get("receipt")) : null;
       refresh();
     }, 0);
     const id = setInterval(refresh, 6000);
@@ -360,6 +370,8 @@ export function Dashboard() {
               <MandateHeader settings={settings} />
             ) : view === "approvals" ? (
               <ApprovalsHeader settings={settings} />
+            ) : view === "activity" ? (
+              <ActivityHeader settings={settings} />
             ) : (
               <div>
                 <h1 className="font-display text-[2.2rem] font-semibold tracking-[-0.03em]">{title}</h1>
@@ -386,11 +398,11 @@ export function Dashboard() {
             ) : null}
 
             <div className="mt-7">
-              {view === "portfolio" ? <OverviewView state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} openChat={() => setChatOpen(true)} /> : null}
+              {view === "portfolio" ? <OverviewView state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} openChat={() => setChatOpen(true)} onOpen={setReceipt} /> : null}
               {view === "holdings" ? <PortfolioView state={state} settings={settings} onAsk={askMimo} /> : null}
               {view === "mandate" ? <MandateView state={state} settings={settings} act={act} skew={skew} go={setView} onAsk={askMimo} /> : null}
               {view === "approvals" ? <ApprovalsView state={state} settings={settings} act={act} skew={skew} /> : null}
-              {view === "activity" ? <ActivityView state={state} settings={settings} act={act} skew={skew} /> : null}
+              {view === "activity" ? <ActivityView state={state} settings={settings} onOpen={setReceipt} /> : null}
               {view === "proof" ? <ProofView /> : null}
               {view === "demo" ? <DemoView state={state} settings={settings} act={act} skew={skew} onAttack={setAttacking} /> : null}
             </div>
@@ -437,6 +449,8 @@ export function Dashboard() {
           ) : null}
         </>
       ) : null}
+
+      {receipt ? <ReceiptDialog receipt={receipt} settings={settings} onClose={() => setReceipt(null)} /> : null}
 
       {planOpen ? (
         <PlanDialog

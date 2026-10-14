@@ -242,7 +242,7 @@ function checkContext(facts: Facts, direct: boolean): Check[] {
     "agent",
     p.agent.paused || noKey || expired ? "block" : false,
     p.agent.paused ? "The agent is paused." : noKey ? "The agent has no key. The owner must issue one, and a new key waits out the delay." : "The agent's session key has expired.",
-    `Key valid until ${p.agent.keyExpires}.`,
+    `Key valid until ${p.agent.keyExpires?.slice(0, 10)}.`,
   );
 
   // An owner-signed trade is one deliberate act, so the churn check does not apply to it.

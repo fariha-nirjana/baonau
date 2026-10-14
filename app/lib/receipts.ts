@@ -143,7 +143,11 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
   return {
     at: record.at,
     actor: actorOf(record.source),
-    what: result.abstained
+    what: record.tool === "poke"
+      ? result.ok
+        ? "Recorded today's starting value"
+        : "Could not record today's starting value"
+      : result.abstained
       ? `Did not ${lowerFirst(String(record.args.what ?? "act"))}`
       : result.signed
         ? "Signed an approval for one trade"

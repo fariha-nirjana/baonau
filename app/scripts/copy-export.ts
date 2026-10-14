@@ -39,6 +39,9 @@ const SECTIONS: Record<string, [string, string]> = {
   mandate: ["Mandate screen", "The signed mandate, how changes work, the three roles, stop-loss and protect mode."],
   approvals: ["Approvals screen", "Drafts and trade requests to sign, riskier changes waiting with a countdown, and the explainer."],
   time: ["Countdowns", "How time left is written everywhere."],
+  activity: ["Activity screen and receipts", "The decision journal and the receipt that opens from any move."],
+  actors: ["Who acted (on receipts)", "Shown on every receipt."],
+  gates: ["Rule check names (on receipts)", "The list of checks on every receipt. Replaces the English-only list in Part 4."],
   chat: ["Chat with Mimo", "The floating chat and its full-window mode."],
   launcher: ["Chat button in the corner", "The line under \"Talk to Mimo\", one per mood."],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],
@@ -174,7 +177,7 @@ for (const [title, where, file, from, to] of EVENT_FILES) {
 
 out("## Not in this file yet");
 out();
-out("Activity, Proof and Security demo still have their old text. Each one is added here when it is redone.");
+out("Proof and Security demo still have their old text. Each one is added here when it is redone.");
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, lines.join("\n") + "\n");
