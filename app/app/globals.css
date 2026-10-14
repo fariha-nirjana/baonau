@@ -6,20 +6,46 @@ html {
 }
 
 body {
-  background: var(--color-cream);
+  background: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
 
-/* the faint dot grid behind the screens, as in the mockup */
+/* the page background: plain paper, as in the design reference */
 .dot-grid {
   background-color: var(--color-paper);
-  background-image: radial-gradient(var(--color-dot) 1px, transparent 1px);
-  background-size: 22px 22px;
 }
 
 .card-shadow {
-  box-shadow: 0 1px 0 rgb(27 42 38 / 0.04), 0 8px 24px -16px rgb(27 42 38 / 0.18);
+  box-shadow: 0 1px 0 rgb(25 60 50 / 0.03), 0 10px 30px -18px rgb(25 60 50 / 0.16);
+}
+
+/* the italic serif accent in headlines */
+.accent {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  color: var(--color-sage);
+  letter-spacing: -0.01em;
+}
+/* Bangla and Chinese have no italic; keep them upright */
+:lang(bn) .accent,
+:lang(zh) .accent {
+  font-style: normal;
+}
+
+/* small uppercase labels */
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+:lang(bn) .eyebrow,
+:lang(zh) .eyebrow {
+  letter-spacing: 0.02em;
+  font-size: 0.85rem;
 }
 
 /* money stays crisp and aligned */

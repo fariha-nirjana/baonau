@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { DM_Sans, Hind_Siliguri, Outfit } from "next/font/google";
+import { DM_Sans, Hind_Siliguri, Manrope } from "next/font/google";
 import { BRAND } from "@/lib/brand";
 import "./globals.css";
 
-// Fonts are not final either. They are named here and in theme.css only.
+// Fonts are named here and in theme.css only. Manrope and DM Sans have no
+// Bengali letters, so Hind Siliguri follows them in every font stack.
 const body = DM_Sans({ variable: "--font-body", subsets: ["latin"] });
-const heading = Outfit({ variable: "--font-heading", subsets: ["latin"] });
+const heading = Manrope({ variable: "--font-heading", subsets: ["latin"] });
 const bangla = Hind_Siliguri({ variable: "--font-bangla", subsets: ["bengali"], weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {

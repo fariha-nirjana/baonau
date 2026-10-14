@@ -106,7 +106,9 @@ export function Chat({
   refresh,
   onBusy,
   onStressed,
+  onClose,
 }: {
+  onClose: () => void;
   state: AppState;
   settings: Settings;
   mimo: MimoSay;
@@ -153,7 +155,7 @@ export function Chat({
 
   const agent = state.brand.agent;
   return (
-    <aside className={`mood-${mimo.mood} card-shadow my-3 mr-3 flex w-[25rem] shrink-0 flex-col overflow-hidden rounded-[1.75rem] border border-line bg-card`}>
+    <aside className={`mood-${mimo.mood} flex h-full w-full flex-col overflow-hidden rounded-(--radius-card) border border-line bg-card shadow-[0_30px_60px_-30px_rgb(25_60_50/0.45)]`}>
       <header className="flex items-center gap-3 border-b border-line px-5 py-4" style={{ background: "var(--mood-soft)" }}>
         <div className="rounded-2xl bg-card p-0.5">
           <Mascot mood={mimo.mood} size={52} still />
@@ -166,6 +168,9 @@ export function Chat({
           <span className="size-2 rounded-full" style={{ background: "var(--mood)" }} />
           {state.portfolio.agent.paused ? "Paused" : mimo.status}
         </p>
+        <button onClick={onClose} aria-label="Minimise the chat" className="rounded-lg p-1.5 text-muted hover:bg-card hover:text-ink">
+          <Icon name="minus" size={18} />
+        </button>
       </header>
       {mimo.dismissKey ? (
         <div className="flex items-center gap-3 border-b border-line px-5 py-2.5 text-sm" style={{ background: "var(--mood-soft)" }}>

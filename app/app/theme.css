@@ -1,8 +1,7 @@
 /*
  * The one place for colours, fonts and corner sizes.
- * The palette is not final: it follows the team's Figma exploration ("Like
- * Dream", deep green with mint and sun) and will change when the graphics
- * lead settles it. Change the values here and the whole app follows.
+ * The palette follows the team's design reference (demo-frontend/, not in
+ * git). Change the values here and the whole app follows.
  * Nothing else in the app names a colour directly.
  *
  * Colour rules (team decision, Oct 14):
@@ -12,42 +11,46 @@
  * - Red (coral) only means "blocked". Amber (sun) only means "warning".
  */
 @theme {
-  --color-forest: #1c4036;
-  --color-forest-deep: #15322a;
-  --color-forest-soft: #285446;
-  --color-leaf: #2f7d62;
-  --color-mint: #e2f2ea;
-  --color-mint-line: #bfe0d2;
-  --color-cream: #f3f3ec;
-  --color-paper: #f7f7f1;
-  --color-card: #fffffb;
-  --color-line: #e6e4da;
-  --color-ink: #1b2a26;
-  --color-muted: #5c6b66;
-  --color-sun: #f2c94c;
-  --color-sun-soft: #fff4d6;
-  --color-sun-ink: #7a5a00;
-  --color-coral: #d9534a;
-  --color-coral-soft: #fdecea;
-  --color-alarm: #b8404b;
-  --color-sky: #3f6fc4;
-  --color-sky-soft: #e6eefa;
-  --color-dot: #e2e2d8;
+  /* Oct 14 redo: cream paper and forest green, after the team's design reference. */
+  --color-forest: #1f4a3b;
+  --color-forest-deep: #183c30;
+  --color-forest-soft: #2a5a49;
+  --color-leaf: #286e55;
+  --color-sage: #6b8466;
+  --color-mint: #eaf0e3;
+  --color-mint-line: #cfdcc4;
+  --color-cream: #eef1e8;
+  --color-paper: #f6f7f1;
+  --color-card: #fcfdf8;
+  --color-line: #e4e8df;
+  --color-ink: #193c32;
+  /* darker than the reference's grey so small text keeps 4.5:1 on paper */
+  --color-muted: #5f6d64;
+  --color-faint: #8a958c;
+  --color-sun: #d9b45a;
+  --color-sun-soft: #f8efd6;
+  --color-sun-ink: #8a5a12;
+  --color-coral: #c0553f;
+  --color-coral-soft: #f8e6e0;
+  --color-alarm: #a8402f;
+  --color-sky: #3f6a8a;
+  --color-sky-soft: #e5edf2;
+  --color-dot: #e2e6da;
 
   /*
    * Charts. The guarded result is the one hue; the unguarded baseline is a
-   * grey that steps back. Checked with the dataviz palette validator: the pair
-   * separates under colour-blind simulation (dE 18) and in normal vision (dE 21).
-   * The grey is under 3:1 against the card, so every bar also carries its number.
+   * grey that steps back. Every bar also carries its number.
    */
-  --color-chart-guarded: #2f7d62;
+  --color-chart-guarded: #286e55;
   --color-chart-plain: #a3aca8;
-  --color-chart-track: #f1efe9;
+  --color-chart-track: #eef1e8;
 
   --font-sans: var(--font-body), var(--font-bangla), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-display: var(--font-heading), var(--font-bangla), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  /* the italic accent in headlines ("Safely minded.") */
+  --font-serif: Georgia, "Times New Roman", var(--font-bangla), "Songti SC", serif;
 
-  --radius-card: 1.5rem;
+  --radius-card: 1.25rem;
 }
 
 /* Mascot states. Each sets the same three values, used behind the mascot and on its status dot. */

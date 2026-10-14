@@ -133,7 +133,7 @@ function HoldingCard({ icon, name, badge, usd, share, cap, target, note, setting
   );
 }
 
-function Holdings({ state, settings }: { state: AppState; settings: Settings }) {
+export function Holdings({ state, settings }: { state: AppState; settings: Settings }) {
   const p = state.portfolio;
   return (
     <div className="grid grid-cols-2 gap-4">

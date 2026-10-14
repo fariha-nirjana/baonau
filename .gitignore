@@ -28,3 +28,6 @@ app/data/
 # design inputs from the team (the app keeps its own copies in app/public/mascot)
 /figma files/
 / mascot design and animations/
+
+# design reference from the team, inspiration only
+/demo-frontend/

@@ -9,4 +9,7 @@ export const BRAND = {
   /** The agent's persona. The mascot is being renamed; the new name goes here. */
   agent: "Mimo",
   agentRole: "Your money guardian",
+  /** The demo investor's first name, in Latin and Bangla script. */
+  owner: "Nirjana",
+  ownerBn: "নির্জনা",
 } as const;
