@@ -2,11 +2,11 @@
 
 import { useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
-import { fill, LOCALE, strings, type Strings } from "./i18n";
+import { fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
 import { ASSET, ASSET_NAME, money } from "./Overview";
 import type { Act, AppState, Settings, View } from "./types";
-import { Card, short, useCountdown } from "./ui";
+import { Card, short, useSecondsLeft } from "./ui";
 
 type Props = { state: AppState; settings: Settings; act: Act; skew: number; go: (v: View) => void; onAsk: (prompt: string) => void };
 
@@ -37,7 +37,8 @@ export function waitingChanges(state: AppState, t: Strings, settings: Settings):
 }
 
 function WaitingRow({ item, skew, t }: { item: Waiting; skew: number; t: Strings }) {
-  const left = useCountdown(item.appliesFrom, skew);
+  const secs = useSecondsLeft(item.appliesFrom, skew);
+  const left = secs === null ? null : formatLeft(secs, t);
   return (
     <li className="flex items-center justify-between gap-3 py-2.5 text-sm">
       <span className="flex items-center gap-2 font-semibold">
@@ -265,7 +266,8 @@ function RolesCard({ state, settings, t }: { state: AppState; settings: Settings
 
 function SafetyNetsCard({ state, settings, act, skew, t }: { state: AppState; settings: Settings; act: Act; skew: number; t: Strings }) {
   const p = state.portfolio;
-  const haltLeft = useCountdown(p.stopLoss.haltedUntil, skew);
+  const haltSecs = useSecondsLeft(p.stopLoss.haltedUntil, skew);
+  const haltLeft = haltSecs === null ? null : formatLeft(haltSecs, t);
   const [busy, setBusy] = useState<string | null>(null);
   const run = async (id: string, role: "owner" | "guardian", action: string) => {
     setBusy(id);

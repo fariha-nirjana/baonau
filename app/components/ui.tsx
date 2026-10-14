@@ -122,6 +122,21 @@ export function Bar({ value, cap, target, tone = "leaf" }: { value: number; cap?
 }
 
 /**
+ * Whole seconds left until `iso`, counted on the chain's clock, or null once it has passed.
+ * @param skewMs this device's clock minus the chain's
+ */
+export function useSecondsLeft(iso: string | null | undefined, skewMs: number): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (!iso) return null;
+  const left = Math.round((new Date(iso).getTime() - (now - skewMs)) / 1000);
+  return left > 0 ? left : null;
+}
+
+/**
  * Time left until `iso` as "1 min 20 s", or null once it has passed.
  * @param skewMs this device's clock minus the chain's, so waits are counted on the chain's clock
  */

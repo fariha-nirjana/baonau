@@ -15,7 +15,8 @@ import { Button, Card, short } from "./ui";
 import { ProofView } from "./Proof";
 import { PortfolioHeader, PortfolioView } from "./Portfolio";
 import { MandateHeader, MandateView } from "./Mandate";
-import { ActivityView, ApprovalsView, DemoView } from "./views";
+import { ApprovalsHeader, ApprovalsView } from "./Approvals";
+import { ActivityView, DemoView } from "./views";
 
 type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
 
@@ -357,6 +358,8 @@ export function Dashboard() {
               <PortfolioHeader settings={settings} />
             ) : view === "mandate" ? (
               <MandateHeader settings={settings} />
+            ) : view === "approvals" ? (
+              <ApprovalsHeader settings={settings} />
             ) : (
               <div>
                 <h1 className="font-display text-[2.2rem] font-semibold tracking-[-0.03em]">{title}</h1>
