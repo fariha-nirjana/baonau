@@ -41,7 +41,7 @@ const STOPPED: Receipt["outcome"][] = ["reverted by the contract", "blocked by t
 /** What hit the shield, for the three versions of the shield animation. */
 export function variantOf(r: Receipt): ShieldVariant {
   if (r.actor.startsWith("COMPROMISED")) return "code";
-  if (r.outcome === "blocked by the risk engine" || r.actor.includes("outside item")) return "chat";
+  if (r.outcome === "blocked by the risk engine" || r.declined || r.actor.includes("outside item")) return "chat";
   return "card";
 }
 
@@ -77,7 +77,9 @@ export function mimoOf({ state, role, attacking, thinking, seen, dismissed }: Mi
     options.push({ mood, line, status, dismissKey, variant: "card", receiptRefs: [], ...extra });
 
   if (attacking) add("shield", "Under attack. The contract is refusing every move outside your rules.", "Shield up", null, { variant: "code" });
-  const fresh = state.receipts.filter((r) => STOPPED.includes(r.outcome) && !seen.has(r.ref + r.at));
+  // a block or revert, or the agent saying no to something the investor asked for in the chat
+  const refused = (r: Receipt) => STOPPED.includes(r.outcome) || (r.declined && r.actor.startsWith("Agent, asked"));
+  const fresh = state.receipts.filter((r) => refused(r) && !seen.has(r.ref + r.at));
   if (fresh.length) {
     const r = fresh[0];
     const line =
@@ -85,7 +87,9 @@ export function mimoOf({ state, role, attacking, thinking, seen, dismissed }: Mi
         ? fresh.length > 1
           ? `${fresh.length} moves blocked. The contract refused them.`
           : "Blocked. The contract refused that move."
-        : "I stopped that before it was signed. Here is why in Activity.";
+        : r.declined
+          ? "I said no to that one. It would break your rules."
+          : "I stopped that before it was signed. Here is why in Activity.";
     add("shield", line, "Shield up", "receipts", { variant: variantOf(r), receiptRefs: fresh.map((x) => x.ref + x.at) });
   }
 

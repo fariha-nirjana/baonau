@@ -581,7 +581,7 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
         return buildDraft(parsed.data as DraftArgs, await getPortfolio(), ctx);
       case "decline": {
         const a = parsed.data as z.infer<typeof schemas.decline>;
-        logAbstention(a.what, a.reason, ctx.source);
+        logAbstention(a.what, a.reason, ctx.source, "declined");
         return { ok: true, recorded: true };
       }
       case "request_stop_loss_halt": {

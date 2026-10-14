@@ -26,8 +26,9 @@ export type AuditRecord = {
  * a trade and the fail-safe cases: a model error, a timeout or output that
  * could not be used all mean nothing is sent.
  */
-export function logAbstention(what: string, reason: string, source: string) {
-  const record: AuditRecord = { at: nowIso(), tool: "abstain", args: { what }, reason, source, risk: null };
+export function logAbstention(what: string, reason: string, source: string, kind: "declined" | "failsafe" = "failsafe") {
+  // "declined": the agent chose to say no. "failsafe": something went wrong, so nothing was done.
+  const record: AuditRecord = { at: nowIso(), tool: "abstain", args: { what, kind }, reason, source, risk: null };
   appendAudit({ ref: refOf(record), record, result: { ok: true, abstained: true } });
 }
 

@@ -38,6 +38,8 @@ export type Receipt = {
   url: string | null;
   /** Matches the `ref` on the on-chain Trade event. */
   ref: string;
+  /** The agent chose to say no (the decline tool), as opposed to a fail-safe abstention after an error. */
+  declined: boolean;
 };
 
 type Result = {
@@ -157,6 +159,7 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
     contract: result.url ? { verdict: result.ok ? "accepted" : "reverted", reason: result.ok ? null : (result.error?.explanation ?? result.message ?? null) } : null,
     url: result.url ?? null,
     ref: entry.ref,
+    declined: Boolean(result.abstained) && record.args.kind === "declined",
   };
 }
 

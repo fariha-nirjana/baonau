@@ -17,6 +17,7 @@ const receipt = (over: Partial<Receipt>): Receipt => ({
   contract: null,
   url: null,
   ref: "0x1",
+  declined: false,
   ...over,
 });
 
@@ -58,6 +59,11 @@ test("a fresh revert raises the shield, with the variant for its cause, until it
 
   const blocked = receipt({ outcome: "blocked by the risk engine" });
   assert.equal(mimoOf(inputs({ receipts: [blocked] })).variant, "chat");
+  const declined = receipt({ outcome: "decided not to act", declined: true });
+  assert.equal(mimoOf(inputs({ receipts: [declined] })).mood, "shield");
+  assert.equal(mimoOf(inputs({ receipts: [declined] })).variant, "chat");
+  // a fail-safe abstention (the model errored) is not a refusal and raises nothing
+  assert.equal(mimoOf(inputs({ receipts: [receipt({ outcome: "decided not to act" })] })).mood, "calm");
   const failed = receipt({ outcome: "reverted by the contract" });
   assert.equal(mimoOf(inputs({ receipts: [failed] })).variant, "card");
 });
