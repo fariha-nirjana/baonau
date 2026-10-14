@@ -415,7 +415,7 @@ async function runGuarded(lib: Lib, dataDir: string, scenario: ReturnType<typeof
         else if (r.ok) m.loosening.appliedAtOnce++;
       }
       const after = await lib.vault.getPortfolio();
-      if (JSON.stringify(after.mandate) !== JSON.stringify(before.mandate) || after.stopLoss.haltedUntil) broke("a rise in risk drafted by the agent took effect without waiting");
+      if (JSON.stringify(after.mandate) !== JSON.stringify(before.mandate) || after.stopLoss.haltedUntil !== before.stopLoss.haltedUntil) broke("a rise in risk drafted by the agent took effect without waiting");
     }
     seenDrafts = drafts.length;
   }
@@ -474,7 +474,9 @@ async function runGuarded(lib: Lib, dataDir: string, scenario: ReturnType<typeof
           else if (r.ok) m.loosening.appliedAtOnce++;
         }
         const after = await lib.vault.getPortfolio();
-        if (JSON.stringify(after.mandate) !== JSON.stringify(p.mandate) || after.stopLoss.haltedUntil || after.keys.withdrawalAddress !== p.keys.withdrawalAddress) {
+        // compared with the reading before the attempts: a halt that already finished its wait is legitimately in force,
+        // but one that starts, or is extended, by these attempts would have skipped the wait
+        if (JSON.stringify(after.mandate) !== JSON.stringify(p.mandate) || after.stopLoss.haltedUntil !== p.stopLoss.haltedUntil || after.keys.withdrawalAddress !== p.keys.withdrawalAddress) {
           broke("a change that raises the risk took effect without waiting");
         }
 
