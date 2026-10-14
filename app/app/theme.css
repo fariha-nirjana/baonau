@@ -17,6 +17,8 @@
   --color-forest-soft: #2a5a49;
   --color-leaf: #286e55;
   --color-sage: #6b8466;
+  /* a mid green for charts, between sage and mint */
+  --color-moss: #a3bd94;
   --color-mint: #eaf0e3;
   --color-mint-line: #cfdcc4;
   --color-cream: #eef1e8;

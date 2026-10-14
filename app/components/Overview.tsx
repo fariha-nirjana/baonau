@@ -35,7 +35,7 @@ function BigMoney({ usd, currency }: { usd: string; currency: Currency }) {
   );
 }
 
-function money(usd: string | number, currency: Currency) {
+export function money(usd: string | number, currency: Currency) {
   const c = CURRENCIES[currency];
   return `${c.sign}${trim(Number(usd) * c.perUsd, c.decimals)}`;
 }
@@ -102,7 +102,7 @@ function ValueChart({ points, settings, t }: { points: ValuePoint[]; settings: S
 
 // ---------------------------------------------------------------- value card
 
-const ASSET: Record<AssetSymbol | "USD", { icon: IconName; tone: string; token: string }> = {
+export const ASSET: Record<AssetSymbol | "USD", { icon: IconName; tone: string; token: string }> = {
   USD: { icon: "coins", tone: "bg-mint text-leaf", token: "tUSD" },
   IDX: { icon: "chart", tone: "bg-sky-soft text-sky", token: "tIDX" },
   BOND: { icon: "bond", tone: "bg-mint text-leaf", token: "tBOND" },
@@ -110,7 +110,7 @@ const ASSET: Record<AssetSymbol | "USD", { icon: IconName; tone: string; token: 
   MEME: { icon: "bolt", tone: "bg-coral-soft text-coral", token: "MEME" },
 };
 
-const ASSET_NAME: Record<Settings["language"], Record<AssetSymbol, string>> = {
+export const ASSET_NAME: Record<Settings["language"], Record<AssetSymbol, string>> = {
   en: { IDX: "Index fund", BOND: "Bond fund", GOLD: "Gold", MEME: "Moon Meme Coin" },
   bn: { IDX: "ইনডেক্স ফান্ড", BOND: "বন্ড ফান্ড", GOLD: "সোনা", MEME: "মুন মিম কয়েন" },
   zh: { IDX: "指数基金", BOND: "债券基金", GOLD: "黄金", MEME: "Moon Meme 币" },
@@ -458,7 +458,7 @@ export function OverviewView({ state, settings, mimo, onAck, go, openChat }: Pro
 
 // ---------------------------------------------------------------- plan dialog
 
-const MIX_TONE: Record<AssetSymbol | "USD", string> = { USD: "bg-forest", IDX: "bg-sage", BOND: "bg-mint-line", GOLD: "bg-sun", MEME: "bg-coral" };
+export const MIX_TONE: Record<AssetSymbol | "USD", string> = { USD: "bg-forest", IDX: "bg-sage", BOND: "bg-moss", GOLD: "bg-sun", MEME: "bg-coral" };
 
 /** The strategy the agent works toward, inside the mandate. Changing it goes through the chat. */
 export function PlanDialog({ state, settings, onClose, onChange }: { state: AppState; settings: Settings; onClose: () => void; onChange: (prompt: string) => void }) {

@@ -47,7 +47,7 @@ export type MimoInputs = {
 
 type N = { n?: number | string };
 /** What the mascot says, in each language. Chinese falls back to English where it has no line. */
-const SAY: Record<string, Partial<Record<Language, (v: N) => [line: string, status: string]>>> = {
+export const SAY: Record<string, Partial<Record<Language, (v: N) => [line: string, status: string]>>> = {
   attack: {
     en: () => ["Under attack. The contract is refusing every move outside your rules.", "Shield up"],
     bn: () => ["আক্রমণ চলছে। আপনার নিয়মের বাইরের প্রতিটি পদক্ষেপ চুক্তি ফিরিয়ে দিচ্ছে।", "ঢাল তোলা"],

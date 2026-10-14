@@ -13,7 +13,8 @@ import type { Act, AppState, Settings, View } from "./types";
 import { OverviewHeader, OverviewView, PlanDialog } from "./Overview";
 import { Button, Card, short } from "./ui";
 import { ProofView } from "./Proof";
-import { ActivityView, ApprovalsView, DemoView, Holdings, MandateView } from "./views";
+import { PortfolioHeader, PortfolioView } from "./Portfolio";
+import { ActivityView, ApprovalsView, DemoView, MandateView } from "./views";
 
 type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
 
@@ -227,6 +228,11 @@ export function Dashboard() {
     }
   }
 
+  const askMimo = (text: string) => {
+    setPrefill({ id: Date.now(), text });
+    setChatOpen(true);
+  };
+
   const pauseControl = !p.agent.paused ? (
     <button onClick={() => act(settings.role, "pause")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-forest px-3 py-2.5 text-sm font-semibold text-white hover:bg-forest-soft">
       <Icon name="pause" size={16} />
@@ -346,6 +352,8 @@ export function Dashboard() {
           <div className="mx-auto max-w-[88rem] px-8 pt-8 pb-28">
             {view === "portfolio" ? (
               <OverviewHeader settings={settings} openPlan={() => setPlanOpen(true)} />
+            ) : view === "holdings" ? (
+              <PortfolioHeader settings={settings} />
             ) : (
               <div>
                 <h1 className="font-display text-[2.2rem] font-semibold tracking-[-0.03em]">{title}</h1>
@@ -373,7 +381,7 @@ export function Dashboard() {
 
             <div className="mt-7">
               {view === "portfolio" ? <OverviewView state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} openChat={() => setChatOpen(true)} /> : null}
-              {view === "holdings" ? <Holdings state={state} settings={settings} /> : null}
+              {view === "holdings" ? <PortfolioView state={state} settings={settings} onAsk={askMimo} /> : null}
               {view === "mandate" ? <MandateView state={state} settings={settings} act={act} skew={skew} /> : null}
               {view === "approvals" ? <ApprovalsView state={state} settings={settings} act={act} skew={skew} /> : null}
               {view === "activity" ? <ActivityView state={state} settings={settings} act={act} skew={skew} /> : null}
@@ -431,8 +439,7 @@ export function Dashboard() {
           onClose={() => setPlanOpen(false)}
           onChange={(text) => {
             setPlanOpen(false);
-            setPrefill({ id: Date.now(), text });
-            setChatOpen(true);
+            askMimo(text);
           }}
         />
       ) : null}

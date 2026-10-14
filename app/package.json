@@ -16,7 +16,8 @@
     "attack": "tsx --env-file=../.env scripts/attack.ts",
     "owner": "tsx --env-file=../.env scripts/owner.ts",
     "autopilot": "tsx --env-file=../.env scripts/autopilot.ts",
-    "harness": "tsx harness/run.ts"
+    "harness": "tsx harness/run.ts",
+    "copy": "tsx scripts/copy-export.ts"
   },
   "dependencies": {
     "lottie-web": "5.13.0",
