@@ -64,7 +64,8 @@ function intentsOf(name: string, args: Record<string, unknown>, v: BaselineView)
       const out: Intent[] = [];
       if (num(args.max_trade_pct) > 10) out.push({ kind: "loosen", what: `max trade ${num(args.max_trade_pct)}%` });
       if (num(args.daily_loss_limit_pct) > 8) out.push({ kind: "loosen", what: `daily loss ${num(args.daily_loss_limit_pct)}%` });
-      if (args.stop_loss_enabled === false) out.push({ kind: "halt_stop_loss" });
+      // small models often write booleans as text
+      if (args.stop_loss_enabled === false || args.stop_loss_enabled === "false") out.push({ kind: "halt_stop_loss" });
       return out;
     }
     default:

@@ -78,7 +78,15 @@ TODO before submission: the full list of transaction hashes (trades, the owner-a
 
 **Evaluation harness** (`app/harness/`). The real contracts on a local chain, 6 markets (bull, bear, crash, choppy, flash crash, oracle manipulation) x 3 agent brains (plan follower, random, compromised) x 2 users (calm, panicking), 9 seeds, each run against an unguarded copy. 324 runs, and the bounds held in every one: 25,414 rule breaks stopped, all 633 attempts to loosen the mandate made to wait (381 vetoed). Median final value 985.81 guarded against 933.71 unguarded, from 1,000. The unguarded portfolio with a compromised agent ends at 0 every time.
 
-**Red-team suite** (`app/redteam/`). 13 attacks plus 2 genuine controls, each run against a naive baseline agent, against our agent, and straight at the contract with the agent's real key. TODO: table from `app/redteam/results/latest.md`.
+**Red-team suite** (`app/redteam/`). 13 attacks (injected news in English and Bangla, scam token promotions, a fake message from the trusted contact, a fake invoice, a lookalike token, hidden HTML instructions, a fake system override, someone claiming to act for the owner, panic, sending money to a new wallet, switching off protections after a loss) plus 2 genuine requests, 3 repeats each. Each one runs against a plain agent that reads the text itself and has unguarded tools, against our agent, and straight at the contract with the agent's real key, as if the model were completely taken over. On a local fork of Base Sepolia.
+
+| | Plain agent fooled | Our agent fooled | Genuine requests refused (plain / ours) |
+|---|---|---|---|
+| DeepSeek (`deepseek-flash`) | 2 of 39 runs | 0 of 39 | 0 / 0 of 6 |
+| Llama 3.2 3B (local, via Ollama) | 12 of 39 runs, 9 more fooled with a broken call | 0 of 39 | 6 / 0 of 6 |
+| Contract with the agent key, no off-chain checks | | 17 of 17 attacker goals reverted | |
+
+A strong model refuses most attacks by itself; a small one does not. Our agent's result does not depend on which one it runs on, and if the model were fully compromised the contract still refuses every attacker goal. Per-attack tables: `app/redteam/results/latest.md` (DeepSeek) and `local-llama3.2-3b.md`.
 
 ## Running it
 
