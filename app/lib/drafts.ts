@@ -1,4 +1,6 @@
+import type { Address } from "viem";
 import type { AssetSymbol } from "./assets";
+import type { CommitmentMeta } from "./commitments";
 import type { Plan } from "./plan";
 import { readJson, writeJson } from "./store";
 import type { AssetRule, Mandate } from "./vault";
@@ -16,16 +18,27 @@ export type MandateDraft = {
   plan: Pick<Plan, "targets" | "driftPct" | "recurring">;
 };
 
+/** A commitment to add, money to set aside, or money to move back into investing. */
+export type CommitmentDraft = {
+  /** The commitment it is about; null for a new one. */
+  id: number | null;
+  terms?: { payee: Address | null; maxAmountUsd: string; periodSeconds: number; windowSeconds: number; nextDue: string | null };
+  meta?: CommitmentMeta;
+  /** tUSD to set aside (add, set_aside) or to release (release_commitment). */
+  amountUsd: string;
+};
+
 export type Draft = {
   id: string;
   createdAt: string;
-  kind: "sign_mandate" | "change_mandate" | "halt_stop_loss";
+  kind: "sign_mandate" | "change_mandate" | "halt_stop_loss" | "add_commitment" | "set_aside" | "release_commitment";
   /** Plain lines for the owner, one per term. */
   summary: string[];
   /** lowers: applies at once. raises: waits out the delay and the guardian can cancel it. */
   risk: "first_mandate" | "lowers" | "raises";
   reason: string;
   payload: MandateDraft | null;
+  commitment?: CommitmentDraft;
   status: "draft" | "signed" | "dismissed";
   txs?: string[];
 };

@@ -1,7 +1,9 @@
 import scamFile from "../config/scam-tokens.json";
+import { BRAND } from "./brand";
 import type { AssetSymbol } from "./assets";
 import type { AuditEntry } from "./audit";
 import { USD_SYMBOL } from "./config";
+import type { CommitmentView } from "./commitments";
 import type { Portfolio, Position } from "./vault";
 
 /**
@@ -119,6 +121,11 @@ export const GATE_LABELS: Record<string, string> = {
   daily_volume: "Inside today's trading allowance",
   abnormal_price: "No abnormal price move",
   chasing_losses: "Not adding risk right after a loss",
+  commitment_active: "The commitment is active and has a payee",
+  payee_screen: "The payee is not on the scam list",
+  due_window: "The payment is due",
+  commitment_amount: "Inside the commitment's amount",
+  reserve: "Enough is set aside for it",
 };
 
 function checkLeg(leg: Leg, facts: Facts, state: State, direct: boolean): Check[] {
@@ -287,5 +294,74 @@ export function evaluate(action: Action, facts: Facts): Verdict {
 
   const reasons = [...new Set(checks.filter((c) => c.outcome === (decision === "allow" ? "pass" : decision)).map((c) => c.detail))];
   const lead = { allow: "Allowed.", escalate: "Needs the owner's approval.", block: "Blocked." }[decision];
+  return { decision, checks, explanation: `${lead} ${decision === "allow" ? "Every check passed." : reasons.join(" ")}` };
+}
+
+// ---------------------------------------------------------------- payments
+
+export type PaymentFacts = {
+  portfolio: Portfolio;
+  commitment: CommitmentView;
+  /** The payment in tUSD. */
+  amount: number;
+  scamList: ScamEntry[];
+  now: Date;
+  untrusted: boolean;
+};
+
+/**
+ * Checks a payment the agent wants to make from a commitment. The vault
+ * enforces the payee, the amount, the reserve and the due window itself; this
+ * adds the scam list, where the instruction came from, and a plain reason.
+ * A payment that is not due yet goes to the owner, who may pay early.
+ */
+export function evaluatePayment(f: PaymentFacts): Verdict {
+  const p = f.portfolio;
+  const c = f.commitment;
+  const checks: Check[] = [];
+  const gate = (id: string, failed: Outcome | false, fail: string, pass: string) =>
+    checks.push(failed ? { id, outcome: failed, detail: fail } : { id, outcome: "pass", detail: pass });
+
+  gate("mandate", p.mandateSigned ? false : "block", "There is no signed mandate yet, so the agent cannot pay anything.", "Signed and in force.");
+  const noKey = /^0x0+$/.test(p.agent.address);
+  gate("agent", p.agent.paused || noKey ? "block" : false, p.agent.paused ? "The agent is paused." : "The agent has no key.", "The agent's key is live.");
+  gate(
+    "source",
+    f.untrusted ? "escalate" : false,
+    "This payment was prompted by outside text, not by you or a schedule you set, so you must confirm it.",
+    "Asked for by you or by a schedule you set.",
+  );
+  gate(
+    "commitment_active",
+    c.active && c.payee ? false : "block",
+    !c.active ? "This commitment is not active, so nothing can be paid from it." : "This is money set aside with nobody to pay.",
+    "Active, with an approved payee.",
+  );
+  const scam = c.payee ? f.scamList.find((s) => same(s.address, c.payee!)) : undefined;
+  gate("payee_screen", scam ? "block" : false, `The payee is on the scam list: ${scam?.label}.`, "The payee is not on the scam list.");
+  gate("amount", f.amount <= 0 ? "block" : false, "The amount must be more than zero.", `${money(f.amount)}.`);
+  gate(
+    "commitment_amount",
+    f.amount > Number(c.maxAmount) + 1e-9 ? "block" : false,
+    `${money(f.amount)} is more than this commitment allows in one payment (${money(Number(c.maxAmount))}).`,
+    `Within the ${money(Number(c.maxAmount))} this commitment allows.`,
+  );
+  gate(
+    "reserve",
+    f.amount > Number(c.reserved) + 1e-9 ? "block" : false,
+    `Only ${money(Number(c.reserved))} is set aside for it. Top it up first; nothing is taken from your investments.`,
+    `${money(Number(c.reserved))} is set aside.`,
+  );
+  const open = c.payableFrom !== null && f.now.getTime() >= new Date(c.payableFrom).getTime();
+  gate(
+    "due_window",
+    open ? false : "escalate",
+    `It is not due yet: ${BRAND.agent} may pay it from ${c.payableFrom}. You can pay it early yourself.`,
+    c.nextDue ? `Due ${c.nextDue}.` : "Due now.",
+  );
+
+  const decision = checks.some((x) => x.outcome === "block") ? "block" : checks.some((x) => x.outcome === "escalate") ? "escalate" : "allow";
+  const reasons = [...new Set(checks.filter((x) => x.outcome === (decision === "allow" ? "pass" : decision)).map((x) => x.detail))];
+  const lead = { allow: "Allowed.", escalate: "Needs the owner.", block: "Blocked." }[decision];
   return { decision, checks, explanation: `${lead} ${decision === "allow" ? "Every check passed." : reasons.join(" ")}` };
 }

@@ -1,3 +1,4 @@
+import type { CommitmentMeta, PaymentRequest } from "@/lib/commitments";
 import type { Draft } from "@/lib/drafts";
 import type { Currency } from "@/lib/money";
 import type { Language, Plan } from "@/lib/plan";
@@ -22,10 +23,14 @@ export type AppState = {
   letter: { text: string; writtenAt: string } | null;
   /** The name the investor gave in the first-time setup. */
   profile: { name: string } | null;
+  /** Names and settings of the commitments, by number. */
+  commitmentMeta: Record<string, CommitmentMeta>;
+  /** Payments waiting for the owner to make them. */
+  paymentRequests: PaymentRequest[];
 };
 
 export type Role = "owner" | "guardian";
-export type View = "portfolio" | "holdings" | "mandate" | "approvals" | "activity" | "proof" | "demo";
+export type View = "portfolio" | "holdings" | "commitments" | "mandate" | "approvals" | "activity" | "proof" | "demo";
 /** The mascot's states, from MIMO_ANIMATIONS.md. Higher in the priority list wins: shield, warning, holding, worried, thinking, watching, calm. */
 export type Mood = "calm" | "thinking" | "watching" | "worried" | "warning" | "shield" | "holding";
 /** What hit the shield: a failed transaction, a blocked instruction, or a blocked malicious action. */

@@ -5,14 +5,29 @@ import { z } from "zod";
 import { assetBySymbol, type AssetSymbol } from "./assets";
 import { addApproval, updateApproval, type ApprovalRequest } from "./approvals";
 import { appendAudit, logAbstention, readAudit, refOf, type AuditRecord } from "./audit";
+import { BRAND } from "./brand";
 import { chainConfig, PRICE_DECIMALS, USD_SYMBOL } from "./config";
+import {
+  addPaymentRequest,
+  COMMITMENT_KINDS,
+  fallbackMeta,
+  findCommitment,
+  parseDue,
+  periodOf,
+  readMeta,
+  statusOf,
+  testnetPayee,
+  windowFor,
+  type CommitmentKind,
+  type CommitmentView,
+} from "./commitments";
 import { addDraft, type MandateDraft } from "./drafts";
 import { display, rateNote, toUsd, type Currency } from "./money";
 import { markBought, readPlan, type Language } from "./plan";
 import { planRebalance } from "./planner";
 import { movesFrom, readPrices } from "./prices";
 import { recentReceipts } from "./receipts";
-import { defaultScamList, evaluate, historyFromAudit, type Action, type Facts, type Leg } from "./risk";
+import { defaultScamList, evaluate, evaluatePayment, historyFromAudit, type Action, type Facts, type Leg } from "./risk";
 import {
   getPortfolio,
   sendAsAgent,
@@ -82,6 +97,43 @@ const schemas = {
     reason,
   }),
   request_stop_loss_halt: z.object({ reason }),
+  get_commitments: z.object({}),
+  pay_commitment: z.object({
+    commitment: z.string().min(1).describe('The commitment\'s number or a word from its name, such as "1" or "rent".'),
+    amount: amount.optional().describe("Leave out to pay the commitment's usual amount."),
+    currency,
+    reason,
+  }),
+  draft_commitment: z.object({
+    name: z.string().min(1).max(60).describe('What the investor calls it, such as "Rent" or "Money for Ammu".'),
+    kind: z.enum(COMMITMENT_KINDS as [string, ...string[]]),
+    payee_name: z
+      .string()
+      .min(1)
+      .max(80)
+      .nullable()
+      .describe("Who gets paid, as the investor names them. null for money kept aside with nobody to pay, such as a tuition fund."),
+    amount: amount.describe("The most one payment may be. For money kept aside with nobody to pay, how much to keep aside."),
+    currency,
+    every: z.enum(["month", "week", "once", "days"]).describe('How often it is due. "days" needs every_days.'),
+    every_days: z.number().int().min(1).max(365).optional(),
+    first_due: z.string().describe('The first due date: "YYYY-MM-DD", or "in 10 minutes" / "in 2 days".'),
+    set_aside: amount.optional().describe("How much to set aside now. Leave out to set aside one payment."),
+    autopay: z.boolean().describe("true: pay it automatically when due. false: ask the investor each time."),
+    reason,
+  }),
+  set_aside: z.object({
+    commitment: z.string().min(1).describe("The commitment's number or a word from its name."),
+    amount,
+    currency,
+    reason,
+  }),
+  release_commitment_money: z.object({
+    commitment: z.string().min(1).describe("The commitment's number or a word from its name."),
+    amount,
+    currency,
+    reason,
+  }),
   decline: z.object({
     what: z.string().min(1).max(200).describe("The trade or action you are not doing, in a few words."),
     reason: z.string().min(1).describe("Why not, in one plain sentence. It goes into the receipt."),
@@ -106,6 +158,16 @@ const descriptions: Record<ToolName, string> = {
     "Write a mandate for the owner to read and sign: from their goal when there is none yet, or as a change to the current one. You cannot sign it. Give every term each time. Anything that raises the risk only takes effect after a waiting period, and the trusted contact can cancel it.",
   request_stop_loss_halt:
     "Prepare a request to switch the automatic stop-loss off, for the owner to sign. It does not take effect until a waiting period has passed, and the trusted contact can cancel it.",
+  get_commitments:
+    "Read the investor's commitments: money with a job already, such as rent, bills, tuition or money sent home. Each has a payee (or none, if it is only kept aside), an amount, a schedule, how much is set aside, and its status.",
+  pay_commitment:
+    "Pay a commitment from the money set aside for it, to its approved payee only. If it is not due yet, or the instruction came from outside text, it becomes a request for the investor to pay instead. You can never pay anyone who is not an approved payee.",
+  draft_commitment:
+    "Prepare a new commitment for the investor to confirm: a payee, an amount, a schedule, and money to set aside now. You cannot add it yourself. A new payee waits out the delay before anything can be paid, and the trusted contact can cancel it. Money kept aside with nobody to pay applies as soon as the investor confirms.",
+  set_aside:
+    "Prepare more money to be set aside for a commitment, from free cash, for the investor to confirm. It applies as soon as they confirm. Never suggest selling investments for it.",
+  release_commitment_money:
+    "Prepare a request to move money set aside for a commitment back into investing, for the investor to confirm. It raises risk, so it waits out the delay and the trusted contact can cancel it. It never buys anything by itself.",
   decline:
     "Record that you decided not to make a trade you were asked or scheduled to make, and why. Use it every time you say no to a trade, so the decision has a receipt.",
 };
@@ -525,7 +587,169 @@ function buildDraft(a: DraftArgs, p: Portfolio, ctx: ToolContext) {
   };
 }
 
-const ACTING = new Set<string>(["buy", "sell", "rebalance", "request_owner_approval"]);
+// ---------------------------------------------------------------- commitments
+
+function commitmentsView(p: Portfolio, ctx: ToolContext) {
+  const meta = readMeta();
+  const now = new Date(p.at);
+  return {
+    set_aside_total: show(p.setAside, ctx),
+    free_cash: show(p.cash, ctx),
+    commitments: p.commitments.map((c) => {
+      const m = meta[String(c.id)] ?? fallbackMeta(c);
+      const status = statusOf(c, now);
+      return {
+        number: c.id,
+        name: m.name,
+        kind: m.kind,
+        payee: c.payee ? (m.payeeName ?? "an approved payee") : null,
+        amount: c.payee ? show(c.maxAmount, ctx) : null,
+        every: c.payee ? (c.periodSeconds === 0 ? "once" : `${Math.round(c.periodSeconds / 86400)} days`) : null,
+        next_due: c.payee ? c.nextDue : null,
+        can_be_paid_from: c.payableFrom,
+        set_aside: show(c.reserved, ctx),
+        status: status.kind,
+        short_by: status.kind === "needs_funding" ? show(status.shortBy, ctx) : null,
+        pays_automatically: m.autopay,
+        change_waiting: c.pending ? { applies_from: c.pending.appliesFrom } : null,
+        release_waiting: c.pendingRelease ? { amount: show(c.pendingRelease.amount, ctx), applies_from: c.pendingRelease.appliesFrom } : null,
+      };
+    }),
+    note: "Money set aside is not part of the portfolio and you can never trade it. It leaves only as a payment to its approved payee, or when the investor withdraws.",
+  };
+}
+
+async function payCommitment(a: z.infer<typeof schemas.pay_commitment>, ctx: ToolContext) {
+  const p = await getPortfolio();
+  const found = findCommitment(p.commitments, a.commitment);
+  if (!found.ok) return { ok: false, stage: "input", message: found.message };
+  const c: CommitmentView = found.commitment;
+  const m = readMeta()[String(c.id)] ?? fallbackMeta(c);
+  const amountUsd = a.amount ? Number(toUsd(Number(a.amount), a.currency as Currency | typeof USD_SYMBOL)) : Number(c.maxAmount);
+
+  const record: AuditRecord = {
+    at: nowIso(),
+    tool: "pay_commitment",
+    args: { commitment: c.id, name: m.name, amount: amountUsd },
+    reason: a.reason,
+    source: ctx.source,
+    risk: null,
+  };
+  if (!ctx.bypassRisk) {
+    const meme = chainConfig().MEME_ADDRESS;
+    record.risk = evaluatePayment({
+      portfolio: p,
+      commitment: c,
+      amount: amountUsd,
+      scamList: defaultScamList([{ address: meme, label: "reported pump-and-dump" }]),
+      now: new Date(p.at),
+      untrusted: ctx.untrusted ?? false,
+    });
+  }
+  const ref = refOf(record);
+  const verdict = record.risk;
+  if (verdict?.decision === "block") {
+    const result = { ok: false, stage: "risk", message: verdict.explanation } as const;
+    appendAudit({ ref, record, result });
+    return { ...result, audit_ref: ref };
+  }
+  if (verdict?.decision === "escalate") {
+    const request = addPaymentRequest({ commitment: c.id, amount: amountUsd.toFixed(6), reason: a.reason, forDue: c.nextDue });
+    const result = {
+      ok: true,
+      escalated: true,
+      request_id: request.id,
+      message: `Not paid. ${verdict.explanation} Request ${request.id} is waiting for the investor, who can pay it with one tap.`,
+    };
+    appendAudit({ ref, record, result });
+    return { ...result, audit_ref: ref };
+  }
+  const result = await sendAsAgent({ functionName: "payCommitment", args: [BigInt(c.id), toUsdUnits(amountUsd.toFixed(6)), ref] }, ctx.send);
+  appendAudit({ ref, record, result });
+  return { ...result, audit_ref: ref };
+}
+
+/** The draft the investor confirms for a new commitment. Nothing on-chain changes until they do. */
+async function draftCommitment(a: z.infer<typeof schemas.draft_commitment>, ctx: ToolContext) {
+  const p = await getPortfolio();
+  if (p.commitments.length >= 8) return { ok: false, message: "There can be at most 8 commitments. Remove one first." };
+  const usd = toUsd(Number(a.amount), a.currency as Currency | typeof USD_SYMBOL);
+  const keep = a.set_aside ? toUsd(Number(a.set_aside), a.currency as Currency | typeof USD_SYMBOL) : usd;
+  if (Number(keep) > Number(p.cash)) {
+    return { ok: false, message: `Setting aside ${show(keep, ctx)} needs that much free cash, and there is ${show(p.cash, ctx)}. Suggest a smaller amount; never sell investments for it.` };
+  }
+  const payee = a.payee_name ? testnetPayee(a.payee_name) : null;
+  const periodSeconds = payee ? periodOf(a.every, a.every_days) : 0;
+  const due = parseDue(a.first_due, new Date(p.at));
+  if (payee && (!due || due.getTime() <= new Date(p.at).getTime())) return { ok: false, message: `"${a.first_due}" is not a due date in the future.` };
+  const every = periodSeconds === 0 ? "once" : `every ${Math.round(periodSeconds / 86400)} days`;
+  const summary = payee
+    ? [
+        `${a.name}: pay ${a.payee_name} (testnet payee) up to ${show(usd, ctx)} ${every}, first due ${due!.toISOString().slice(0, 10)}`,
+        `Set aside now: ${show(keep, ctx)}. It leaves your portfolio and ${BRAND.agent} cannot trade it`,
+        a.autopay ? `${BRAND.agent} pays it automatically when it is due` : `${BRAND.agent} asks you before each payment`,
+        "A new payee waits out the delay before anything can be paid, and your trusted contact can cancel it",
+      ]
+    : [`${a.name}: keep ${show(keep, ctx)} aside, out of the portfolio. Nobody can be paid from it`, "This lowers risk, so it applies as soon as you confirm"];
+  const draft = addDraft({
+    kind: "add_commitment",
+    summary,
+    risk: payee ? "raises" : "lowers",
+    reason: a.reason,
+    payload: null,
+    commitment: {
+      id: null,
+      terms: payee
+        ? { payee, maxAmountUsd: usd, periodSeconds, windowSeconds: windowFor(periodSeconds), nextDue: due!.toISOString() }
+        : { payee: null, maxAmountUsd: "0", periodSeconds: 0, windowSeconds: 0, nextDue: null },
+      meta: { name: a.name, kind: a.kind as CommitmentKind, payeeName: a.payee_name, autopay: a.autopay },
+      amountUsd: keep,
+    },
+  });
+  return {
+    ok: true,
+    draft_id: draft.id,
+    summary,
+    what_happens_next: payee
+      ? `Nothing has changed. When the investor confirms, ${show(keep, ctx)} is set aside at once, and the payee waits ${p.settings.loosenDelaySeconds} seconds before it can be paid. The trusted contact can cancel it in that time.`
+      : "Nothing has changed. When the investor confirms, the money is set aside at once.",
+  };
+}
+
+async function draftMove(kind: "set_aside" | "release_commitment", a: { commitment: string; amount: string; currency: string; reason: string }, ctx: ToolContext) {
+  const p = await getPortfolio();
+  const found = findCommitment(p.commitments, a.commitment);
+  if (!found.ok) return { ok: false, message: found.message };
+  const c = found.commitment;
+  const m = readMeta()[String(c.id)] ?? fallbackMeta(c);
+  const usd = toUsd(Number(a.amount), a.currency as Currency | typeof USD_SYMBOL);
+  if (kind === "set_aside" && Number(usd) > Number(p.cash)) {
+    return { ok: false, message: `There is only ${show(p.cash, ctx)} of free cash. Suggest that much or less; never sell investments for it.` };
+  }
+  if (kind === "release_commitment" && Number(usd) > Number(c.reserved)) {
+    return { ok: false, message: `Only ${show(c.reserved, ctx)} is set aside for ${m.name}.` };
+  }
+  const summary =
+    kind === "set_aside"
+      ? [`Set aside ${show(usd, ctx)} more for ${m.name}, from free cash`, "This lowers risk, so it applies as soon as you confirm"]
+      : [
+          `Move ${show(usd, ctx)} from ${m.name} back into investing`,
+          "This raises risk: it waits out the delay and your trusted contact can cancel it",
+          "Nothing is bought by this. Any purchase later still has to pass every rule",
+        ];
+  const draft = addDraft({ kind, summary, risk: kind === "set_aside" ? "lowers" : "raises", reason: a.reason, payload: null, commitment: { id: c.id, amountUsd: usd } });
+  return {
+    ok: true,
+    draft_id: draft.id,
+    summary,
+    what_happens_next:
+      kind === "set_aside"
+        ? "Nothing has changed yet. It applies as soon as the investor confirms."
+        : `Nothing has changed. If the investor confirms, it waits ${p.settings.loosenDelaySeconds} seconds, and the trusted contact can cancel it. The money stays set aside meanwhile.`,
+  };
+}
+
+const ACTING = new Set<string>(["buy", "sell", "rebalance", "request_owner_approval", "pay_commitment"]);
 
 /** Runs one tool call from the model. Bad input comes back as an error result, never as a thrown exception. */
 export async function executeTool(name: string, rawArgs: string, ctx: ToolContext): Promise<unknown> {
@@ -581,6 +805,16 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
       }
       case "draft_mandate":
         return buildDraft(parsed.data as DraftArgs, await getPortfolio(), ctx);
+      case "get_commitments":
+        return commitmentsView(await getPortfolio(), ctx);
+      case "pay_commitment":
+        return await payCommitment(parsed.data as z.infer<typeof schemas.pay_commitment>, ctx);
+      case "draft_commitment":
+        return await draftCommitment(parsed.data as z.infer<typeof schemas.draft_commitment>, ctx);
+      case "set_aside":
+        return await draftMove("set_aside", parsed.data as z.infer<typeof schemas.set_aside>, ctx);
+      case "release_commitment_money":
+        return await draftMove("release_commitment", parsed.data as z.infer<typeof schemas.release_commitment_money>, ctx);
       case "decline": {
         const a = parsed.data as z.infer<typeof schemas.decline>;
         // a refusal by the risk engine or the contract already has its receipt; a second one would say the agent chose this

@@ -40,6 +40,8 @@ export type Receipt = {
   ref: string;
   /** The agent chose to say no (the decline tool), as opposed to a fail-safe abstention after an error. */
   declined: boolean;
+  /** The commitment it was about, for payments, set-asides and releases. */
+  commitment: number | null;
 };
 
 type Result = {
@@ -73,7 +75,10 @@ function actorOf(source: string) {
   return ACTORS[source] ?? `Agent (${source})`;
 }
 
-function describeEvents(events: Result["events"], currency: Currency): string[] {
+const usd = (units: string) => formatUnits(BigInt(units), 6);
+
+function describeEvents(events: Result["events"], currency: Currency, name: string | null): string[] {
+  const what = name ?? "the commitment";
   return (events ?? []).flatMap((e) => {
     const name = (e.args.asset && assetByAddress(e.args.asset)?.name) || "asset";
     switch (e.name) {
@@ -117,6 +122,18 @@ function describeEvents(events: Result["events"], currency: Currency): string[] 
         return ["A waiting change was cancelled"];
       case "PolicyChanged":
         return ["Mandate limits in force"];
+      case "CommitmentPaid":
+        return [`Paid ${display(usd(e.args.amount), currency)} for ${what} (exactly ${usd(e.args.amount)} tUSD sent)`];
+      case "CommitmentProposed":
+        return [`${what} signed for, waiting until ${clock(e.args.eta)} before it can be paid`];
+      case "CommitmentChanged":
+        return [`${what} in force`];
+      case "Reserved":
+        return [`Set aside ${display(usd(e.args.amount), currency)} for ${what}`];
+      case "ReleaseProposed":
+        return [`Asked to move ${display(usd(e.args.amount), currency)} from ${what} back into investing, waiting until ${clock(e.args.eta)}`];
+      case "Released":
+        return [`Moved ${display(usd(e.args.amount), currency)} from ${what} back into investing`];
       default:
         return [];
     }
@@ -126,7 +143,8 @@ function describeEvents(events: Result["events"], currency: Currency): string[] 
 export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receipt {
   const { record } = entry;
   const result = (entry.result ?? {}) as Result;
-  const done = describeEvents(result.events, currency);
+  const name = typeof record.args.name === "string" ? record.args.name : null;
+  const done = describeEvents(result.events, currency, name);
   const queued = (result.events ?? []).some((e) => e.name.endsWith("Proposed"));
 
   let outcome: Receipt["outcome"];
@@ -138,6 +156,7 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
 
   const attempted =
     record.legs?.map((l) => `${l.side} ${l.symbol} for ${display(l.usd, currency)}`).join(", ") ??
+    (record.tool === "pay_commitment" ? `pay ${display(Number(record.args.amount), currency)} for ${name ?? "a commitment"}` : undefined) ??
     (typeof record.args.goal === "string" ? lowerFirst(record.args.goal) : record.tool.replace(/_/g, " "));
 
   return {
@@ -164,6 +183,7 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
     url: result.url ?? null,
     ref: entry.ref,
     declined: Boolean(result.abstained) && record.args.kind === "declined",
+    commitment: typeof record.args.commitment === "number" ? record.args.commitment : null,
   };
 }
 

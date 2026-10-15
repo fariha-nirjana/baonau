@@ -27,6 +27,8 @@ export function testPortfolio(over: { values?: Partial<Record<AssetSymbol, numbe
     mandateAddress: "0x00000000000000000000000000000000000000f2",
     totalValue: String(total),
     cash: String(cash),
+    setAside: "0",
+    commitments: [],
     cashSharePct: (cash / total) * 100,
     defensiveSharePct: ((cash + values.BOND) / total) * 100,
     positions: [

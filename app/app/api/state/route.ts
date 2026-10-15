@@ -1,6 +1,7 @@
 import { listApprovals } from "@/lib/approvals";
 import { readAudit } from "@/lib/audit";
 import { BRAND } from "@/lib/brand";
+import { listPaymentRequests, readMeta } from "@/lib/commitments";
 import { chainConfig } from "@/lib/config";
 import { listDrafts } from "@/lib/drafts";
 import { readLetter } from "@/lib/letters";
@@ -32,6 +33,8 @@ export async function GET(request: Request) {
       mandate: portfolio.mandateAddress,
       letter: readLetter(portfolio.vaultAddress),
       profile: readProfile(),
+      commitmentMeta: readMeta(),
+      paymentRequests: listPaymentRequests().filter((r) => r.status === "waiting"),
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

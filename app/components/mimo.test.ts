@@ -18,6 +18,7 @@ const receipt = (over: Partial<Receipt>): Receipt => ({
   url: null,
   ref: "0x1",
   declined: false,
+  commitment: null,
   ...over,
 });
 

@@ -5,7 +5,17 @@ import { assets, SYMBOLS, type AssetSymbol } from "./assets";
 import { appendAudit, refOf, type AuditRecord } from "./audit";
 import { getClients, roleClient } from "./chain";
 import { chainConfig, PRICE_DECIMALS } from "./config";
-import { listDrafts, updateDraft, type Draft } from "./drafts";
+import {
+  listPaymentRequests,
+  readMeta,
+  fallbackMeta,
+  updatePaymentRequest,
+  writeMeta,
+  commitmentKey,
+  releaseKey,
+  type CommitmentMeta,
+} from "./commitments";
+import { listDrafts, updateDraft, type CommitmentDraft, type Draft } from "./drafts";
 import { readPlan, writePlan } from "./plan";
 import { executeApproved } from "./tools";
 import {
@@ -49,10 +59,18 @@ const bigintToString = (_: string, v: unknown) => (typeof v === "bigint" ? v.toS
 const AGENT_SESSION_SECONDS = 60 * 24 * 3600;
 const APPROVAL_SECONDS = 30 * 60;
 
-async function act(role: "owner" | "guardian", to: "vault" | "mandate", tool: string, reason: string, call: RawCall): Promise<TxResult> {
+async function act(
+  role: "owner" | "guardian",
+  to: "vault" | "mandate",
+  tool: string,
+  reason: string,
+  call: RawCall,
+  /** Shown on the receipt: which commitment, by name. */
+  about?: { commitment: number; name: string; amount?: number },
+): Promise<TxResult> {
   const result = await sendAsRole(role, to, call);
   const args = JSON.parse(JSON.stringify(call.args, bigintToString)) as unknown[];
-  const record: AuditRecord = { at: nowIso(), tool, args: { call: call.functionName, args }, reason, source: role, risk: null };
+  const record: AuditRecord = { at: nowIso(), tool, args: { call: call.functionName, args, ...about }, reason, source: role, risk: null };
   appendAudit({ ref: refOf(record), record, result });
   return result;
 }
@@ -66,6 +84,12 @@ export async function signDraft(id: string): Promise<{ draft: Draft; results: Tx
 
   if (draft.kind === "halt_stop_loss") {
     results.push(await act("owner", "mandate", "halt_stop_loss", draft.reason, { functionName: "haltStopLoss", args: [] }));
+  } else if (draft.commitment && draft.kind === "add_commitment") {
+    results.push(...(await addCommitment(draft.commitment, draft.reason)));
+  } else if (draft.commitment && draft.kind === "set_aside") {
+    results.push(await commitmentActions.setAside(draft.commitment.id!, draft.commitment.amountUsd, draft.reason));
+  } else if (draft.commitment && draft.kind === "release_commitment") {
+    results.push(await commitmentActions.release(draft.commitment.id!, draft.commitment.amountUsd, draft.reason));
   } else if (draft.payload) {
     const { mandate, rules, plan } = draft.payload;
     const symbols = SYMBOLS.filter((s) => rules[s]) as AssetSymbol[];
@@ -107,10 +131,10 @@ export async function applyReady() {
   const now = new Date(p.at).getTime();
   const applied: { what: string; result: TxResult }[] = [];
   const waiting: { what: string; appliesFrom: string }[] = [];
-  const consider = async (what: string, at: string | null | undefined, functionName: string, args: readonly unknown[] = []) => {
+  const consider = async (what: string, at: string | null | undefined, functionName: string, args: readonly unknown[] = [], to: "vault" | "mandate" = "mandate") => {
     if (!at) return;
     if (new Date(at).getTime() <= now) {
-      applied.push({ what, result: await act("owner", "mandate", "apply_change", `Waiting period over: ${what}`, { functionName, args }) });
+      applied.push({ what, result: await act("owner", to, "apply_change", `Waiting period over: ${what}`, { functionName, args }) });
     } else {
       waiting.push({ what, appliesFrom: at });
     }
@@ -123,6 +147,12 @@ export async function applyReady() {
   await consider("trusted contact change", p.pending.guardian?.appliesFrom, "applyGuardian");
   await consider("waiting period", p.pending.waitingPeriod?.appliesFrom, "applyLoosenDelay");
   await consider("unpause", p.pending.unpause?.appliesFrom, "applyUnpause");
+  const meta = readMeta();
+  for (const c of p.commitments) {
+    const name = (meta[String(c.id)] ?? fallbackMeta(c)).name;
+    await consider(name, c.pending?.appliesFrom, "applyCommitment", [BigInt(c.id)]);
+    await consider(`moving money from ${name} back into investing`, c.pendingRelease?.appliesFrom, "applyRelease", [BigInt(c.id)], "vault");
+  }
   return { applied, waiting };
 }
 
@@ -183,6 +213,8 @@ export async function rejectRequest(id: string, by: "owner" | "guardian" = "owne
 }
 
 function keyOf(what: Vetoable): Hex {
+  const c = /^(commitment|release)-(\d+)$/.exec(what);
+  if (c) return c[1] === "commitment" ? commitmentKey(Number(c[2])) : releaseKey(Number(c[2]));
   return what in VETO_KEYS ? VETO_KEYS[what as keyof typeof VETO_KEYS] : CHANGE_KEYS.rule(assets()[what as AssetSymbol].address);
 }
 
@@ -203,9 +235,19 @@ export const ownerActions = {
 };
 
 /** Everything the guardian may cancel. Its own removal is not on the list: the contract refuses that. */
-export type Vetoable = "mandate" | "stop-loss-halt" | "withdrawal-address" | "agent-key" | "waiting-period" | "unpause" | AssetSymbol;
+export type Vetoable =
+  | "mandate"
+  | "stop-loss-halt"
+  | "withdrawal-address"
+  | "agent-key"
+  | "waiting-period"
+  | "unpause"
+  | AssetSymbol
+  /** a new payee or new terms waiting, or money waiting to go back into investing */
+  | `commitment-${number}`
+  | `release-${number}`;
 
-const VETO_KEYS: Record<Exclude<Vetoable, AssetSymbol>, Hex> = {
+const VETO_KEYS: Record<Exclude<Vetoable, AssetSymbol | `commitment-${number}` | `release-${number}`>, Hex> = {
   mandate: CHANGE_KEYS.mandate,
   "stop-loss-halt": CHANGE_KEYS.stopLossHalt,
   "withdrawal-address": CHANGE_KEYS.withdrawalAddress,
@@ -226,4 +268,85 @@ export const guardianActions = {
   haltStopLoss: () =>
     act("guardian", "mandate", "halt_stop_loss", "Trusted contact halted the stop-loss (price feed emergency)", { functionName: "haltStopLoss", args: [] }),
   resumeStopLoss: () => act("guardian", "mandate", "resume_stop_loss", "Trusted contact switched the stop-loss back on", { functionName: "resumeStopLoss", args: [] }),
+};
+
+// ---------------------------------------------------------------- commitments
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+const nameOf = (id: number) => (readMeta()[String(id)] ?? { name: `Commitment ${id}` }).name;
+const units = (usd: string | number) => parseUnits(Number(usd).toFixed(6), 6);
+
+/**
+ * Adds a commitment: the terms go to the mandate (a new payee waits; money
+ * kept aside with nobody to pay applies at once), the name stays here, and
+ * the money to set aside is moved out of the portfolio straight away.
+ */
+export async function addCommitment(d: CommitmentDraft, reason: string): Promise<TxResult[]> {
+  if (!d.terms || !d.meta) throw new Error("A new commitment needs its terms and a name.");
+  const p = await getPortfolio();
+  const id = p.commitments.length + 1;
+  const t = d.terms;
+  const terms = {
+    payee: t.payee ?? ZERO_ADDRESS,
+    maxAmount: units(t.maxAmountUsd),
+    period: t.periodSeconds,
+    window: t.windowSeconds,
+    nextDue: t.nextDue ? BigInt(Math.floor(new Date(t.nextDue).getTime() / 1000)) : 0n,
+    active: true,
+  };
+  writeMeta(id, d.meta);
+  const about = { commitment: id, name: d.meta.name };
+  const results = [await act("owner", "mandate", "add_commitment", reason, { functionName: "proposeCommitment", args: [BigInt(id), terms] }, about)];
+  if (results[0].ok && Number(d.amountUsd) > 0) {
+    results.push(await act("owner", "vault", "set_aside", reason, { functionName: "reserve", args: [BigInt(id), units(d.amountUsd)] }, { ...about, amount: Number(d.amountUsd) }));
+  }
+  return results;
+}
+
+export const commitmentActions = {
+  /** From free cash, at once. Setting money aside only lowers risk. */
+  setAside: (id: number, usd: string, reason = "Owner set money aside") =>
+    act("owner", "vault", "set_aside", reason, { functionName: "reserve", args: [BigInt(id), units(usd)] }, { commitment: id, name: nameOf(id), amount: Number(usd) }),
+  /** Back into investing. It waits, and the trusted contact can cancel it. */
+  release: (id: number, usd: string, reason = "Owner asked to move money back into investing") =>
+    act("owner", "vault", "release_commitment", reason, { functionName: "proposeRelease", args: [BigInt(id), units(usd)] }, { commitment: id, name: nameOf(id), amount: Number(usd) }),
+  /** The owner pays now, early or on time. It counts for the current due date. */
+  payNow: async (id: number, usd: string, requestId?: string) => {
+    const result = await act(
+      "owner",
+      "vault",
+      "pay_commitment",
+      requestId ? `Owner paid request ${requestId}` : "Owner paid it now",
+      { functionName: "payCommitment", args: [BigInt(id), units(usd), "0x" + "00".repeat(32)] },
+      { commitment: id, name: nameOf(id), amount: Number(usd) },
+    );
+    if (requestId) updatePaymentRequest(requestId, result.ok ? { status: "paid", tx: result.hash } : { status: "failed", note: result.error?.explanation ?? result.message });
+    return result;
+  },
+  /** Ends a commitment at once. Money set aside for it stays set aside until moved back or withdrawn. */
+  remove: async (id: number) => {
+    const p = await getPortfolio();
+    const c = p.commitments.find((x) => x.id === id);
+    if (!c) throw new Error(`There is no commitment ${id}.`);
+    const terms = {
+      payee: c.payee ?? ZERO_ADDRESS,
+      maxAmount: units(c.maxAmount),
+      period: c.periodSeconds,
+      window: c.windowSeconds,
+      nextDue: c.nextDue ? BigInt(Math.floor(new Date(c.nextDue).getTime() / 1000)) : 0n,
+      active: false,
+    };
+    return act("owner", "mandate", "remove_commitment", "Owner ended the commitment", { functionName: "proposeCommitment", args: [BigInt(id), terms] }, { commitment: id, name: nameOf(id) });
+  },
+  /** Off-chain: whether a due payment goes out by itself or waits for the owner. */
+  setAutopay: (id: number, on: boolean) => {
+    const current: CommitmentMeta = readMeta()[String(id)] ?? { name: `Commitment ${id}`, kind: "other", payeeName: null, autopay: false };
+    writeMeta(id, { ...current, autopay: on });
+    return { ok: true as const };
+  },
+  dismissRequest: (requestId: string) => {
+    if (!listPaymentRequests().some((r) => r.id === requestId)) throw new Error(`There is no payment request ${requestId}.`);
+    updatePaymentRequest(requestId, { status: "dismissed" });
+    return { ok: true as const };
+  },
 };

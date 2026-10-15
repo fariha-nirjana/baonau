@@ -6,7 +6,19 @@ import { writeLetter } from "@/lib/letters";
 import { writeProfile } from "@/lib/profile";
 import { getPortfolio } from "@/lib/vault";
 import { keeperTick, movePrices } from "@/lib/keeper";
-import { applyReady, approveRequest, guardianActions, ownerActions, rejectRequest, signDraft, type Vetoable } from "@/lib/owner-actions";
+import { COMMITMENT_KINDS, parseDue, periodOf, testnetPayee, windowFor, type CommitmentKind } from "@/lib/commitments";
+import { isCurrency, toUsd } from "@/lib/money";
+import {
+  addCommitment,
+  applyReady,
+  approveRequest,
+  commitmentActions,
+  guardianActions,
+  ownerActions,
+  rejectRequest,
+  signDraft,
+  type Vetoable,
+} from "@/lib/owner-actions";
 
 type Body = { role?: "owner" | "guardian" | "demo"; action?: string; arg?: string };
 
@@ -48,6 +60,60 @@ export async function POST(request: Request) {
         return Response.json(await ownerActions.unpause());
       case "owner:resume-stop-loss":
         return Response.json(await ownerActions.resumeStopLoss());
+      // ---- commitments: arg is JSON
+      case "owner:commitment-add": {
+        const a = JSON.parse(arg) as {
+          name: string;
+          kind: string;
+          payeeName: string | null;
+          amount: number;
+          currency: string;
+          every: "month" | "week" | "once" | "days";
+          everyDays?: number;
+          firstDue: string;
+          setAside: number;
+          autopay: boolean;
+        };
+        if (!a.name?.trim() || !COMMITMENT_KINDS.includes(a.kind as CommitmentKind) || !isCurrency(a.currency)) {
+          return Response.json({ error: "A commitment needs a name, a kind and a currency." }, { status: 400 });
+        }
+        const p = await getPortfolio();
+        const payee = a.payeeName?.trim() ? testnetPayee(a.payeeName) : null;
+        const period = payee ? periodOf(a.every, a.everyDays) : 0;
+        const due = payee ? parseDue(a.firstDue, new Date(p.at)) : null;
+        if (payee && (!due || due.getTime() <= new Date(p.at).getTime())) return Response.json({ error: "The first due date must be in the future." }, { status: 400 });
+        return Response.json(
+          await addCommitment(
+            {
+              id: null,
+              terms: payee
+                ? { payee, maxAmountUsd: toUsd(a.amount, a.currency), periodSeconds: period, windowSeconds: windowFor(period), nextDue: due!.toISOString() }
+                : { payee: null, maxAmountUsd: "0", periodSeconds: 0, windowSeconds: 0, nextDue: null },
+              meta: { name: a.name.trim(), kind: a.kind as CommitmentKind, payeeName: a.payeeName?.trim() || null, autopay: Boolean(a.autopay) },
+              amountUsd: toUsd(a.setAside || 0, a.currency),
+            },
+            "Owner added a commitment",
+          ),
+        );
+      }
+      case "owner:commitment-set-aside":
+      case "owner:commitment-release":
+      case "owner:commitment-pay": {
+        const a = JSON.parse(arg) as { id: number; amount: number; currency: string; request?: string };
+        if (!isCurrency(a.currency) && a.currency !== "tUSD") return Response.json({ error: "Unknown currency." }, { status: 400 });
+        const usd = a.currency === "tUSD" ? String(a.amount) : toUsd(a.amount, a.currency);
+        if (action === "commitment-set-aside") return Response.json(await commitmentActions.setAside(a.id, usd));
+        if (action === "commitment-release") return Response.json(await commitmentActions.release(a.id, usd));
+        return Response.json(await commitmentActions.payNow(a.id, usd, a.request));
+      }
+      case "owner:commitment-remove":
+        return Response.json(await commitmentActions.remove(Number(arg)));
+      case "owner:commitment-autopay": {
+        const a = JSON.parse(arg) as { id: number; on: boolean };
+        return Response.json(commitmentActions.setAutopay(a.id, a.on));
+      }
+      case "owner:payment-dismiss":
+        return Response.json(commitmentActions.dismissRequest(arg));
       case "guardian:veto":
         return Response.json(await guardianActions.veto(arg as Vetoable));
       case "guardian:pause":

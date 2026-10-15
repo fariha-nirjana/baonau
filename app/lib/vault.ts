@@ -1,6 +1,7 @@
 import { formatUnits, parseEventLogs, parseUnits, type Abi, type Address, type Hex } from "viem";
 import { mandateAbi, policyVaultAbi, priceOracleAbi } from "./abi";
 import { assets, SYMBOLS, type AssetSymbol } from "./assets";
+import { commitmentKey, releaseKey, type CommitmentView } from "./commitments";
 import { getClients, hasMulticall, roleClient, txUrl, type DemoRole } from "./chain";
 import { chainConfig, PRICE_DECIMALS, USD_DECIMALS } from "./config";
 import { decodePolicyError, errorMessage, type PolicyError } from "./errors";
@@ -68,8 +69,13 @@ export type Portfolio = {
   at: string;
   vaultAddress: Address;
   mandateAddress: Address;
+  /** The portfolio's value in tUSD. Money set aside for commitments is not part of it. */
   totalValue: string;
+  /** Cash the agent may invest. Money set aside is not included. */
   cash: string;
+  /** Money set aside for commitments, in tUSD. In the vault, but never traded. */
+  setAside: string;
+  commitments: CommitmentView[];
   cashSharePct: number;
   defensiveSharePct: number;
   positions: Position[];
@@ -147,6 +153,16 @@ type RawPolicy = {
   cooldown: number;
 };
 type RawRule = { allowed: boolean; defensive: boolean; maxExposureBps: number; stopPrice: bigint };
+type RawCommitment = { payee: Address; maxAmount: bigint; period: number; window: number; nextDue: bigint; active: boolean };
+
+const termsOf = (c: RawCommitment) => ({
+  payee: c.payee === ZERO ? null : c.payee,
+  maxAmount: fromUsdUnits(c.maxAmount),
+  periodSeconds: Number(c.period),
+  windowSeconds: Number(c.window),
+  nextDue: orNull(c.nextDue),
+  active: c.active,
+});
 
 const mandateOf = (p: RawPolicy): Mandate => ({
   maxTradePct: p.maxTradeBps / 100,
@@ -231,9 +247,35 @@ export async function getPortfolio(): Promise<Portfolio> {
       guardianEta: eta(CHANGE_KEYS.guardian),
       delayEta: eta(CHANGE_KEYS.waitingPeriod),
       unpauseEta: eta(CHANGE_KEYS.unpause),
+      reservedTotal: { ...v, functionName: "reservedTotal" },
+      commitmentCount: { ...m, functionName: "commitmentCount" },
     },
     block.number,
   );
+  const ids = Array.from({ length: Number(r.commitmentCount as bigint) }, (_, i) => i + 1);
+  const perCommitment = await readAll(
+    ids.flatMap((id): Read[] => [
+      { ...m, functionName: "getCommitment", args: [BigInt(id)] },
+      { ...m, functionName: "getPendingCommitment", args: [BigInt(id)] },
+      eta(commitmentKey(id)),
+      eta(releaseKey(id)),
+      { ...v, functionName: "reserved", args: [BigInt(id)] },
+      { ...v, functionName: "pendingRelease", args: [BigInt(id)] },
+    ]),
+    block.number,
+  );
+  const commitments = ids.map((id, i): CommitmentView => {
+    const [c, pc, termsEta, releaseEta, held, releasing] = perCommitment.slice(i * 6) as [RawCommitment, RawCommitment, bigint, bigint, bigint, bigint];
+    const terms = termsOf(c);
+    return {
+      id,
+      ...terms,
+      reserved: fromUsdUnits(held),
+      payableFrom: terms.payee && c.nextDue > 0n ? iso(c.nextDue - BigInt(c.window)) : null,
+      pending: termsEta === 0n ? null : { ...termsOf(pc), appliesFrom: iso(termsEta) },
+      pendingRelease: releaseEta === 0n ? null : { amount: fromUsdUnits(releasing), appliesFrom: iso(releaseEta) },
+    };
+  });
   const perAsset = await readAll(
     list.flatMap((a): Read[] => [
       { ...v, functionName: "holdings", args: [a.address] },
@@ -249,7 +291,8 @@ export async function getPortfolio(): Promise<Portfolio> {
 
   const policy = r.policy as RawPolicy;
   const total = r.total as bigint;
-  const cash = r.cash as bigint;
+  const reservedTotal = r.reservedTotal as bigint;
+  const cash = (r.cash as bigint) - reservedTotal;
   const maxPriceAge = r.maxPriceAge as bigint;
   const exposure = r.exposure as readonly [bigint, bigint];
   const now = block.timestamp;
@@ -287,6 +330,8 @@ export async function getPortfolio(): Promise<Portfolio> {
     mandateAddress: m.address,
     totalValue: fromUsdUnits(total),
     cash: fromUsdUnits(cash),
+    setAside: fromUsdUnits(reservedTotal),
+    commitments,
     cashSharePct: share(cash),
     defensiveSharePct: Number(r.defensiveBps as bigint) / 100,
     positions,
@@ -367,7 +412,8 @@ export type AgentCall =
   | { functionName: "buy"; args: readonly [asset: Address, usdIn: bigint, ref: Hex] }
   | { functionName: "sell"; args: readonly [asset: Address, amount: bigint, ref: Hex] }
   | { functionName: "rebalance"; args: readonly [orders: readonly Order[], ref: Hex] }
-  | { functionName: "tradeWithApproval"; args: readonly [approval: TradeApproval, signature: Hex, ref: Hex] };
+  | { functionName: "tradeWithApproval"; args: readonly [approval: TradeApproval, signature: Hex, ref: Hex] }
+  | { functionName: "payCommitment"; args: readonly [id: bigint, amount: bigint, ref: Hex] };
 
 /** Any vault function at all, for showing what happens when the agent key tries something it must not. */
 export type RawCall = { functionName: string; args: readonly unknown[] };
