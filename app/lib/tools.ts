@@ -127,6 +127,8 @@ export type ToolContext = {
   send?: SendOptions;
   currency?: Currency;
   language?: Language;
+  /** The investor's first name, for a friendlier reply. Never used for any decision. */
+  name?: string;
 };
 
 // ---------------------------------------------------------------- reads

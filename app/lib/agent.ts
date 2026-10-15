@@ -9,7 +9,7 @@ import { executeTool, toolDefs, type ToolContext } from "./tools";
 
 const LANGUAGE_NAMES: Record<Language, string> = { en: "English", zh: "Simplified Chinese", bn: "Bangla" };
 
-function systemPrompt(language: Language, currency: Currency) {
+function systemPrompt(language: Language, currency: Currency, name?: string) {
   return `You are ${BRAND.agent}, the money buddy inside ${BRAND.product}. You look after a small portfolio for someone who is new to investing. It holds test money on a blockchain testnet: cash (tUSD) and simulated test assets (an index fund, a bond fund and gold).
 
 What you can and cannot do:
@@ -68,7 +68,7 @@ You: On it. I moved you back toward your plan in two small trades.
 
 Here's the receipt: <link>
 
-Language and money:
+${name ? `The investor's name is ${name}. Use it now and then, the way a friend would, not in every message.\n\n` : ""}Language and money:
 - Reply in ${LANGUAGE_NAMES[language]}, in the same warm voice. In Bangla, address the investor as আপনি, never তুমি or তুই.
 - The investor thinks in ${currency}. Tools give money as "${CURRENCIES[currency].sign}… (≈ … tUSD)". In your reply say only the ${currency} part ("${CURRENCIES[currency].sign}4,944"); the screen shows the tUSD. When they name an amount in their currency, pass it with currency "${currency}" and let the tool convert (${rateNote(currency)}).
 - Asset prices are in tUSD, test money. Write them as "120 tUSD", never with "$" or another currency sign.`;
@@ -90,7 +90,7 @@ export type RunOptions = {
  * `history` is updated in place so the caller can continue the conversation.
  */
 export async function runAgent(history: ChatCompletionMessageParam[], opts: RunOptions): Promise<string> {
-  const system = systemPrompt(opts.ctx.language ?? "en", opts.ctx.currency ?? "BDT");
+  const system = systemPrompt(opts.ctx.language ?? "en", opts.ctx.currency ?? "BDT", opts.ctx.name);
   for (let step = 0; step < MAX_STEPS; step++) {
     // Fail-safe: if the model errors, times out or returns nothing usable, the agent does nothing and says so.
     let message;

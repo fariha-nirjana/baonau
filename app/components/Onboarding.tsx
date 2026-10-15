@@ -5,7 +5,7 @@ import { BRAND } from "@/lib/brand";
 import type { Draft } from "@/lib/drafts";
 import type { Language } from "@/lib/plan";
 import { checkTermsOf, CheckRound } from "./Check";
-import { fill, formatLeft, strings } from "./i18n";
+import { fill, formatLeft, ownerName, setOwnerName, strings } from "./i18n";
 import { Icon } from "./icons";
 import { LetterField } from "./Letter";
 import { Avatar, HappyMascot, Mascot, MimoTile } from "./Mascot";
@@ -96,7 +96,7 @@ export function Onboarding({ state, settings, setLanguage, act, refresh, skew, m
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, language: settings.language, currency: settings.currency }),
+        body: JSON.stringify({ messages: history, language: settings.language, currency: settings.currency, name: ownerName(settings.language) }),
       });
       const data = (await res.json()) as { reply?: string; error?: string };
       setMessages([...history, { role: "assistant", content: data.reply ?? fill(t.onboard.failed, { error: data.error ?? "" }) }]);
@@ -129,8 +129,19 @@ export function Onboarding({ state, settings, setLanguage, act, refresh, skew, m
     setBusy(false);
   }
 
+  // the investor's own name, asked on the first screen and used everywhere after
+  const [typedName, setTypedName] = useState(state.profile?.name ?? "");
+  async function begin(to?: Step) {
+    const n = typedName.trim();
+    if (!n) return;
+    setOwnerName(n);
+    if (mode === "setup") await act("owner", "name", n);
+    if (to) go(to);
+    else next();
+  }
+
   const lastReply = [...messages].reverse().find((m) => m.role === "assistant");
-  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const name = ownerName(settings.language);
   const agent = BRAND.agent;
   const progressSteps: Step[] = steps.filter((s) => s !== "welcome" && s !== "done");
   const progressAt = progressSteps.indexOf(step);
@@ -158,6 +169,22 @@ export function Onboarding({ state, settings, setLanguage, act, refresh, skew, m
             </div>
             <h1 className="mt-4 font-serif text-[2.6rem] leading-tight">{fill(t.onboard.hello, { name, agent })}</h1>
             <p className="mx-auto mt-3 max-w-lg text-[1.05rem] text-muted">{fill(t.onboard.helloSub, { agent })}</p>
+            <div className="mx-auto mt-8 max-w-sm text-left">
+              <label htmlFor="your-name" className="block text-center text-sm font-semibold text-muted">
+                {t.onboard.nameAsk}
+              </label>
+              <input
+                id="your-name"
+                value={typedName}
+                onChange={(e) => setTypedName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && typedName.trim() && begin()}
+                maxLength={40}
+                autoFocus
+                placeholder={t.onboard.namePlaceholder}
+                className="mt-2 block w-full rounded-xl border border-line bg-card px-4 py-3 text-center font-serif text-[1.3rem] outline-none placeholder:font-sans placeholder:text-base placeholder:text-faint focus:border-sage"
+              />
+              {typedName.trim() ? <p className="slide-in mt-2 text-center text-sm text-leaf">{fill(t.onboard.helloName, { name: typedName.trim() })}</p> : null}
+            </div>
             <p className="mt-8 text-sm font-semibold text-muted">{t.onboard.language}</p>
             <div className="mt-3 flex justify-center gap-2">
               {(
@@ -178,11 +205,11 @@ export function Onboarding({ state, settings, setLanguage, act, refresh, skew, m
               ))}
             </div>
             <div className="mt-10 flex flex-col items-center gap-3">
-              <button onClick={next} className={`${primary} min-w-56`}>
+              <button onClick={() => begin()} disabled={!typedName.trim()} className={`${primary} min-w-56`}>
                 {t.onboard.start}
                 <Icon name="arrow" size={17} />
               </button>
-              <button onClick={() => go("goal")} className="text-sm font-semibold text-muted hover:text-ink">
+              <button onClick={() => begin("goal")} disabled={!typedName.trim()} className="text-sm font-semibold text-muted hover:text-ink disabled:opacity-40">
                 {t.onboard.skipTour}
               </button>
             </div>
@@ -310,7 +337,7 @@ export function Onboarding({ state, settings, setLanguage, act, refresh, skew, m
             <div className="mx-auto w-fit">
               <HappyMascot size={190} />
             </div>
-            <h2 className="mt-3 font-serif text-[2.6rem] leading-tight">{t.onboard.doneTitle}</h2>
+            <h2 className="mt-3 font-serif text-[2.6rem] leading-tight">{fill(t.onboard.doneTitle, { name })}</h2>
             <p className="mx-auto mt-3 max-w-md text-[1.02rem] text-muted">{fill(t.onboard.doneBody, { agent })}</p>
             {signedUrl ? (
               <a href={signedUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-leaf hover:underline">

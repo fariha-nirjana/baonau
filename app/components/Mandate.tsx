@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
-import { fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
+import { fill, formatLeft, LOCALE, strings, type Strings, ownerName } from "./i18n";
 import { Icon } from "./icons";
 import { checkTermsOf, ROUND, UnderstandingCheck } from "./Check";
 import { LetterCard } from "./Letter";
@@ -242,7 +242,7 @@ function ChangesCard({ state, settings, skew, go, onAsk, t }: Omit<Props, "act">
 function RolesCard({ state, settings, t }: { state: AppState; settings: Settings; t: Strings }) {
   const p = state.portfolio;
   const hasGuardian = !/^0x0+$/.test(p.keys.guardian);
-  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const name = ownerName(settings.language);
   const roles: { n: string; who: string; what: string; status: string; tone: string; avatar: string }[] = [
     { n: name.slice(0, 1), who: t.mandate.you, what: t.mandate.youNote, status: t.mandate.active, tone: "bg-mint text-leaf", avatar: "bg-mint text-forest" },
     {
@@ -488,7 +488,7 @@ export function SignedDialog({ state, settings, onClose }: { state: AppState; se
         {s ? (
           <>
             <h2 className="mt-2 font-serif text-[1.9rem] leading-tight">{fill(t.signed.title, { date: day(s.at) })}</h2>
-            <p className="mt-2 text-sm text-muted">{fill(t.signed.by, { who: settings.role === "owner" ? t.signed.you : settings.language === "bn" ? BRAND.ownerBn : BRAND.owner })}</p>
+            <p className="mt-2 text-sm text-muted">{fill(t.signed.by, { who: settings.role === "owner" ? t.signed.you : ownerName(settings.language) })}</p>
             <a href={s.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-leaf hover:bg-paper">
               <span className="num">{t.signed.viewTx} {short(s.tx)}</span>
               <Icon name="arrowUpRight" size={13} />

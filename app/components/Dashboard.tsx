@@ -6,7 +6,7 @@ import type { Language } from "@/lib/plan";
 import type { Receipt } from "@/lib/receipts";
 import { BRAND } from "@/lib/brand";
 import { Chat } from "./Chat";
-import { fill, strings, type Strings } from "./i18n";
+import { fill, ownerName, setOwnerName, strings, type Strings } from "./i18n";
 import { Icon, type IconName } from "./icons";
 import { Avatar, faceOf, Mascot, MimoTile } from "./Mascot";
 import { mimoOf, waitingCount } from "./mimo";
@@ -215,6 +215,8 @@ export function Dashboard() {
     );
   }
 
+  // the name the investor gave in the setup replaces the demo persona everywhere
+  setOwnerName(state.profile?.name);
   const p = state.portfolio;
   const needsSetup = !p.mandateSigned && settings.role === "owner";
   const showing = onboarding ?? (needsSetup && !setupDismissed ? "setup" : null);
@@ -245,7 +247,7 @@ export function Dashboard() {
   const [title, subtitle] = TITLES[view];
   const stale = p.positions.some((x) => x.priceIsStale && (x.rule.allowed || Number(x.amount) > 0));
   const guardian = settings.role === "guardian";
-  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const name = ownerName(settings.language);
   const crumb = [...NAV, ...NAV_TEST].find((n) => n.view === view);
 
   const askMimo = (text: string) => {

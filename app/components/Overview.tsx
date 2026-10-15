@@ -6,7 +6,7 @@ import { BRAND } from "@/lib/brand";
 import { CURRENCIES, type Currency } from "@/lib/money";
 import type { Receipt } from "@/lib/receipts";
 import type { ValuePoint } from "@/lib/values";
-import { clock, fill, LOCALE, strings, type Strings } from "./i18n";
+import { clock, fill, LOCALE, strings, type Strings, ownerName } from "./i18n";
 import { Icon, type IconName } from "./icons";
 import { Mascot } from "./Mascot";
 import type { MimoSay } from "./mimo";
@@ -650,7 +650,7 @@ export function OverviewHeader({
   openPlan: () => void;
 }) {
   const t = strings(settings.language, settings.role);
-  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const name = ownerName(settings.language);
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>

@@ -5,7 +5,7 @@ import { recentReceipts } from "@/lib/receipts";
 import { isCurrency } from "@/lib/money";
 import type { Language } from "@/lib/plan";
 
-type Body = { messages?: { role: "user" | "assistant"; content: string }[]; language?: string; currency?: string };
+type Body = { messages?: { role: "user" | "assistant"; content: string }[]; language?: string; currency?: string; name?: string };
 
 /** One turn of the conversation with the agent. The reply comes back with what each tool did. */
 export async function POST(request: Request) {
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const history: ChatCompletionMessageParam[] = messages.slice(-12).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
     const steps: { tool: string; result: unknown }[] = [];
     const reply = await runAgent(history, {
-      ctx: { source: "chat", language, currency },
+      ctx: { source: "chat", language, currency, name: typeof body.name === "string" ? body.name.trim().slice(0, 40) : undefined },
       onEvent: (e) => {
         // only actions are shown as cards; plain reads would be noise
         if (e.type === "tool_result" && !e.name.startsWith("get_")) steps.push({ tool: e.name, result: e.result });

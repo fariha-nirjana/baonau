@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 import { BRAND } from "@/lib/brand";
-import { fill, strings } from "./i18n";
+import { fill, strings, ownerName } from "./i18n";
 import { Icon } from "./icons";
 import type { Role, Settings } from "./types";
 
 /** The avatar for each role: the owner's initial on mint, the trusted contact's shield on blue. */
 export function RoleAvatar({ role, settings, size = 36 }: { role: Role; settings: Settings; size?: number }) {
-  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const name = ownerName(settings.language);
   return role === "owner" ? (
     <span className="flex shrink-0 items-center justify-center rounded-full bg-mint text-sm font-semibold text-forest" style={{ width: size, height: size }}>
       {name.slice(0, 1)}
@@ -23,7 +23,7 @@ export function RoleAvatar({ role, settings, size = 36 }: { role: Role; settings
 /** Two rows, one per role. The one not in use opens the switch dialog. */
 export function RolePicker({ settings, onPick }: { settings: Settings; onPick: (role: Role) => void }) {
   const t = strings(settings.language, settings.role);
-  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const name = ownerName(settings.language);
   const rows: { role: Role; title: string; note: string }[] = [
     { role: "owner", title: `${name} · ${t.roles.owner}`, note: t.roles.ownerNote },
     { role: "guardian", title: t.roles.contact, note: t.roles.contactNote },

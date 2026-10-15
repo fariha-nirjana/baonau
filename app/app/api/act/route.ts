@@ -3,6 +3,7 @@ import { SYMBOLS } from "@/lib/assets";
 import { runAutopilot } from "@/lib/autopilot";
 import { updateDraft } from "@/lib/drafts";
 import { writeLetter } from "@/lib/letters";
+import { writeProfile } from "@/lib/profile";
 import { getPortfolio } from "@/lib/vault";
 import { keeperTick, movePrices } from "@/lib/keeper";
 import { applyReady, approveRequest, guardianActions, ownerActions, rejectRequest, signDraft, type Vetoable } from "@/lib/owner-actions";
@@ -26,6 +27,8 @@ export async function POST(request: Request) {
         const p = await getPortfolio();
         return Response.json({ ok: true, letter: writeLetter(p.vaultAddress, arg) });
       }
+      case "owner:name":
+        return Response.json({ ok: true, profile: writeProfile(arg) });
       case "owner:dismiss":
         updateDraft(arg, { status: "dismissed" });
         return Response.json({ ok: true });

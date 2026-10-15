@@ -20,6 +20,8 @@ export type AppState = {
   mandate: string;
   /** The owner's note to their future self, if they wrote one. */
   letter: { text: string; writtenAt: string } | null;
+  /** The name the investor gave in the first-time setup. */
+  profile: { name: string } | null;
 };
 
 export type Role = "owner" | "guardian";

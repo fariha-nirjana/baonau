@@ -753,7 +753,10 @@ const en = {
     always: "No borrowing. Less risk applies at once; more risk waits, and your trusted contact can cancel it.",
   },
   onboard: {
-    hello: "Hi {name}, I'm {agent}.",
+    hello: "Hi, I'm {agent}.",
+    nameAsk: "First, what should I call you?",
+    namePlaceholder: "Your first name",
+    helloName: "Nice to meet you, {name}.",
     helloSub: "I look after your money inside rules you sign. Let's set things up together. It takes about five minutes.",
     language: "Which language do you prefer?",
     start: "Let's start",
@@ -790,7 +793,7 @@ const en = {
     signWait: "New vaults wait a moment before their first signature. You can sign in {time}.",
     sign: "Sign with my key",
     signing: "Signing on-chain…",
-    doneTitle: "You're all set.",
+    doneTitle: "You're all set, {name}.",
     doneBody: "Your mandate is on-chain and {agent} is working inside it. You can change it any time: less risk right away, more risk after the wait.",
     viewTx: "View the signing transaction",
     toDashboard: "Go to my dashboard",
@@ -1576,7 +1579,10 @@ const bn: Strings = {
     always: "কোনো ধার নয়। ঝুঁকি কমানো সঙ্গে সঙ্গে কার্যকর; ঝুঁকি বাড়াতে অপেক্ষা লাগে, আর আপনার বিশ্বস্ত ব্যক্তি তা বাতিল করতে পারেন।",
   },
   onboard: {
-    hello: "হ্যালো {name}, আমি {agent}।",
+    hello: "হ্যালো, আমি {agent}।",
+    nameAsk: "প্রথমে বলুন, আপনাকে কী নামে ডাকব?",
+    namePlaceholder: "আপনার নাম",
+    helloName: "আপনার সাথে পরিচিত হয়ে ভালো লাগল, {name}।",
     helloSub: "আপনার সই করা নিয়মের ভেতরে থেকে আমি আপনার টাকার দেখাশোনা করি। চলুন একসাথে সব ঠিক করে নিই। মোটামুটি পাঁচ মিনিট লাগবে।",
     language: "কোন ভাষায় চালাতে চান?",
     start: "শুরু করি",
@@ -1613,7 +1619,7 @@ const bn: Strings = {
     signWait: "নতুন ভল্টে প্রথম সইয়ের আগে একটু অপেক্ষা লাগে। {time} পরে সই করতে পারবেন।",
     sign: "আমার কী দিয়ে সই করুন",
     signing: "অন-চেইনে সই হচ্ছে…",
-    doneTitle: "সব ঠিক হয়ে গেছে।",
+    doneTitle: "সব ঠিক হয়ে গেছে, {name}।",
     doneBody: "আপনার ম্যান্ডেট অন-চেইনে, আর {agent} তার ভেতরে কাজ করছে। যেকোনো সময় বদলাতে পারেন: কম ঝুঁকি সঙ্গে সঙ্গে, বেশি ঝুঁকি অপেক্ষার পর।",
     viewTx: "সইয়ের লেনদেন দেখুন",
     toDashboard: "আমার ড্যাশবোর্ডে যান",
@@ -1983,14 +1989,16 @@ const zh: Partial2<Strings> = {
     always: "不可借贷。降低风险立即生效；提高风险需等待，你的信任联系人可以取消。",
   },
   onboard: {
-    hello: "你好，{name}，我是{agent}。",
+    hello: "你好，我是{agent}。",
+    nameAsk: "首先，我该怎么称呼你？",
+    namePlaceholder: "你的名字",
     start: "开始",
     next: "下一步",
     back: "返回",
     later: "稍后再说",
     looksGood: "看起来不错",
     sign: "用我的密钥签署",
-    doneTitle: "全部就绪。",
+    doneTitle: "全部就绪，{name}。",
     toDashboard: "进入我的主页",
     tour: "功能导览",
   },
@@ -2241,16 +2249,40 @@ function withOwner<T>(over: Partial2<T>, owner: string): Partial2<T> {
 }
 
 const TABLE: Record<Language, Strings> = { en, bn, zh: merge<Strings>(en, zh) };
-const CONTACT: Record<Language, Strings> = {
-  en: merge<Strings>(en, withOwner(enContact, BRAND.owner)),
-  bn: merge<Strings>(bn, withOwner(bnContact, BRAND.ownerBn)),
-  // Chinese covers key labels only, so the contact sees the English lines where Chinese has none
-  zh: merge<Strings>(merge<Strings>(en, withOwner(enContact, BRAND.owner)), zh),
-};
+
+/** The name the investor gave in the setup; until then, the demo persona from brand.ts. */
+let givenName: string | null = null;
+
+export function setOwnerName(name: string | null | undefined) {
+  givenName = name?.trim() || null;
+}
+
+export function ownerName(language: Language): string {
+  return givenName ?? (language === "bn" ? BRAND.ownerBn : BRAND.owner);
+}
+
+const contactCache = new Map<string, Strings>();
+
+function contactTable(language: Language): Strings {
+  const name = ownerName(language);
+  const key = `${language}|${name}`;
+  let table = contactCache.get(key);
+  if (!table) {
+    table =
+      language === "bn"
+        ? merge<Strings>(bn, withOwner(bnContact, name))
+        : language === "zh"
+          ? // Chinese covers key labels only, so the contact sees the English lines where Chinese has none
+            merge<Strings>(merge<Strings>(en, withOwner(enContact, name)), zh)
+          : merge<Strings>(en, withOwner(enContact, name));
+    contactCache.set(key, table);
+  }
+  return table;
+}
 
 /** Screen text for a language, from the owner's side or the trusted contact's. */
 export function strings(language: Language, role: "owner" | "guardian" = "owner"): Strings {
-  return (role === "guardian" ? CONTACT : TABLE)[language];
+  return role === "guardian" ? contactTable(language) : TABLE[language];
 }
 
 /** Fills `{key}` placeholders. */

@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BRAND } from "@/lib/brand";
 import type { Receipt } from "@/lib/receipts";
 import { Icon } from "./icons";
 import { LetterQuote } from "./Letter";
 import { Avatar, faceOf, Mascot, MimoTile, type Face } from "./Mascot";
 import { soundsStressed, type MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
-import { fill, strings } from "./i18n";
+import { fill, strings, ownerName } from "./i18n";
 import { Chip, moneyText, type Tone } from "./ui";
 
 type Step = { tool: string; result: Record<string, unknown>; receipt?: Receipt | null };
@@ -186,7 +185,7 @@ export function Chat({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })), language: settings.language, currency: settings.currency }),
+        body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })), language: settings.language, currency: settings.currency, name: ownerName(settings.language) }),
       });
       const data = (await res.json()) as { reply?: string; steps?: Step[]; error?: string };
       setMessages([...next, { role: "assistant", content: data.reply ?? fill(t.chat.failed, { error: data.error ?? "" }), steps: data.steps, face: data.reply ? replyFace(data.steps, soundsStressed(content)) : "worried" }]);
@@ -199,7 +198,7 @@ export function Chat({
   }
 
   const agent = state.brand.agent;
-  const name = settings.language === "bn" ? BRAND.ownerBn : BRAND.owner;
+  const name = ownerName(settings.language);
   const p = state.portfolio;
   const allowed = p.positions.filter((x) => x.rule.allowed).map((x) => `t${x.symbol}`);
 

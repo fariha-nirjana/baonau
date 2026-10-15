@@ -4,6 +4,7 @@ import { BRAND } from "@/lib/brand";
 import { chainConfig } from "@/lib/config";
 import { listDrafts } from "@/lib/drafts";
 import { readLetter } from "@/lib/letters";
+import { readProfile } from "@/lib/profile";
 import { isCurrency } from "@/lib/money";
 import { readPlan } from "@/lib/plan";
 import { recentReceipts } from "@/lib/receipts";
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
       vault: portfolio.vaultAddress,
       mandate: portfolio.mandateAddress,
       letter: readLetter(portfolio.vaultAddress),
+      profile: readProfile(),
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
