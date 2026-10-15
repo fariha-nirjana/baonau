@@ -6,47 +6,102 @@ import { fill, formatLeft, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
 import { Avatar, MimoTile } from "./Mascot";
 import { money } from "./Overview";
-import type { Settings } from "./types";
+import type { AppState, Settings } from "./types";
 
 /** The terms the questions are built from: the draft's own numbers, never the model's. */
-export type CheckTerms = { maxTradePct: number; maxDailyVolumePct: number; dailyLossPct: number; waitSeconds: number; valueUsd: number };
+export type CheckTerms = {
+  maxTradePct: number;
+  maxDailyVolumePct: number;
+  dailyLossPct: number;
+  waitSeconds: number;
+  valueUsd: number;
+  minDefensivePct?: number;
+  maxLossStreak?: number;
+  cooldownMinutes?: number;
+  /** The index fund's stop price, if it has one. */
+  indexStop?: number | null;
+};
 
-type Question = { ask: string; options: string[]; correct: number; explain: string };
+export type Question = { id: string; ask: string; options: string[]; correct: number; explain: string };
+
+/** The check's numbers from a mandate (signed or drafted) and the vault as it is now. */
+export function checkTermsOf(m: AppState["portfolio"]["mandate"], state: AppState): CheckTerms {
+  const idx = state.portfolio.positions.find((x) => x.symbol === "IDX");
+  return {
+    maxTradePct: m.maxTradePct,
+    maxDailyVolumePct: m.maxDailyVolumePct,
+    dailyLossPct: m.dailyLossPct,
+    waitSeconds: state.portfolio.settings.loosenDelaySeconds,
+    valueUsd: Number(state.portfolio.totalValue),
+    minDefensivePct: m.minDefensivePct,
+    maxLossStreak: m.maxLossStreak,
+    cooldownMinutes: Math.round(m.cooldownSeconds / 60),
+    indexStop: idx?.rule.stopPrice ? Number(idx.rule.stopPrice) : null,
+  };
+}
+
+/** How many questions one round asks. */
+export const ROUND = 4;
 
 /**
- * The questions and their right answers are worked out here, by fixed rules,
- * from the mandate about to be signed. The AI never decides whether someone
- * passed. The right answer's position is fixed per question so it is not
- * always the first.
+ * Every question and its right answer, worked out here by fixed rules from
+ * the mandate's own numbers. The AI never decides whether someone passed.
+ * The right answer's position is fixed per question so it is not always first.
  */
 export function questionsOf(terms: CheckTerms, settings: Settings, t: Strings): Question[] {
   const agent = BRAND.agent;
   const m = (usd: number) => money(usd, settings.currency);
   const value = m(terms.valueUsd);
   const perTrade = terms.valueUsd * (terms.maxTradePct / 100);
+  const perDay = terms.valueUsd * (terms.maxDailyVolumePct / 100);
   // a wrong amount that is never equal to the right one
-  const volume = terms.maxDailyVolumePct > terms.maxTradePct ? terms.valueUsd * (terms.maxDailyVolumePct / 100) : perTrade * 2;
+  const volume = terms.maxDailyVolumePct > terms.maxTradePct ? perDay : perTrade * 2;
   const wait = formatLeft(terms.waitSeconds, t);
-  const place = <T,>(right: T, wrong: T[], at: number): [T[], number] => {
-    const list = [...wrong];
-    list.splice(at, 0, right);
-    return [list, at];
+  const min = terms.cooldownMinutes ?? 10;
+  const q = (id: string, ask: string, right: string, wrong: string[], at: number, explain: string): Question => {
+    const options = [...wrong];
+    options.splice(at, 0, right);
+    return { id, ask, options, correct: at, explain };
   };
-  const [o1, c1] = place(m(perTrade), [m(volume), value], 1);
-  const [o2, c2] = place(fill(t.check.q2a, { agent }), [fill(t.check.q2b, { agent }), fill(t.check.q2c, { agent })], 0);
-  const [o3, c3] = place(fill(t.check.q3a, { wait }), [fill(t.check.q3b, { agent }), fill(t.check.q3c, { agent })], 2);
-  const [o4, c4] = place(fill(t.check.q4a, { agent }), [fill(t.check.q4b, { agent }), fill(t.check.q4c, { agent })], 1);
-  return [
-    { ask: fill(t.check.q1, { value, agent }), options: o1, correct: c1, explain: fill(t.check.e1, { pct: terms.maxTradePct, value, amount: m(perTrade) }) },
-    { ask: fill(t.check.q2, { loss: terms.dailyLossPct, agent }), options: o2, correct: c2, explain: t.check.e2 },
-    { ask: t.check.q3, options: o3, correct: c3, explain: t.check.e3 },
-    { ask: fill(t.check.q4, { agent }), options: o4, correct: c4, explain: fill(t.check.e4, { agent }) },
+  const bank: Question[] = [
+    q("trade", fill(t.check.q1, { value, agent }), m(perTrade), [m(volume), value], 1, fill(t.check.e1, { pct: terms.maxTradePct, value, amount: m(perTrade) })),
+    q("loss", fill(t.check.q2, { loss: terms.dailyLossPct, agent }), fill(t.check.q2a, { agent }), [fill(t.check.q2b, { agent }), fill(t.check.q2c, { agent })], 0, t.check.e2),
+    q("wait", t.check.q3, fill(t.check.q3a, { wait }), [fill(t.check.q3b, { agent }), fill(t.check.q3c, { agent })], 2, t.check.e3),
+    q("out", fill(t.check.q4, { agent }), fill(t.check.q4a, { agent }), [fill(t.check.q4b, { agent }), fill(t.check.q4c, { agent })], 1, fill(t.check.e4, { agent })),
+    q("day", fill(t.check.q5, { agent }), m(perDay > perTrade ? perDay : perTrade * 2), [m(perTrade), value], 0, fill(t.check.e5, { pct: terms.maxDailyVolumePct, amount: m(perDay), agent })),
+    q("contact", t.check.q10, fill(t.check.q10a, { agent }), [t.check.q10b, t.check.q10c], 0, t.check.e10),
+    q("meme", fill(t.check.q9, { agent }), t.check.q9a, [t.check.q9b, t.check.q9c], 2, fill(t.check.e9, { agent })),
+    q("bigger", fill(t.check.q11, { agent }), t.check.q11a, [t.check.q11b, t.check.q11c], 1, t.check.e11),
+    q("pause", fill(t.check.q12, { agent }), t.check.q12a, [t.check.q12b, fill(t.check.q12c, { agent })], 2, fill(t.check.e12, { agent })),
   ];
+  if (terms.minDefensivePct) {
+    bank.push(q("floor", t.check.q6, fill(t.check.q6a, { pct: terms.minDefensivePct }), [t.check.q6b, t.check.q6c], 1, fill(t.check.e6, { pct: terms.minDefensivePct })));
+  }
+  if (terms.maxLossStreak) {
+    bank.push(q("streak", fill(t.check.q7, { agent, n: terms.maxLossStreak }), fill(t.check.q7a, { min }), [fill(t.check.q7b, { agent }), t.check.q7c], 0, fill(t.check.e7, { min })));
+  }
+  if (terms.indexStop) {
+    bank.push(q("stop", fill(t.check.q8, { stop: terms.indexStop }), fill(t.check.q8a, { agent }), [fill(t.check.q8b, { agent }), fill(t.check.q8c, { agent })], 1, fill(t.check.e8, { agent })));
+  }
+  return bank;
+}
+
+/** One round: the per-trade question first (it is the one that matters most), then three others at random. */
+export function roundOf(bank: Question[], random: () => number = Math.random): Question[] {
+  const [first, ...rest] = bank;
+  const shuffled = rest
+    .map((x) => ({ x, k: random() }))
+    .sort((a, b) => a.k - b.k)
+    .map(({ x }) => x);
+  return [first, ...shuffled.slice(0, ROUND - 1)];
 }
 
 export function UnderstandingCheck({ terms, settings, onPass, onClose }: { terms: CheckTerms; settings: Settings; onPass: () => void; onClose: () => void }) {
   const t = strings(settings.language, settings.role);
-  const questions = questionsOf(terms, settings, t);
+  // a new round each time it opens; the order is kept while it is open
+  const [ids] = useState(() => roundOf(questionsOf(terms, settings, t)).map((x) => x.id));
+  const bank = questionsOf(terms, settings, t);
+  const questions = ids.map((id) => bank.find((x) => x.id === id)).filter((x): x is Question => Boolean(x));
   const [at, setAt] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
   const done = at >= questions.length;

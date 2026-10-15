@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { questionsOf } from "./Check";
+import { questionsOf, roundOf, ROUND } from "./Check";
 import { strings } from "./i18n";
 import type { Settings } from "./types";
 
@@ -15,7 +15,7 @@ test("the right answer to the trade question is the per-trade limit, in the inve
 
 test("each question has exactly one right answer, not always in the same place", () => {
   const qs = questionsOf(terms, settings, strings("en"));
-  assert.equal(qs.length, 4);
+  assert.ok(qs.length >= 9);
   for (const q of qs) {
     assert.ok(q.correct >= 0 && q.correct < q.options.length);
     assert.equal(new Set(q.options).size, q.options.length);
@@ -31,4 +31,17 @@ test("when the daily allowance equals the trade limit, the wrong amount still di
 test("the waiting period in the answer follows the vault's setting", () => {
   const q3 = questionsOf({ ...terms, waitSeconds: 86_400 }, settings, strings("en"))[2];
   assert.match(q3.options[q3.correct], /24 h/);
+});
+
+test("a round asks the per-trade question first, then others that differ from round to round", () => {
+  const bank = questionsOf({ ...terms, minDefensivePct: 25, maxLossStreak: 3, cooldownMinutes: 10, indexStop: 102 }, settings, strings("en"));
+  assert.equal(bank.length, 12);
+  let seed = 1;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const a = roundOf(bank, random).map((x) => x.id);
+  const b = roundOf(bank, random).map((x) => x.id);
+  assert.equal(a.length, ROUND);
+  assert.equal(a[0], "trade");
+  assert.equal(new Set(a).size, ROUND);
+  assert.notDeepEqual(a, b);
 });

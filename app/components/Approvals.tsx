@@ -6,7 +6,7 @@ import { BRAND } from "@/lib/brand";
 import type { Draft } from "@/lib/drafts";
 import { clock, fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
-import { UnderstandingCheck } from "./Check";
+import { checkTermsOf, UnderstandingCheck } from "./Check";
 import { LetterField, LetterQuote } from "./Letter";
 import { HappyMascot } from "./Mascot";
 import { ASSET, ASSET_NAME, money } from "./Overview";
@@ -280,11 +280,8 @@ function DraftCard({
       {checkOpen && draft.payload ? (
         <UnderstandingCheck
           terms={{
-            maxTradePct: draft.payload.mandate.maxTradePct,
-            maxDailyVolumePct: draft.payload.mandate.maxDailyVolumePct,
-            dailyLossPct: draft.payload.mandate.dailyLossPct,
-            waitSeconds: state.portfolio.settings.loosenDelaySeconds,
-            valueUsd: Number(state.portfolio.totalValue),
+            ...checkTermsOf(draft.payload.mandate, state),
+            indexStop: draft.payload.rules.IDX?.stopPrice ? Number(draft.payload.rules.IDX.stopPrice) : null,
           }}
           settings={settings}
           onPass={() => setUnderstood(true)}

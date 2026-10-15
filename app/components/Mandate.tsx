@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
 import { fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
-import { UnderstandingCheck } from "./Check";
+import { checkTermsOf, ROUND, UnderstandingCheck } from "./Check";
 import { LetterCard } from "./Letter";
 import { ASSET, ASSET_NAME, money } from "./Overview";
 import type { Act, AppState, Settings, View } from "./types";
@@ -79,7 +79,7 @@ function Term({ label, note, value, tone = "ink" }: { label: ReactNode; note?: R
   );
 }
 
-function MandateDocument({ state, settings, t, onSigned }: { state: AppState; settings: Settings; t: Strings; onSigned: () => void }) {
+function MandateDocument({ state, settings, t, onSigned, onCheck }: { state: AppState; settings: Settings; t: Strings; onSigned: () => void; onCheck: () => void }) {
   const p = state.portfolio;
   const m = p.mandate;
   const names = ASSET_NAME[settings.language];
@@ -104,6 +104,17 @@ function MandateDocument({ state, settings, t, onSigned }: { state: AppState; se
           </a>
         </div>
       </div>
+
+      <button onClick={onCheck} className="mt-5 flex w-full items-center gap-3 rounded-xl border border-sage/40 bg-mint/50 px-4 py-3 text-left hover:bg-mint">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-card text-leaf">
+          <Icon name="check" size={16} strokeWidth={2.4} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">{t.check.pill}</span>
+          <span className="block text-xs text-muted">{fill(t.check.pillNote, { n: ROUND })}</span>
+        </span>
+        <Icon name="arrowUpRight" size={15} className="text-leaf" />
+      </button>
 
       <div className="mt-7 space-y-6">
         <Section n={1} title={fill(t.mandate.sHold, { agent: BRAND.agent })}>
@@ -337,26 +348,28 @@ export function MandateView(props: Props) {
   const t = strings(settings.language, settings.role);
   // ?signed=open opens it straight away, for links and screenshots (this screen only renders in the browser)
   const [signedOpen, setSignedOpen] = useState(() => new URLSearchParams(window.location.search).get("signed") === "open");
-  // ?check=open previews the understanding check with the current mandate's numbers
+  // ?check=open opens the understanding check once; the link is then cleared so it does not come back
   const [checkOpen, setCheckOpen] = useState(() => new URLSearchParams(window.location.search).get("check") === "open");
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("check") || url.searchParams.has("signed")) {
+      url.searchParams.delete("check");
+      url.searchParams.delete("signed");
+      window.history.replaceState(null, "", url);
+    }
+  }, []);
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
       {checkOpen ? (
         <UnderstandingCheck
-          terms={{
-            maxTradePct: state.portfolio.mandate.maxTradePct,
-            maxDailyVolumePct: state.portfolio.mandate.maxDailyVolumePct,
-            dailyLossPct: state.portfolio.mandate.dailyLossPct,
-            waitSeconds: state.portfolio.settings.loosenDelaySeconds,
-            valueUsd: Number(state.portfolio.totalValue),
-          }}
+          terms={checkTermsOf(state.portfolio.mandate, state)}
           settings={settings}
           onPass={() => undefined}
           onClose={() => setCheckOpen(false)}
         />
       ) : null}
       {signedOpen ? <SignedDialog state={state} settings={settings} onClose={() => setSignedOpen(false)} /> : null}
-      <MandateDocument state={state} settings={settings} t={t} onSigned={() => setSignedOpen(true)} />
+      <MandateDocument state={state} settings={settings} t={t} onSigned={() => setSignedOpen(true)} onCheck={() => setCheckOpen(true)} />
       <div className="space-y-5">
         {settings.role === "owner" ? <LetterCard state={state} settings={settings} act={act} /> : null}
         <ChangesCard {...props} t={t} />
