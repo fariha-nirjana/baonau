@@ -79,6 +79,42 @@ export function moneyText(usd: string | number, currency: Currency) {
   return `${c.sign}${trim(Number(usd) * c.perUsd, c.decimals)}`;
 }
 
+/**
+ * A smooth SVG path through the points (monotone cubic, Fritsch and Carlson).
+ * It never overshoots: between two readings the curve stays within their
+ * values, so the chart never shows a high or low that was not read.
+ */
+export function smoothPath(xy: readonly (readonly [number, number])[]): string {
+  const n = xy.length;
+  if (n < 3) return xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const dx = xy.slice(1).map(([x], i) => x - xy[i][0] || 1e-9);
+  const slope = xy.slice(1).map(([, y], i) => (y - xy[i][1]) / dx[i]);
+  const m = xy.map((_, i) => (i === 0 ? slope[0] : i === n - 1 ? slope[n - 2] : slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2));
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / slope[i];
+    const b = m[i + 1] / slope[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const k = 3 / Math.sqrt(s);
+      m[i] = k * a * slope[i];
+      m[i + 1] = k * b * slope[i];
+    }
+  }
+  let d = `M${xy[0][0].toFixed(1)} ${xy[0][1].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = xy[i];
+    const [x1, y1] = xy[i + 1];
+    const h = dx[i] / 3;
+    d += ` C${(x0 + h).toFixed(1)} ${(y0 + m[i] * h).toFixed(1)} ${(x1 - h).toFixed(1)} ${(y1 - m[i + 1] * h).toFixed(1)} ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+  }
+  return d;
+}
+
 /** A small area chart of the portfolio value as the app has read it. Draws nothing with fewer than two readings. */
 export function Sparkline({ points, height = 120 }: { points: { at: string; value: number }[]; height?: number }) {
   if (points.length < 2) return null;

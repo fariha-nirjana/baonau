@@ -11,7 +11,7 @@ import { Icon, type IconName } from "./icons";
 import { Mascot } from "./Mascot";
 import type { MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
-import { Card, short } from "./ui";
+import { Card, short, smoothPath } from "./ui";
 import { OUTCOME_ICON, OUTCOME_TEXT } from "./Activity";
 
 type Props = {
@@ -119,9 +119,7 @@ function ValueChart({
         h - ((p.value - lo) / (hi - lo)) * h,
       ] as const,
   );
-  const line = xy
-    .map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`)
-    .join(" ");
+  const line = smoothPath(xy);
   const [lx, ly] = xy[xy.length - 1];
   const day = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALE[settings.language], {
@@ -146,7 +144,12 @@ function ValueChart({
               <stop
                 offset="0"
                 stopColor="var(--color-leaf)"
-                stopOpacity="0.16"
+                stopOpacity="0.32"
+              />
+              <stop
+                offset="0.6"
+                stopColor="var(--color-leaf)"
+                stopOpacity="0.1"
               />
               <stop offset="1" stopColor="var(--color-leaf)" stopOpacity="0" />
             </linearGradient>
@@ -174,7 +177,11 @@ function ValueChart({
           />
         </svg>
         <span
-          className="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-leaf shadow"
+          className="absolute size-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-leaf/20 motion-safe:animate-ping"
+          style={{ left: `${(lx / w) * 100}%`, top: `${(ly / h) * 100}%` }}
+        />
+        <span
+          className="absolute size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-leaf shadow"
           style={{ left: `${(lx / w) * 100}%`, top: `${(ly / h) * 100}%` }}
         />
         <span
