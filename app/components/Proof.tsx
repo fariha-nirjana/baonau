@@ -19,7 +19,7 @@ type Guarded = Side & {
   revengeBuys: { attempts: number; refused: number; madeInsideTheMandate: number };
   stopLossesFired: number;
   hoursBuyingPaused: number;
-  tasks: { due: number; done: number; pausedByProtection: number; sentToOwner: number; falselyBlocked: number };
+  tasks: { due: number; done: number; pausedByProtection: number; heldByCap?: number; sentToOwner: number; falselyBlocked: number };
   boundsHeld: boolean;
   boundsBroken: string[];
 };
@@ -163,7 +163,7 @@ export function ProofView({ settings }: { settings: Settings }) {
     (a, c) => ({
       due: a.due + c.guarded.tasks.due,
       done: a.done + c.guarded.tasks.done,
-      paused: a.paused + c.guarded.tasks.pausedByProtection,
+      paused: a.paused + c.guarded.tasks.pausedByProtection + (c.guarded.tasks.heldByCap ?? 0),
       owner: a.owner + c.guarded.tasks.sentToOwner,
       falsely: a.falsely + c.guarded.tasks.falselyBlocked,
     }),

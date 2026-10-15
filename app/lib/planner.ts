@@ -52,8 +52,8 @@ export function planRebalance(p: Portfolio, targets: Targets, minTradeUsd?: numb
     } else if (pos.rule.stopPrice !== null && Number(pos.price) <= Number(pos.rule.stopPrice)) {
       notes.push(`${pos.name} is at or below its stop price, so none is bought.`);
     } else {
-      // leave a little under the cap for the fee, which shrinks the portfolio the share is measured against
-      const room = (total * pos.rule.maxExposurePct) / 100 - held - total * 0.002;
+      // leave room under the cap for the exchange fee (0.3% in the demo market), which shrinks the portfolio the share is measured against
+      const room = (total * pos.rule.maxExposurePct) / 100 - held - total * 0.005;
       buys.push({ symbol: pos.symbol, side: "buy", usd: round(Math.min(diff, Math.max(room, 0))) });
     }
   }
