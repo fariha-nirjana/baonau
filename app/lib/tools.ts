@@ -583,6 +583,10 @@ export async function executeTool(name: string, rawArgs: string, ctx: ToolContex
         return buildDraft(parsed.data as DraftArgs, await getPortfolio(), ctx);
       case "decline": {
         const a = parsed.data as z.infer<typeof schemas.decline>;
+        // a refusal by the risk engine or the contract already has its receipt; a second one would say the agent chose this
+        const last = readAudit().filter((e) => e.record.source === ctx.source).pop();
+        const justRefused = last && (last.result as { ok?: boolean } | null)?.ok === false && now().getTime() - new Date(last.record.at).getTime() < 5 * 60_000;
+        if (justRefused) return { ok: true, recorded: false, note: "That was already refused and has its own receipt. Nothing more to record." };
         logAbstention(a.what, a.reason, ctx.source, "declined");
         return { ok: true, recorded: true };
       }

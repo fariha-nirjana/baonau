@@ -1,6 +1,7 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { runAgent } from "@/lib/agent";
 import { readAudit } from "@/lib/audit";
+import { refreshIfStale } from "@/lib/keeper";
 import { recentReceipts } from "@/lib/receipts";
 import { isCurrency } from "@/lib/money";
 import type { Language } from "@/lib/plan";
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
 
     const history: ChatCompletionMessageParam[] = messages.slice(-12).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
     const steps: { tool: string; result: unknown }[] = [];
+    await refreshIfStale();
     const reply = await runAgent(history, {
       ctx: { source: "chat", language, currency, name: typeof body.name === "string" ? body.name.trim().slice(0, 40) : undefined },
       onEvent: (e) => {

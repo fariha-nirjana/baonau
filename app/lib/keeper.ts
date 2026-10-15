@@ -66,6 +66,23 @@ export async function pushPrices(targets: Partial<Record<AssetSymbol, number>> =
   return { result, prices, reached };
 }
 
+/**
+ * Pushes fresh prices when any feed is out of date. The app calls this before
+ * the agent acts, the way a real price feed would always be current; without
+ * it a demo left idle for an hour leaves the agent unable to trade. Does
+ * nothing when prices are fresh or when this server has no price updater key.
+ */
+export async function refreshIfStale(): Promise<boolean> {
+  try {
+    const p = await getPortfolio();
+    if (!p.positions.some((x) => x.priceIsStale)) return false;
+    const pushed = await pushPrices();
+    return pushed.result.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Moves prices to their targets, in as many updates as the oracle's bounds require. */
 export async function movePrices(targets: Partial<Record<AssetSymbol, number>>, onStep?: (prices: Record<AssetSymbol, number>) => void) {
   const { minIntervalMs } = await readFeeds();

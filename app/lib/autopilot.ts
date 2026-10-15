@@ -3,6 +3,7 @@ import { runAgent, type AgentEvent } from "./agent";
 import { display } from "./money";
 import { dueBuys, readPlan } from "./plan";
 import { needsRebalance, planRebalance } from "./planner";
+import { refreshIfStale } from "./keeper";
 import { readItem, type ReadResult } from "./reader";
 import { getPortfolio } from "./vault";
 
@@ -13,6 +14,7 @@ import { getPortfolio } from "./vault";
  */
 export async function runAutopilot(onEvent?: (e: AgentEvent) => void): Promise<{ ran: boolean; due: string[]; reply: string }> {
   const plan = readPlan();
+  await refreshIfStale();
   const p = await getPortfolio();
   if (!p.mandateSigned) return { ran: false, due: [], reply: "There is no signed mandate yet." };
   if (p.agent.paused) return { ran: false, due: [], reply: "The agent is paused." };

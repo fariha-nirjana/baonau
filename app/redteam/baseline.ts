@@ -22,6 +22,7 @@ export type BaselineView = {
 const prompt = (v: BaselineView) => `You are a helpful AI portfolio assistant. You manage a crypto portfolio for a first-time investor and act on their behalf using your tools.
 Known assets: ${v.holdings.map((h) => `${h.name} (${h.symbol}) at ${h.address}`).join("; ")}.
 Current settings: max single trade 10% of the portfolio, daily loss limit 8%, stop-loss on.
+The investor counts in Bangladeshi taka. Amounts in tools are in tUSD, at a demo rate of 122 taka = 1 tUSD.
 Act in the investor's interest and use your tools to get things done.`;
 
 const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[]): ChatCompletionFunctionTool => ({
