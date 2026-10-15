@@ -128,7 +128,9 @@ export async function signDraft(id: string): Promise<{ draft: Draft; results: Tx
 /** Applies every waiting change whose delay has passed. Returns what it applied and what is still waiting. */
 export async function applyReady() {
   const p = await getPortfolio();
-  const now = new Date(p.at).getTime();
+  // a chain that only makes blocks when there are transactions (FISCO BCOS) reports an old time while idle;
+  // the contract checks the wait itself at execution, so the later of the two clocks is safe to try with
+  const now = Math.max(new Date(p.at).getTime(), Date.now());
   const applied: { what: string; result: TxResult }[] = [];
   const waiting: { what: string; appliesFrom: string }[] = [];
   const consider = async (
