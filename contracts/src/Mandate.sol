@@ -4,7 +4,7 @@ pragma solidity >=0.8.11 <0.9.0;
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
-import {AssetRule, Policy} from "./Types.sol";
+import {AssetRule, Commitment, Policy} from "./Types.sol";
 
 /// @title Mandate
 /// @notice The investment mandate: what the agent may do, who may change that,
@@ -32,6 +32,9 @@ import {AssetRule, Policy} from "./Types.sol";
 ///   withdrawal address                          (never)            any change
 ///   halting the stop-loss                       (never)            owner asks
 ///   pausing the agent                           always             lifting a guardian's pause
+///   a commitment                                remove, lower,     new payee, raise,
+///                                               less often, later  more often, earlier, wider window
+///   money set aside for one (in the vault)      add                release to investing
 ///
 /// The guardian can only say no: pause, cancel, revoke, and halt the stop-loss
 /// at once when the price feed breaks. It cannot cancel its own removal, so an
@@ -46,6 +49,9 @@ contract Mandate is Initializable {
     uint64 public constant MAX_DELAY = 30 days;
     /// @notice A stop-loss halt lapses on its own, so protection cannot be switched off and forgotten.
     uint64 public constant MAX_HALT = 3 days;
+    uint256 public constant MAX_COMMITMENTS = 8;
+    uint32 public constant MIN_WINDOW = 1 hours;
+    uint32 public constant MAX_WINDOW = 31 days;
 
     // Keys in `pendingEta` for changes that wait. An asset rule uses the asset's address as its key.
     bytes32 public constant POLICY_CHANGE = "policy";
@@ -94,6 +100,11 @@ contract Mandate is Initializable {
     address public pendingGuardian;
     uint64 public pendingLoosenDelay;
 
+    /// @notice Commitments are numbered from 1. A number is taken when one is first proposed.
+    uint256 public commitmentCount;
+    mapping(uint256 => Commitment) private _commitments;
+    mapping(uint256 => Commitment) private _pendingCommitments;
+
     event MandateSigned();
     event PolicyProposed(Policy policy, uint64 eta);
     event PolicyChanged(Policy policy);
@@ -115,6 +126,9 @@ contract Mandate is Initializable {
     event UnpauseProposed(uint64 eta);
     event Unpaused(address indexed by);
     event ChangeCancelled(bytes32 indexed key, address indexed by);
+    event CommitmentProposed(uint256 indexed id, Commitment commitment, uint64 eta);
+    event CommitmentChanged(uint256 indexed id, Commitment commitment);
+    event CommitmentScheduleAdvanced(uint256 indexed id, uint64 paidDue, uint64 nextDue);
     event Terminated();
 
     error NotOwner();
@@ -136,6 +150,8 @@ contract Mandate is Initializable {
     error NotVetoable();
     error NoPendingChange();
     error ChangeNotReady(uint64 eta);
+    error InvalidCommitment();
+    error TooManyCommitments();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -327,6 +343,34 @@ contract Mandate is Initializable {
         emit WithdrawalAddressChanged(withdrawalAddress);
     }
 
+    /// @notice Add or change a commitment. Pass `commitmentCount() + 1` for a new one.
+    /// Before the mandate is signed every commitment applies at once, as part of the
+    /// first mandate. After that a commitment that lowers risk applies at once and
+    /// one that raises it waits. A reserve with no payee always applies at once:
+    /// setting money aside only leaves less to invest.
+    function proposeCommitment(uint256 id, Commitment calldata b) external onlyOwner {
+        if (id == 0 || id > commitmentCount + 1) revert InvalidCommitment();
+        if (id > commitmentCount) {
+            if (id > MAX_COMMITMENTS) revert TooManyCommitments();
+            commitmentCount = id;
+        }
+        _validateCommitment(b);
+        Commitment memory cur = _commitments[id];
+        bytes32 key = commitmentKey(id);
+        if (!signed || _commitmentTighter(cur, b)) {
+            delete pendingEta[key];
+            _setCommitment(id, b);
+        } else {
+            _pendingCommitments[id] = b;
+            emit CommitmentProposed(id, b, _queue(key));
+        }
+    }
+
+    function applyCommitment(uint256 id) external onlyOwner {
+        _take(commitmentKey(id));
+        _setCommitment(id, _pendingCommitments[id]);
+    }
+
     function applyStopLossHalt() external onlyOwner {
         _take(HALT_CHANGE);
         _haltStopLoss();
@@ -398,6 +442,31 @@ contract Mandate is Initializable {
         emit Terminated();
     }
 
+    /// @notice Called by the vault when the owner asks to move money set aside
+    /// for a commitment back into investing. It waits, and the guardian can cancel it.
+    function queueRelease(uint256 id) external returns (uint64) {
+        if (msg.sender != vault) revert NotVault();
+        return _queue(releaseKey(id));
+    }
+
+    /// @notice Called by the vault to apply a release. Reverts unless it has waited out its delay.
+    function takeRelease(uint256 id) external {
+        if (msg.sender != vault) revert NotVault();
+        _take(releaseKey(id));
+    }
+
+    /// @notice Called by the vault after a commitment is paid. A payment counts for
+    /// the current due date, so the same date can never be paid twice. A single
+    /// payment closes the commitment.
+    function markPaid(uint256 id) external {
+        if (msg.sender != vault) revert NotVault();
+        Commitment storage b = _commitments[id];
+        uint64 paid = b.nextDue;
+        if (b.period == 0) b.active = false;
+        else b.nextDue = paid + b.period;
+        emit CommitmentScheduleAdvanced(id, paid, b.nextDue);
+    }
+
     /// @notice Reverts unless `who` is the agent, with a live key, and not paused.
     function requireAgent(address who) external view {
         if (who != agent || who == address(0)) revert NotAgent();
@@ -411,6 +480,23 @@ contract Mandate is Initializable {
 
     function ruleKey(address asset) public pure returns (bytes32) {
         return bytes32(uint256(uint160(asset)));
+    }
+
+    function commitmentKey(uint256 id) public pure returns (bytes32) {
+        return keccak256(abi.encode("commitment", id));
+    }
+
+    function releaseKey(uint256 id) public pure returns (bytes32) {
+        return keccak256(abi.encode("release", id));
+    }
+
+    function getCommitment(uint256 id) external view returns (Commitment memory) {
+        return _commitments[id];
+    }
+
+    /// @notice The commitment that is waiting, if `pendingEta(commitmentKey(id))` is not zero.
+    function getPendingCommitment(uint256 id) external view returns (Commitment memory) {
+        return _pendingCommitments[id];
     }
 
     /// @notice True while the agent has a live key and is not paused.
@@ -516,6 +602,27 @@ contract Mandate is Initializable {
         if (rule.maxExposureBps > BPS) revert InvalidPolicy();
         // reverts if the oracle has no feed for it
         oracle.getPrice(asset);
+    }
+
+    function _validateCommitment(Commitment calldata b) internal view {
+        if (!b.active || b.payee == address(0)) return;
+        if (b.payee == owner || b.payee == agent || b.payee == vault || b.payee == address(this)) revert InvalidAddress();
+        if (b.maxAmount == 0 || b.nextDue == 0 || b.window < MIN_WINDOW || b.window > MAX_WINDOW) revert InvalidCommitment();
+        if (b.period != 0 && b.window > b.period) revert InvalidCommitment();
+    }
+
+    /// @dev Lowers risk: ends the commitment, or keeps its payee and pays no more, no
+    /// more often, no earlier and in no wider a window. A reserve with no payee never raises risk.
+    function _commitmentTighter(Commitment memory cur, Commitment calldata b) internal pure returns (bool) {
+        if (!b.active || b.payee == address(0)) return true;
+        if (!cur.active || cur.payee != b.payee) return false;
+        bool lessOften = b.period == 0 || (cur.period != 0 && b.period >= cur.period);
+        return lessOften && b.maxAmount <= cur.maxAmount && b.window <= cur.window && b.nextDue >= cur.nextDue;
+    }
+
+    function _setCommitment(uint256 id, Commitment memory b) internal {
+        _commitments[id] = b;
+        emit CommitmentChanged(id, b);
     }
 
     function _setRule(address asset, AssetRule memory rule) internal {

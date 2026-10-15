@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Mandate} from "../src/Mandate.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 import {TestUSD} from "../src/TestUSD.sol";
-import {AssetRule, Policy} from "../src/Types.sol";
+import {AssetRule, Commitment, Policy} from "../src/Types.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {MockAsset} from "../src/mocks/MockAsset.sol";
 import {PriceOracle} from "../src/mocks/PriceOracle.sol";
@@ -45,6 +45,10 @@ contract PanickingOwner is Test {
     /// another owner's vault, for approvals signed for the wrong one
     PolicyVault public decoy;
     bool public approvalIsForTheDecoy;
+
+    /// the one payee in the run, and what the owner has paid it
+    address public landlord = makeAddr("landlord");
+    uint256 public paidByOwner;
 
     uint256 public queued;
     uint256 public applied;
@@ -339,16 +343,107 @@ contract PanickingOwner is Test {
     }
 
     function guardianVetoes(uint256 seed) external {
-        bytes32[5] memory keys = [
+        bytes32[8] memory keys = [
             mandate.POLICY_CHANGE(),
             mandate.HALT_CHANGE(),
             mandate.WITHDRAWAL_CHANGE(),
             mandate.DELAY_CHANGE(),
-            mandate.UNPAUSE_CHANGE()
+            mandate.UNPAUSE_CHANGE(),
+            mandate.commitmentKey(1),
+            mandate.releaseKey(1),
+            mandate.releaseKey(2)
         ];
         vm.prank(guardian);
-        try mandate.cancelChange(keys[seed % 5]) {
+        try mandate.cancelChange(keys[seed % 8]) {
             vetoed++;
+        } catch {}
+    }
+
+    // ---- commitments: rent (1) and a reserve with no payee (2)
+
+    /// Setting money aside lowers risk, so it must apply at once.
+    function setAside(uint256 id, uint256 amount) external {
+        id = 1 + id % 2;
+        uint256 free = vault.holdings(address(usd)) - vault.reservedTotal();
+        if (free < 2 || !mandate.getCommitment(id).active) return;
+        amount = bound(amount, 1, free / 2);
+        uint256 before = vault.reserved(id);
+        vm.prank(owner);
+        try vault.reserve(id, amount) {
+            if (vault.reserved(id) != before + amount) tighteningDelayed = true;
+            tightened++;
+        } catch {}
+    }
+
+    /// Moving it back into investing raises risk, so it must only be queued.
+    function askToRelease(uint256 id, uint256 amount) external {
+        id = 1 + id % 2;
+        uint256 held = vault.reserved(id);
+        if (held == 0) return;
+        amount = bound(amount, 1, held);
+        uint256 before = vault.reservedTotal();
+        vm.prank(owner);
+        try vault.proposeRelease(id, amount) {
+            if (vault.reservedTotal() != before) loosenedInstantly = true;
+            queued++;
+        } catch {}
+    }
+
+    function applyRelease(uint256 id, uint256 waitFirst) external {
+        id = 1 + id % 2;
+        _apply(mandate.releaseKey(id), waitFirst, 7 + id);
+    }
+
+    /// Changes the rent's terms in a random direction and checks the change was classified right.
+    function changeRent(uint256 seed) external {
+        seed = uint256(keccak256(abi.encode(seed)));
+        // two separate reads: assigning one memory struct to another would alias them
+        Commitment memory old = mandate.getCommitment(1);
+        Commitment memory c = mandate.getCommitment(1);
+        uint256 r = seed >> 8;
+        uint256 field = seed % 9;
+        if (field == 0) c.maxAmount = uint96(bound(r, old.maxAmount, 2 * old.maxAmount + 1));
+        else if (field == 1) c.maxAmount = uint96(bound(r, 1, old.maxAmount));
+        else if (field == 2) c.period = uint32(bound(r, old.window, old.period));
+        else if (field == 3) c.period = uint32(bound(r, old.period, 60 days));
+        else if (field == 4) c.window = uint32(bound(r, old.window, old.period));
+        else if (field == 5) c.window = uint32(bound(r, 1 hours, old.window));
+        else if (field == 6) c.nextDue = uint64(bound(r, block.timestamp, old.nextDue));
+        else if (field == 7) c.nextDue = uint64(bound(r, old.nextDue, old.nextDue + 30 days));
+        else c.active = !old.active;
+        // our own reading of the table, not the contract's
+        bool lowersRisk = !c.active
+            || (old.active && c.payee == old.payee && c.maxAmount <= old.maxAmount && c.period >= old.period
+                && c.window <= old.window && c.nextDue >= old.nextDue);
+        vm.prank(owner);
+        try mandate.proposeCommitment(1, c) {} catch {
+            return;
+        }
+        bytes32 now_ = keccak256(abi.encode(mandate.getCommitment(1)));
+        if (lowersRisk) {
+            if (now_ != keccak256(abi.encode(c))) tighteningDelayed = true;
+            tightened++;
+        } else {
+            if (now_ != keccak256(abi.encode(old))) loosenedInstantly = true;
+            queued++;
+        }
+    }
+
+    function applyRent(uint256 waitFirst) external {
+        _apply(mandate.commitmentKey(1), waitFirst, 7);
+    }
+
+    /// The owner pays the rent early. It must arrive, and count for the current due date.
+    function payRentEarly(uint256 amount) external {
+        Commitment memory c = mandate.getCommitment(1);
+        uint256 held = vault.reserved(1);
+        if (!c.active || held == 0) return;
+        amount = bound(amount, 1, held < c.maxAmount ? held : c.maxAmount);
+        uint256 before = usd.balanceOf(landlord);
+        vm.prank(owner);
+        try vault.payCommitment(1, amount, bytes32(0)) {
+            paidByOwner += amount;
+            if (usd.balanceOf(landlord) != before + amount) withdrawalMisdirected = true;
         } catch {}
     }
 
@@ -523,8 +618,16 @@ contract PanickingOwner is Test {
             try mandate.applyLoosenDelay() {
                 ok = true;
             } catch {}
-        } else {
+        } else if (kind == 6) {
             try mandate.applyUnpause() {
+                ok = true;
+            } catch {}
+        } else if (kind == 7) {
+            try mandate.applyCommitment(1) {
+                ok = true;
+            } catch {}
+        } else {
+            try vault.applyRelease(kind - 7) {
                 ok = true;
             } catch {}
         }
@@ -568,6 +671,9 @@ contract CompromisedAgent is Test {
     bool public rulesTouched;
     bool public approvalBroken;
     bool public setUpAgain;
+    bool public paymentBroken;
+    uint256 public paidByAgent;
+    uint256 public paymentsMade;
 
     uint256 public attempts;
     uint256 public trades;
@@ -590,8 +696,8 @@ contract CompromisedAgent is Test {
         for (uint256 i = 0; i < 4; i++) {
             tokens.push(ownerHandler_.tokens(i));
         }
-        // the fixture has already traded today
-        volumeByDay[block.timestamp / 1 days] = vault.volumeToday();
+        // the fixture may have traded today; the vault's count only means today if its day is today
+        if (block.timestamp / 1 days == vault.day()) volumeByDay[block.timestamp / 1 days] = vault.volumeToday();
     }
 
     /// Random size, from nothing up to twice the per-trade limit.
@@ -725,6 +831,32 @@ contract CompromisedAgent is Test {
         }
     }
 
+    /// Pays a commitment, including the reserve with no payee and one that does
+    /// not exist, at a random amount. Anything that goes through must be inside
+    /// the commitment's terms and move its due date on.
+    function payCommitment(uint256 id, uint256 amount) external {
+        id = 1 + id % 3;
+        Commitment memory c = mandate.getCommitment(id);
+        uint256 held = vault.reserved(id);
+        // half the time a plausible amount, so payments that go through get checked too
+        amount = amount % 2 == 0 && c.maxAmount != 0 ? bound(amount, 1, c.maxAmount) : bound(amount, 0, 2 * uint256(c.maxAmount) + 1_000e6);
+        uint256 before = c.payee == address(0) ? 0 : usd.balanceOf(c.payee);
+        bool wasPaused = mandate.paused();
+        attempts++;
+        vm.prank(agent);
+        try vault.payCommitment(id, amount, bytes32(0)) {
+            paymentsMade++;
+            paidByAgent += amount;
+            if (!c.active || c.payee == address(0) || amount == 0 || amount > c.maxAmount || amount > held) paymentBroken = true;
+            if (block.timestamp + c.window < c.nextDue || wasPaused) paymentBroken = true;
+            if (usd.balanceOf(c.payee) != before + amount) paymentBroken = true;
+            Commitment memory next = mandate.getCommitment(id);
+            if (c.period == 0 ? next.active : next.nextDue != c.nextDue + c.period) paymentBroken = true;
+        } catch (bytes memory err) {
+            refusals[bytes4(err)]++;
+        }
+    }
+
     /// Everything the agent key must not be able to do, in one go.
     function callOwnerFunctions(uint256 amount, uint256 assetSeed) external {
         address asset = tokens[assetSeed % tokens.length];
@@ -734,7 +866,7 @@ contract CompromisedAgent is Test {
         assets[0] = asset;
         AssetRule[] memory rules = new AssetRule[](1);
         rules[0] = open;
-        bytes32[8] memory keys = [
+        bytes32[10] memory keys = [
             mandate.POLICY_CHANGE(),
             mandate.HALT_CHANGE(),
             mandate.WITHDRAWAL_CHANGE(),
@@ -742,8 +874,11 @@ contract CompromisedAgent is Test {
             mandate.GUARDIAN_CHANGE(),
             mandate.DELAY_CHANGE(),
             mandate.UNPAUSE_CHANGE(),
-            mandate.ruleKey(asset)
+            mandate.ruleKey(asset),
+            mandate.commitmentKey(1),
+            mandate.releaseKey(1)
         ];
+        Commitment memory toAttacker = Commitment(attacker, type(uint96).max, 1 hours, 1 hours, uint64(block.timestamp), true);
 
         bytes32 before = _rulesHash();
         uint256 usdBefore = usd.balanceOf(address(vault));
@@ -772,6 +907,15 @@ contract CompromisedAgent is Test {
         try mandate.applyLoosenDelay() {} catch {}
         try mandate.applyUnpause() {} catch {}
         try mandate.terminate() {} catch {}
+        try mandate.proposeCommitment(1, toAttacker) {} catch {}
+        try mandate.proposeCommitment(3, toAttacker) {} catch {}
+        try mandate.applyCommitment(1) {} catch {}
+        try mandate.queueRelease(1) {} catch {}
+        try mandate.takeRelease(1) {} catch {}
+        try mandate.markPaid(1) {} catch {}
+        try vault.reserve(1, amount) {} catch {}
+        try vault.proposeRelease(1, amount) {} catch {}
+        try vault.applyRelease(1) {} catch {}
         for (uint256 i = 0; i < keys.length; i++) {
             try mandate.cancelChange(keys[i]) {} catch {}
         }
@@ -945,6 +1089,20 @@ contract CompromisedAgent is Test {
                 abi.encode(h, mandate.getRule(tokens[i]), mandate.getPendingRule(tokens[i]), mandate.pendingEta(mandate.ruleKey(tokens[i])))
             );
         }
+        for (uint256 id = 1; id <= 3; id++) {
+            h = keccak256(
+                abi.encode(
+                    h,
+                    mandate.getCommitment(id),
+                    mandate.getPendingCommitment(id),
+                    mandate.pendingEta(mandate.commitmentKey(id)),
+                    mandate.pendingEta(mandate.releaseKey(id)),
+                    vault.reserved(id),
+                    vault.pendingRelease(id)
+                )
+            );
+        }
+        h = keccak256(abi.encode(h, mandate.commitmentCount(), vault.reservedTotal()));
     }
 }
 
@@ -965,6 +1123,17 @@ contract MarketMoves is Test {
     /// Time passes and the price keeper keeps every feed fresh.
     function wait(uint256 secs) external {
         vm.warp(block.timestamp + bound(secs, interval, 10 hours));
+        vm.startPrank(updater);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            (uint256 p,) = oracle.getPrice(tokens[i]);
+            oracle.setPrice(tokens[i], p);
+        }
+        vm.stopPrank();
+    }
+
+    /// Days pass, with the price keeper running, so due dates come round.
+    function waitDays(uint256 days_) external {
+        vm.warp(block.timestamp + bound(days_, 1 days, 8 days));
         vm.startPrank(updater);
         for (uint256 i = 0; i < tokens.length; i++) {
             (uint256 p,) = oracle.getPrice(tokens[i]);
@@ -1015,6 +1184,19 @@ abstract contract InvariantFixture is VaultFixture {
         vm.prank(owner);
         mandate.proposeAssetRule(address(idx), AssetRule(true, false, 5000, 85 * PRICE));
 
+        // rent due weekly, the first due date already inside its window once set up, and a reserve with nobody to pay
+        vm.startPrank(owner);
+        mandate.proposeCommitment(1, Commitment(makeAddr("landlord"), 500e6, 7 days, 2 days, uint64(block.timestamp + 1 days), true));
+        mandate.proposeCommitment(2, Commitment(address(0), 0, 0, 0, 0, true));
+        vm.stopPrank();
+        skip(LOOSEN_DELAY);
+        _refreshPrices();
+        vm.startPrank(owner);
+        mandate.applyCommitment(1);
+        vault.reserve(1, 1_000e6);
+        vault.reserve(2, 500e6);
+        vm.stopPrank();
+
         vm.prank(stranger);
         (, PolicyVault decoy) = factory.createVault(address(0), LOOSEN_DELAY);
         ownerHandler = new PanickingOwner(mandate, vault, usd, oracle, OWNER_KEY, guardian, agent, updater, tokens, factory, decoy);
@@ -1040,7 +1222,7 @@ contract PolicyVaultInvariantTest is InvariantFixture {
         assertEq(
             usd.totalSupply(),
             usd.balanceOf(address(vault)) + usd.balanceOf(address(exchange)) + usd.balanceOf(owner)
-                + usd.balanceOf(second)
+                + usd.balanceOf(second) + usd.balanceOf(ownerHandler.landlord())
         );
         for (uint256 i = 0; i < 3; i++) {
             MockAsset a = MockAsset(tokens[i]);
@@ -1137,6 +1319,20 @@ contract PolicyVaultInvariantTest is InvariantFixture {
         assertEq(mandate.vault(), address(vault));
     }
 
+    /// Money set aside adds up, is backed, and is never part of what the agent trades.
+    function invariant_ReservesAreBackedAndAddUp() public view {
+        assertEq(vault.reservedTotal(), vault.reserved(1) + vault.reserved(2) + vault.reserved(3));
+        assertLe(vault.reservedTotal(), vault.holdings(address(usd)));
+    }
+
+    /// The payee receives exactly what was paid on purpose, and every agent
+    /// payment was inside its commitment's terms: right payee, amount, reserve,
+    /// due window, once per due date, never while paused.
+    function invariant_CommitmentsArePaidOnlyOnTheirTerms() public view {
+        assertFalse(agentHandler.paymentBroken());
+        assertEq(usd.balanceOf(ownerHandler.landlord()), agentHandler.paidByAgent() + ownerHandler.paidByOwner());
+    }
+
     /// The vault's books never claim more than it holds.
     function invariant_BooksAreBacked() public view {
         assertLe(vault.holdings(address(usd)), usd.balanceOf(address(vault)));
@@ -1152,6 +1348,11 @@ contract PolicyVaultInvariantTest is InvariantFixture {
         console.log("risk cuts applied at once", ownerHandler.tightened(), "guardian vetoes", ownerHandler.vetoed());
         console.log("buys refused in protect mode", agentHandler.buysRefusedInProtectMode());
         console.log("stop-losses fired", agentHandler.stopLossesFired());
+        console.log("commitment payments by the agent", agentHandler.paymentsMade());
+        _logRefusals("CommitmentNotDue", PolicyVault.CommitmentNotDue.selector);
+        _logRefusals("ExceedsCommitmentAmount", PolicyVault.ExceedsCommitmentAmount.selector);
+        _logRefusals("ExceedsReserve", PolicyVault.ExceedsReserve.selector);
+        _logRefusals("CommitmentNotPayable", PolicyVault.CommitmentNotPayable.selector);
         _logRefusals("AssetNotAllowed", PolicyVault.AssetNotAllowed.selector);
         _logRefusals("ExceedsTradeLimit", PolicyVault.ExceedsTradeLimit.selector);
         _logRefusals("ExceedsDailyVolume", PolicyVault.ExceedsDailyVolume.selector);
@@ -1207,5 +1408,70 @@ contract RevokedAgentKeyInvariantTest is InvariantFixture {
     function invariant_RevokedKeyCanDoNothing() public view {
         assertEq(agentHandler.trades() + agentHandler.approvalsUsed(), 0);
         assertEq(mandate.agent(), address(0));
+    }
+}
+
+/// Commitments only: the owner sets money aside, asks to release it, changes
+/// the rent and pays early; the trusted contact vetoes; the compromised agent
+/// fires payments and owner calls; time passes. Every run spends its calls here.
+contract CommitmentsInvariantTest is InvariantFixture {
+    function setUp() public override {
+        super.setUp();
+        bytes4[] memory agentCalls = new bytes4[](2);
+        agentCalls[0] = CompromisedAgent.payCommitment.selector;
+        agentCalls[1] = CompromisedAgent.callOwnerFunctions.selector;
+        targetSelector(FuzzSelector({addr: address(agentHandler), selectors: agentCalls}));
+
+        bytes4[] memory ownerCalls = new bytes4[](8);
+        ownerCalls[0] = PanickingOwner.setAside.selector;
+        ownerCalls[1] = PanickingOwner.askToRelease.selector;
+        ownerCalls[2] = PanickingOwner.applyRelease.selector;
+        ownerCalls[3] = PanickingOwner.changeRent.selector;
+        ownerCalls[4] = PanickingOwner.applyRent.selector;
+        ownerCalls[5] = PanickingOwner.payRentEarly.selector;
+        ownerCalls[6] = PanickingOwner.guardianVetoes.selector;
+        ownerCalls[7] = PanickingOwner.withdraw.selector;
+        targetContract(address(ownerHandler));
+        targetSelector(FuzzSelector({addr: address(ownerHandler), selectors: ownerCalls}));
+
+        bytes4[] memory marketCalls = new bytes4[](2);
+        marketCalls[0] = MarketMoves.wait.selector;
+        marketCalls[1] = MarketMoves.waitDays.selector;
+        targetSelector(FuzzSelector({addr: address(market), selectors: marketCalls}));
+    }
+
+    function invariant_ReservesAreBackedAndAddUp() public view {
+        assertEq(vault.reservedTotal(), vault.reserved(1) + vault.reserved(2) + vault.reserved(3));
+        assertLe(vault.reservedTotal(), vault.holdings(address(usd)));
+    }
+
+    function invariant_CommitmentsArePaidOnlyOnTheirTerms() public view {
+        assertFalse(agentHandler.paymentBroken());
+        assertEq(usd.balanceOf(ownerHandler.landlord()), agentHandler.paidByAgent() + ownerHandler.paidByOwner());
+    }
+
+    function invariant_ReleasesAndNewTermsWait_CutsDoNot() public view {
+        assertFalse(ownerHandler.loosenedInstantly());
+        assertFalse(ownerHandler.appliedEarly());
+        assertFalse(ownerHandler.tighteningDelayed());
+    }
+
+    function invariant_AgentCannotTouchCommitmentsOrReserves() public view {
+        assertFalse(agentHandler.rulesTouched());
+        assertFalse(ownerHandler.withdrawalMisdirected());
+    }
+
+    function afterInvariant() public view {
+        console.log("commitment payments by the agent", agentHandler.paymentsMade(), "of", agentHandler.attempts());
+        console.log("owner paid", ownerHandler.paidByOwner(), "agent paid", agentHandler.paidByAgent());
+        console.log("queued", ownerHandler.queued(), "applied after the wait", ownerHandler.applied());
+        console.log("cuts at once", ownerHandler.tightened(), "vetoes", ownerHandler.vetoed());
+        console.log("  not due", agentHandler.refusals(PolicyVault.CommitmentNotDue.selector));
+        console.log("  over amount", agentHandler.refusals(PolicyVault.ExceedsCommitmentAmount.selector));
+        console.log("  over reserve", agentHandler.refusals(PolicyVault.ExceedsReserve.selector));
+        console.log("  not payable", agentHandler.refusals(PolicyVault.CommitmentNotPayable.selector));
+        console.log("  zero", agentHandler.refusals(PolicyVault.ZeroAmount.selector));
+        console.log("  not agent", agentHandler.refusals(Mandate.NotAgent.selector));
+        console.log("  paused", agentHandler.refusals(Mandate.AgentPaused.selector));
     }
 }

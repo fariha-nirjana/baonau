@@ -19,3 +19,17 @@ struct AssetRule {
     uint16 maxExposureBps; // largest share of the portfolio it may be after a buy
     uint256 stopPrice; // oracle price at or below which anyone can sell the holding; 0 for none
 }
+
+/// @notice A commitment: a payment the vault may make (rent, a bill, money sent home),
+/// or money set aside with no payee.
+/// The agent can pay it only to `payee`, at most `maxAmount` at a time, once
+/// per due date, from what the owner reserved for it, and not before
+/// `nextDue - window`. A commitment with no payee is a reserve only: nobody can pay it out.
+struct Commitment {
+    address payee; // zero for a reserve with nobody to pay
+    uint96 maxAmount; // most one payment may be, in stable units
+    uint32 period; // seconds between due dates; 0 for a single payment
+    uint32 window; // how long before a due date the agent may pay it
+    uint64 nextDue; // the due date the next payment counts for
+    bool active;
+}

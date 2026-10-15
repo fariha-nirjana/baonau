@@ -10,7 +10,7 @@ import {IExchange} from "./interfaces/IExchange.sol";
 import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
 import {Mandate} from "./Mandate.sol";
 import {PriceMath} from "./PriceMath.sol";
-import {AssetRule, Policy} from "./Types.sol";
+import {AssetRule, Commitment, Policy} from "./Types.sol";
 
 /// @title PolicyVault
 /// @notice Holds one investor's assets and lets an AI agent trade them, but
@@ -34,6 +34,10 @@ import {AssetRule, Policy} from "./Types.sol";
 ///   5. The owner can sign an approval for one exact trade above the agent's
 ///      size limits. It lifts those two limits for that trade, once, and
 ///      nothing else.
+///   6. Money the owner sets aside for a commitment is not part of the portfolio:
+///      the agent cannot trade it and the limits are measured without it. It
+///      leaves only as a payment to that commitment's payee, within the commitment's terms,
+///      or to the owner's withdrawal address. Moving it back into investing waits.
 ///
 /// What it does not do: it cannot limit market losses on assets the mandate
 /// allows, and it trusts the oracle (see the known-risk list in the docs).
@@ -92,6 +96,12 @@ contract PolicyVault is Initializable, ReentrancyGuard {
     mapping(address => uint256) public costBasis;
     mapping(uint256 => bool) public usedNonce;
 
+    /// @notice Stable set aside for each commitment. It is part of `holdings[stable]` but never traded.
+    mapping(uint256 => uint256) public reserved;
+    uint256 public reservedTotal;
+    /// @notice The amount waiting to go back into investing, while `mandate.pendingEta(releaseKey(id))` is set.
+    mapping(uint256 => uint256) public pendingRelease;
+
     uint64 public day;
     uint64 public cooldownUntil;
     uint8 public lossStreak;
@@ -118,6 +128,10 @@ contract PolicyVault is Initializable, ReentrancyGuard {
     event ApprovalCancelled(uint256 indexed nonce);
     event Deposited(address indexed token, uint256 amount);
     event Withdrawn(address indexed token, uint256 amount, address indexed to);
+    event Reserved(uint256 indexed id, uint256 amount);
+    event ReleaseProposed(uint256 indexed id, uint256 amount, uint64 eta);
+    event Released(uint256 indexed id, uint256 amount);
+    event CommitmentPaid(uint256 indexed id, address indexed payee, uint256 amount, uint64 due, bytes32 ref, address indexed by);
 
     error NotOwner();
     error ZeroAddress();
@@ -142,6 +156,10 @@ contract PolicyVault is Initializable, ReentrancyGuard {
     error ApprovalAlreadyUsed(uint256 nonce);
     error ApprovalNotValidNow(uint64 validFrom, uint64 expiry);
     error ApprovalTooLong();
+    error CommitmentNotPayable(uint256 id);
+    error CommitmentNotDue(uint256 id, uint64 due);
+    error ExceedsCommitmentAmount(uint256 amount, uint256 maxAmount);
+    error ExceedsReserve(uint256 amount, uint256 reserve);
 
     modifier onlyOwner() {
         if (msg.sender != mandate.owner()) revert NotOwner();
@@ -281,8 +299,14 @@ contract PolicyVault is Initializable, ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
         uint256 available = holdings[token];
         if (amount > available) revert InsufficientBalance(token, amount, available);
-        // a withdrawal is not a loss, so the day-start value moves with it
-        uint256 value = _valueOf(token, amount);
+        uint256 fromReserves;
+        if (token == address(stable) && amount > available - reservedTotal) {
+            // money set aside for commitments is the owner's too, so it comes out without a wait
+            fromReserves = amount - (available - reservedTotal);
+            _drainReserves(fromReserves);
+        }
+        // a withdrawal is not a loss, so the day-start value moves with it; reserves were never counted
+        uint256 value = _valueOf(token, amount - fromReserves);
         dayStartValue = dayStartValue > value ? dayStartValue - value : 0;
         costBasis[token] -= costBasis[token] * amount / available;
         holdings[token] = available - amount;
@@ -290,6 +314,67 @@ contract PolicyVault is Initializable, ReentrancyGuard {
         IERC20(token).safeTransfer(to, amount);
         emit Withdrawn(token, amount, to);
         if (_isEmpty()) mandate.terminate();
+    }
+
+    // ------------------------------------------------------------------
+    // Commitments: money with a job already
+    // ------------------------------------------------------------------
+
+    /// @notice Set cash aside for a commitment, at once. It leaves the portfolio: the
+    /// agent cannot trade it and the limits are measured without it.
+    function reserve(uint256 id, uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        if (!mandate.getCommitment(id).active) revert CommitmentNotPayable(id);
+        uint256 free = holdings[address(stable)] - reservedTotal;
+        if (amount > free) revert InsufficientBalance(address(stable), amount, free);
+        reserved[id] += amount;
+        reservedTotal += amount;
+        // setting money aside is not a loss; a new day's snapshot will not count it anyway
+        if (_sameDay()) dayStartValue = dayStartValue > amount ? dayStartValue - amount : 0;
+        emit Reserved(id, amount);
+    }
+
+    /// @notice Ask to move money set aside for a commitment back into investing. It
+    /// waits, and the guardian can cancel it with `mandate.cancelChange(releaseKey(id))`.
+    function proposeRelease(uint256 id, uint256 amount) external onlyOwner {
+        if (amount == 0) revert ZeroAmount();
+        if (amount > reserved[id]) revert ExceedsReserve(amount, reserved[id]);
+        pendingRelease[id] = amount;
+        emit ReleaseProposed(id, amount, mandate.queueRelease(id));
+    }
+
+    function applyRelease(uint256 id) external onlyOwner nonReentrant {
+        mandate.takeRelease(id);
+        uint256 amount = pendingRelease[id];
+        // a payment made during the wait may have used part of it
+        if (amount > reserved[id]) amount = reserved[id];
+        delete pendingRelease[id];
+        _unreserve(id, amount);
+        // back in the portfolio, and not a gain
+        if (_sameDay()) dayStartValue += amount;
+        emit Released(id, amount);
+    }
+
+    /// @notice Pay a commitment from what is set aside for it. The agent may pay only
+    /// once the due window has opened; the owner may pay early. Either way the
+    /// payment counts for the current due date, which then moves on, so no date
+    /// is paid twice.
+    function payCommitment(uint256 id, uint256 amount, bytes32 ref) external nonReentrant {
+        Commitment memory b = mandate.getCommitment(id);
+        if (msg.sender != mandate.owner()) {
+            mandate.requireAgent(msg.sender);
+            if (block.timestamp + b.window < b.nextDue) revert CommitmentNotDue(id, b.nextDue);
+        }
+        if (!b.active || b.payee == address(0)) revert CommitmentNotPayable(id);
+        if (amount == 0) revert ZeroAmount();
+        if (amount > b.maxAmount) revert ExceedsCommitmentAmount(amount, b.maxAmount);
+        if (amount > reserved[id]) revert ExceedsReserve(amount, reserved[id]);
+
+        mandate.markPaid(id);
+        _unreserve(id, amount);
+        holdings[address(stable)] -= amount;
+        stable.safeTransfer(b.payee, amount);
+        emit CommitmentPaid(id, b.payee, amount, b.nextDue, ref, msg.sender);
     }
 
     /// @notice Send tokens that arrived outside `deposit` to the withdrawal address.
@@ -325,7 +410,7 @@ contract PolicyVault is Initializable, ReentrancyGuard {
         return _volumeRemaining(mandate.getPolicy().maxDailyVolumeBps);
     }
 
-    /// @notice Value of everything the vault holds, in stable units, at the last oracle prices.
+    /// @notice Value of the portfolio, in stable units, at the last oracle prices. Money set aside for commitments is not included.
     function portfolioValue() public view returns (uint256 total) {
         (total,) = _values(false);
     }
@@ -380,9 +465,8 @@ contract PolicyVault is Initializable, ReentrancyGuard {
         _requireNotProtected(value, p.dailyLossBps);
         uint256 price = _price(asset, true);
         if (price <= rule.stopPrice) revert BelowStopPrice(asset, price, rule.stopPrice);
-        if (usdIn > holdings[address(stable)]) {
-            revert InsufficientBalance(address(stable), usdIn, holdings[address(stable)]);
-        }
+        uint256 free = holdings[address(stable)] - reservedTotal;
+        if (usdIn > free) revert InsufficientBalance(address(stable), usdIn, free);
 
         out = _swapBuy(asset, usdIn, price, p.maxSlippageBps);
 
@@ -439,6 +523,27 @@ contract PolicyVault is Initializable, ReentrancyGuard {
             _startCooldown(Trigger.LossStreak, 0, p.cooldown);
         }
         _latch(_strictValue(), p);
+    }
+
+    function _sameDay() internal view returns (bool) {
+        return block.timestamp / 1 days == day;
+    }
+
+    function _unreserve(uint256 id, uint256 amount) internal {
+        reserved[id] -= amount;
+        reservedTotal -= amount;
+    }
+
+    /// @dev Takes `amount` out of the reserves, commitment by commitment, for a withdrawal.
+    function _drainReserves(uint256 amount) internal {
+        uint256 n = mandate.commitmentCount();
+        for (uint256 id = 1; id <= n && amount > 0; id++) {
+            uint256 take = reserved[id] < amount ? reserved[id] : amount;
+            if (take == 0) continue;
+            _unreserve(id, take);
+            amount -= take;
+            emit Released(id, take);
+        }
     }
 
     function _strictValue() internal view returns (uint256 total) {
@@ -545,7 +650,8 @@ contract PolicyVault is Initializable, ReentrancyGuard {
     /// @return total value of everything held, in stable units
     /// @return defensive the part of it in cash and defensive assets
     function _values(bool strict) internal view returns (uint256 total, uint256 defensive) {
-        total = holdings[address(stable)];
+        // money set aside for commitments is not part of the portfolio
+        total = holdings[address(stable)] - reservedTotal;
         defensive = total;
         (address[] memory assets, uint256[] memory units, bool[] memory isDefensive) = mandate.getAssetList();
         for (uint256 i = 0; i < assets.length; i++) {
