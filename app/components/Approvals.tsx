@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import type { ApprovalRequest } from "@/lib/approvals";
 import { BRAND } from "@/lib/brand";
+import type { PaymentRequest } from "@/lib/commitment-status";
 import type { Draft } from "@/lib/drafts";
 import { clock, fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
@@ -141,6 +142,9 @@ function DraftCard({
     sign_mandate: t.approvals.draftFirst,
     change_mandate: t.approvals.draftChange,
     halt_stop_loss: t.approvals.draftHalt,
+    add_commitment: t.approvals.draftCommitment,
+    set_aside: t.approvals.draftSetAside,
+    release_commitment: t.approvals.draftRelease,
   }[draft.kind];
   const raises = draft.risk === "raises";
   const chip = {
@@ -380,6 +384,40 @@ function RequestCard({
   );
 }
 
+// ---------------------------------------------------------------- payments waiting for the owner
+
+function PaymentCard({ request: r, state, settings, act, t }: { request: PaymentRequest; state: AppState; settings: Settings; act: Act; t: Strings }) {
+  const { busy, run } = useBusy(act);
+  const meta = state.commitmentMeta[String(r.commitment)];
+  const name = meta?.name ?? `#${r.commitment}`;
+  return (
+    <Card className="slide-in p-7!">
+      <div className="flex items-start gap-4">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-mint text-leaf">
+          <Icon name="calendar" size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-display text-xl font-semibold">{fill(t.approvals.payReqTitle, { name })}</h3>
+          <p className="text-sm text-muted">{fill(t.approvals.from, { agent: BRAND.agent, time: when(r.createdAt) })}</p>
+        </div>
+      </div>
+      <p className="num mt-5 font-display text-[2.4rem] leading-none font-semibold tracking-[-0.03em]">{money(r.amount, settings.currency)}</p>
+      <p className="num mt-1 text-xs text-faint">{Number(r.amount).toFixed(2)} tUSD</p>
+      <p className="mt-3 text-[0.95rem] text-muted">{fill(t.approvals.payReqBody, { amount: money(r.amount, settings.currency), payee: meta?.payeeName ?? "?", reason: r.reason })}</p>
+      {settings.role === "owner" ? (
+        <div className="mt-5 flex gap-2.5">
+          <Btn busy={busy === "pay"} onClick={() => run("pay", "owner", "commitment-pay", JSON.stringify({ id: r.commitment, amount: Number(r.amount), currency: "tUSD", request: r.id }))}>
+            {t.approvals.payReqPay}
+          </Btn>
+          <Btn kind="ghost" busy={busy === "later"} onClick={() => run("later", "owner", "payment-dismiss", r.id)}>
+            {t.approvals.payReqLater}
+          </Btn>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 // ---------------------------------------------------------------- waiting their turn
 
 type Queued = {
@@ -471,6 +509,39 @@ function queueOf(state: AppState, settings: Settings, t: Strings): Queued[] {
       appliesFrom: p.pending.guardian.appliesFrom,
       vetoKey: null,
     });
+  }
+  for (const c of p.commitments) {
+    const name = state.commitmentMeta[String(c.id)]?.name ?? `#${c.id}`;
+    if (c.pending) {
+      const every =
+        c.pending.periodSeconds === 0
+          ? t.commitments.once
+          : c.pending.periodSeconds === 2592000
+            ? t.commitments.monthly
+            : c.pending.periodSeconds === 604800
+              ? t.commitments.weekly
+              : fill(t.commitments.everyDays, { n: Math.round(c.pending.periodSeconds / 86400) });
+      items.push({
+        key: `commitment-${c.id}`,
+        label: fill(t.approvals.wCommitment, { name }),
+        detail: fill(t.approvals.dCommitment, {
+          payee: state.commitmentMeta[String(c.id)]?.payeeName ?? "?",
+          amount: money(c.pending.maxAmount, settings.currency),
+          every: every.toLowerCase(),
+        }),
+        appliesFrom: c.pending.appliesFrom,
+        vetoKey: `commitment-${c.id}`,
+      });
+    }
+    if (c.pendingRelease) {
+      items.push({
+        key: `release-${c.id}`,
+        label: fill(t.approvals.wRelease, { name }),
+        detail: fill(t.approvals.dRelease, { amount: money(c.pendingRelease.amount, settings.currency) }),
+        appliesFrom: c.pendingRelease.appliesFrom,
+        vetoKey: `release-${c.id}`,
+      });
+    }
   }
   for (const x of p.positions) {
     if (!x.pendingRule) continue;
@@ -665,7 +736,7 @@ export function ApprovalsView(props: Props) {
   const { state, settings, act } = props;
   const t = strings(settings.language, settings.role);
   const queue = queueOf(state, settings, t);
-  const toSign = state.drafts.length + state.requests.length;
+  const toSign = state.drafts.length + state.requests.length + state.paymentRequests.length;
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <div className="space-y-8">
@@ -713,6 +784,9 @@ export function ApprovalsView(props: Props) {
                     t={t}
                   />
                 ))}
+                {state.paymentRequests.map((r) => (
+                  <PaymentCard key={r.id} request={r} state={state} settings={settings} act={act} t={t} />
+                ))}
               </Group>
             ) : null}
           </>
@@ -738,6 +812,9 @@ export function ApprovalsView(props: Props) {
                     act={act}
                     t={t}
                   />
+                ))}
+                {state.paymentRequests.map((r) => (
+                  <PaymentCard key={r.id} request={r} state={state} settings={settings} act={act} t={t} />
                 ))}
               </Group>
             ) : null}

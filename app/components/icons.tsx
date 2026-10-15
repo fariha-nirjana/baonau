@@ -43,6 +43,10 @@ const PATHS = {
   swap: "M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7",
   sparkle: "M12 3c.5 4 2 5.5 6 6-4 .5-5.5 2-6 6-.5-4-2-5.5-6-6 4-.5 5.5-2 6-6z",
   bolt: "M13 2 4 14h7l-1 8 9-12h-7z",
+  cap: "M2 9l10-5 10 5-10 5zM6 11v5c0 1 2.7 3 6 3s6-2 6-3v-5M22 9v6",
+  heart: "M12 20s-7-4.5-9-9a4.5 4.5 0 0 1 9-3 4.5 4.5 0 0 1 9 3c-2 4.5-9 9-9 9z",
+  dots: "M5 12h.01M12 12h.01M19 12h.01",
+  calendar: "M4 6h16v15H4zM4 10h16M8 3v4M16 3v4",
 } as const;
 
 export type IconName = keyof typeof PATHS;

@@ -21,12 +21,14 @@ import { ApprovalsHeader, ApprovalsView } from "./Approvals";
 import { ActivityHeader, ActivityView, ReceiptDialog } from "./Activity";
 import { PauseDialog, RoleAvatar, RoleDialog, RolePicker } from "./Roles";
 import { SecurityHeader, SecurityView } from "./Security";
+import { CommitmentsHeader, CommitmentsView } from "./Commitments";
 
 type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
 
 const NAV: NavItem[] = [
   { view: "portfolio", key: "overview", icon: "grid" },
   { view: "holdings", key: "holdings", icon: "wallet" },
+  { view: "commitments", key: "commitments", icon: "calendar" },
   { view: "mandate", key: "mandate", icon: "mandate" },
   { view: "approvals", key: "approvals", icon: "approvals" },
   { view: "activity", key: "activity", icon: "activity" },
@@ -41,6 +43,7 @@ const NAV_TEST: NavItem[] = [
 const TITLES: Record<View, [string, string]> = {
   portfolio: ["", ""],
   holdings: ["Portfolio", "What you hold, against the caps in your mandate and the targets in your plan."],
+  commitments: ["", ""],
   mandate: ["Your mandate", "What the AI may do, and how these rules can change."],
   approvals: ["Approvals", "Decisions that are yours to make, and riskier changes waiting their turn."],
   activity: ["Activity", "A plain receipt for every move, including the ones that were stopped."],
@@ -107,6 +110,7 @@ export function Dashboard() {
   const [chatOpen, setChatOpen] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(false);
   const [prefill, setPrefill] = useState<{ id: number; text: string } | null>(null);
+  const [addingCommitment, setAddingCommitment] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [switchTo, setSwitchTo] = useState<Settings["role"] | null>(null);
@@ -243,7 +247,7 @@ export function Dashboard() {
     if (mimo.receiptRefs.length) setSeen((s) => new Set([...s, ...mimo.receiptRefs]));
     if (mimo.dismissKey && mimo.dismissKey !== "receipts") setDismissed((d) => new Set([...d, mimo.dismissKey as string]));
   };
-  const toSign = state.drafts.length + state.requests.length;
+  const toSign = state.drafts.length + state.requests.length + state.paymentRequests.length;
   const [title, subtitle] = TITLES[view];
   const stale = p.positions.some((x) => x.priceIsStale && (x.rule.allowed || Number(x.amount) > 0));
   const guardian = settings.role === "guardian";
@@ -282,9 +286,8 @@ export function Dashboard() {
     <div lang={settings.language} className="flex h-full bg-paper">
       <nav className="flex w-64 shrink-0 flex-col border-r border-line bg-card px-4 pt-6 pb-4">
         <div className="flex items-center gap-2.5 px-2">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-forest text-mint shadow-[0_4px_10px_rgb(24_60_48/0.18)]">
-            <Icon name="shieldCheck" size={20} strokeWidth={1.8} />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG, no optimisation needed */}
+          <img src="/brand/baonau-icon.svg" alt="" className="size-10 rounded-xl shadow-[0_4px_10px_rgb(24_60_48/0.18)]" />
           <p className="font-display text-lg leading-tight font-bold tracking-[-0.03em] whitespace-nowrap">
             {state.brand.product}
             <span className="text-sage">.</span>
@@ -387,6 +390,8 @@ export function Dashboard() {
               <OverviewHeader settings={settings} openPlan={() => setPlanOpen(true)} />
             ) : view === "holdings" ? (
               <PortfolioHeader settings={settings} />
+            ) : view === "commitments" ? (
+              <CommitmentsHeader settings={settings} onAdd={() => setAddingCommitment(true)} />
             ) : view === "mandate" ? (
               <MandateHeader settings={settings} />
             ) : view === "approvals" ? (
@@ -425,6 +430,9 @@ export function Dashboard() {
             <div className="mt-7">
               {view === "portfolio" ? <OverviewView state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} openChat={() => setChatOpen(true)} onOpen={setReceipt} onSetup={() => setOnboarding("setup")} /> : null}
               {view === "holdings" ? <PortfolioView state={state} settings={settings} onAsk={askMimo} /> : null}
+              {view === "commitments" ? (
+                <CommitmentsView state={state} settings={settings} act={act} skew={skew} onAsk={askMimo} adding={addingCommitment} setAdding={setAddingCommitment} />
+              ) : null}
               {view === "mandate" ? <MandateView state={state} settings={settings} act={act} skew={skew} go={setView} onAsk={askMimo} /> : null}
               {view === "approvals" ? <ApprovalsView state={state} settings={settings} act={act} skew={skew} /> : null}
               {view === "activity" ? <ActivityView state={state} settings={settings} onOpen={setReceipt} /> : null}

@@ -42,7 +42,7 @@ async function main() {
     const pushed = await pushPrices(targets);
     if (!pushed.result.ok) throw new Error(`Price update failed: ${pushed.result.message}`);
     const p = await getPortfolio();
-    recordValue({ at: p.at, value: Number(p.totalValue) });
+    recordValue({ at: p.at, value: Number(p.totalValue) + Number(p.setAside) });
     console.log(`${String(i + 1).padStart(2)}/${PATH.IDX.length}  IDX ${pushed.prices.IDX.toFixed(2)}  GOLD ${pushed.prices.GOLD.toFixed(2)}  BOND ${pushed.prices.BOND.toFixed(2)}  value ${p.totalValue}`);
     if (i < PATH.IDX.length - 1) await sleep(every);
   }

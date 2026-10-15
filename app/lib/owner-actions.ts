@@ -131,10 +131,17 @@ export async function applyReady() {
   const now = new Date(p.at).getTime();
   const applied: { what: string; result: TxResult }[] = [];
   const waiting: { what: string; appliesFrom: string }[] = [];
-  const consider = async (what: string, at: string | null | undefined, functionName: string, args: readonly unknown[] = [], to: "vault" | "mandate" = "mandate") => {
+  const consider = async (
+    what: string,
+    at: string | null | undefined,
+    functionName: string,
+    args: readonly unknown[] = [],
+    to: "vault" | "mandate" = "mandate",
+    about?: { commitment: number; name: string },
+  ) => {
     if (!at) return;
     if (new Date(at).getTime() <= now) {
-      applied.push({ what, result: await act("owner", to, "apply_change", `Waiting period over: ${what}`, { functionName, args }) });
+      applied.push({ what, result: await act("owner", to, "apply_change", `Waiting period over: ${what}`, { functionName, args }, about) });
     } else {
       waiting.push({ what, appliesFrom: at });
     }
@@ -150,8 +157,8 @@ export async function applyReady() {
   const meta = readMeta();
   for (const c of p.commitments) {
     const name = (meta[String(c.id)] ?? fallbackMeta(c)).name;
-    await consider(name, c.pending?.appliesFrom, "applyCommitment", [BigInt(c.id)]);
-    await consider(`moving money from ${name} back into investing`, c.pendingRelease?.appliesFrom, "applyRelease", [BigInt(c.id)], "vault");
+    await consider(name, c.pending?.appliesFrom, "applyCommitment", [BigInt(c.id)], "mandate", { commitment: c.id, name });
+    await consider(`moving money from ${name} back into investing`, c.pendingRelease?.appliesFrom, "applyRelease", [BigInt(c.id)], "vault", { commitment: c.id, name });
   }
   return { applied, waiting };
 }

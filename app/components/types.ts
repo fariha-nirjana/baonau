@@ -1,4 +1,4 @@
-import type { CommitmentMeta, PaymentRequest } from "@/lib/commitments";
+import type { CommitmentMeta, PaymentRequest } from "@/lib/commitment-status";
 import type { Draft } from "@/lib/drafts";
 import type { Currency } from "@/lib/money";
 import type { Language, Plan } from "@/lib/plan";

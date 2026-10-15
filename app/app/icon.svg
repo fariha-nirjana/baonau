@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">Baonau — Bunbun's little treasure boat</title>
+<desc id="desc">The original green Bunbun character with a cream face and pink cheeks peeks over a golden boat, with a padlock emblem, on a mint rounded square.</desc>
+<defs>
+ <linearGradient id="background-fill" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#EFF4E4"/><stop offset="1" stop-color="#C8DFCC"/></linearGradient>
+ <linearGradient id="hull-fill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#F2D28B"/><stop offset="1" stop-color="#D9B568"/></linearGradient>
+ <clipPath id="icon-clip"><rect width="512" height="512" rx="112"/></clipPath>
+</defs>
+<g id="background"><rect width="512" height="512" rx="112" fill="url(#background-fill)"/></g>
+<g clip-path="url(#icon-clip)">
+ <g id="halo"><circle cx="256" cy="226" r="184" fill="#FCF8EB" opacity=".36"/></g>
+ <g id="water"><path d="M0 414 Q83 387 169 413 T340 413 T512 410 V512 H0Z" fill="#B3D2BB" opacity=".7"/><ellipse cx="256" cy="443" rx="151" ry="13" fill="#326F56" opacity=".12"/></g>
+ <g id="bunbun-head" transform="translate(25.6 34) scale(.9)"><g xmlns="http://www.w3.org/2000/svg" id="ear_left">
+    <circle cx="132" cy="74" r="40" fill="#2A7A62" />
+    <circle cx="140" cy="81" r="18" fill="#1F6450" />
+  </g>
+  
+<g xmlns="http://www.w3.org/2000/svg" id="ear_right">
+    <circle cx="380" cy="74" r="40" fill="#2A7A62" />
+    <circle cx="372" cy="81" r="18" fill="#1F6450" />
+  </g>
+
+  
+  
+<g xmlns="http://www.w3.org/2000/svg" id="head">
+    <path d="M256 50 C373 50 451 128 451 225 C451 330 373 400 256 400 C139 400 61 330 61 225 C61 128 139 50 256 50 Z" fill="#2A7A62" />
+  </g>
+
+  
+  
+<g xmlns="http://www.w3.org/2000/svg" id="face">
+    <path d="M256 128 C268 122 290 120 312 121 C370 125 404 172 404 236 C404 306 350 352 256 352 C162 352 108 306 108 236 C108 172 142 125 200 121 C222 120 244 122 256 128 Z" fill="#FCF6EA" />
+  </g>
+
+  
+  
+<g xmlns="http://www.w3.org/2000/svg" id="blush">
+    <ellipse id="blush_left" cx="158" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8" />
+    <ellipse id="blush_right" cx="354" cy="264" rx="28" ry="15" fill="#F5B4A8" opacity="0.8" />
+  </g>
+
+  
+  
+<g xmlns="http://www.w3.org/2000/svg" id="eye_left">
+    <circle cx="194" cy="228" r="16" fill="#1B1F22" />
+    <circle id="eye_left_shine" cx="189" cy="222" r="5" fill="#FFFFFF" />
+  </g>
+  
+<g xmlns="http://www.w3.org/2000/svg" id="eye_right">
+    <circle cx="318" cy="228" r="16" fill="#1B1F22" />
+    <circle id="eye_right_shine" cx="313" cy="222" r="5" fill="#FFFFFF" />
+  </g>
+
+  
+  
+<g xmlns="http://www.w3.org/2000/svg" id="mouth">
+    <path d="M242 249 C246 266 266 266 270 249 Z" fill="#F0A32A" />
+  </g>
+
+  
+  
+<g xmlns="http://www.w3.org/2000/svg" id="nose">
+    <ellipse cx="256" cy="248" rx="15" ry="7.5" fill="#2B1E16" />
+  </g>
+
+  
+  </g>
+ <g id="boat">
+  <path id="hull-shadow" d="M63 342 Q256 375 449 342 Q409 435 305 442 H207 Q103 435 63 342Z" fill="#346B50" opacity=".12" transform="translate(0 6)"/>
+  <path id="hull" d="M59 330 Q256 368 453 330 C429 390 384 426 303 434 H209 C128 426 83 390 59 330Z" fill="url(#hull-fill)"/>
+  <path id="hull-lower" d="M89 379 Q256 418 423 379 C393 411 354 429 303 434 H209 C158 429 119 411 89 379Z" fill="#CBA45A" opacity=".5"/>
+  <path id="gunwale" d="M59 330 Q256 368 453 330" fill="none" stroke="#FAE9B8" stroke-width="14" stroke-linecap="round"/>
+  <path id="bow-left" d="M59 330 L78 360" fill="none" stroke="#FAE9B8" stroke-width="11" stroke-linecap="round"/>
+  <path id="bow-right" d="M453 330 L434 360" fill="none" stroke="#FAE9B8" stroke-width="11" stroke-linecap="round"/>
+ </g>
+ <g id="bunbun-paws" transform="translate(25.6 34) scale(.9)"><g xmlns="http://www.w3.org/2000/svg" id="arm_left">
+    <ellipse cx="134" cy="337" rx="54" ry="31" fill="#1F6450" opacity="0.35" transform="rotate(37 134 337)" />
+    <ellipse cx="132" cy="332" rx="54" ry="31" fill="#2F8269" transform="rotate(37 132 332)" />
+  </g>
+  
+<g xmlns="http://www.w3.org/2000/svg" id="arm_right">
+    <ellipse cx="378" cy="337" rx="54" ry="31" fill="#1F6450" opacity="0.35" transform="rotate(-37 378 337)" />
+    <ellipse cx="380" cy="332" rx="54" ry="31" fill="#2F8269" transform="rotate(-37 380 332)" />
+  </g>
+
+  
+  </g>
+ <g id="treasure-badge"><circle cx="256" cy="391" r="32" fill="#FCF6EA"/><g transform="translate(-51.2 -116.6) scale(1.2)"><g xmlns="http://www.w3.org/2000/svg" id="lock">
+    <path d="M243 414 v-8 a13 13 0 0 1 26 0 v8" fill="none" stroke="#D9A21B" stroke-width="6" stroke-linecap="round" />
+    <rect x="234" y="411" width="44" height="34" rx="8" fill="#F2C230" />
+    <circle cx="256" cy="425" r="5" fill="#6B4A10" />
+    <rect x="254" y="427" width="4" height="10" rx="2" fill="#6B4A10" />
+  </g>
+
+  
+  </g></g>
+ <g id="wake" fill="none" stroke="#5D9678" stroke-width="6" stroke-linecap="round" opacity=".55"><path d="M83 453 Q103 459 123 453"/><path d="M389 453 Q409 459 429 453"/></g>
+ <g id="sparkle" fill="#D3AA49"><path d="M423 123 Q425 138 440 140 Q425 142 423 157 Q421 142 406 140 Q421 138 423 123Z"/></g>
+</g>
+</svg>

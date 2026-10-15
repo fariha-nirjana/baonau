@@ -35,6 +35,11 @@ export function waitingChanges(state: AppState, t: Strings, settings: Settings):
   for (const x of p.positions) {
     if (x.pendingRule) items.push({ key: x.symbol, label: fill(t.mandate.wRule, { asset: ASSET_NAME[settings.language][x.symbol] }), appliesFrom: x.pendingRule.appliesFrom });
   }
+  for (const c of p.commitments) {
+    const name = state.commitmentMeta[String(c.id)]?.name ?? `#${c.id}`;
+    if (c.pending) items.push({ key: `commitment-${c.id}`, label: fill(t.approvals.wCommitment, { name }), appliesFrom: c.pending.appliesFrom });
+    if (c.pendingRelease) items.push({ key: `release-${c.id}`, label: fill(t.approvals.wRelease, { name }), appliesFrom: c.pendingRelease.appliesFrom });
+  }
   return items;
 }
 
@@ -170,7 +175,27 @@ function MandateDocument({ state, settings, t, onSigned, onCheck }: { state: App
           <Term label={t.mandate.floor} note={fill(t.mandate.floorNote, { n: Math.round(p.defensiveSharePct * 10) / 10 })} value={pct(m.minDefensivePct)} />
         </Section>
 
-        <Section n={4} title={t.mandate.sNever}>
+        <Section n={4} title={fill(t.mandate.payeesTitle, { agent: BRAND.agent })}>
+          {p.commitments.filter((c) => c.active && c.payee).length ? (
+            p.commitments
+              .filter((c) => c.active && c.payee)
+              .map((c) => {
+                const meta = state.commitmentMeta[String(c.id)];
+                return (
+                  <Term
+                    key={c.id}
+                    label={`${meta?.name ?? `#${c.id}`} · ${meta?.payeeName ?? short(c.payee!)}`}
+                    note={t.mandate.payeesNote}
+                    value={money(c.maxAmount, settings.currency)}
+                  />
+                );
+              })
+          ) : (
+            <Term label={fill(t.mandate.payeesNone, { agent: BRAND.agent })} value="0" />
+          )}
+        </Section>
+
+        <Section n={5} title={t.mandate.sNever}>
           <Term label={t.mandate.borrow} note={t.mandate.borrowNote} value={t.mandate.never} tone="leaf" />
           <Term label={t.mandate.sendOut} note={fill(t.mandate.sendOutNote, { address: short(p.keys.withdrawalAddress) })} value={t.mandate.never} tone="leaf" />
           <Term label={t.mandate.ownRules} note={t.mandate.ownRulesNote} value={t.mandate.never} tone="leaf" />

@@ -19,7 +19,8 @@ export async function GET(request: Request) {
     const plan = readPlan();
     const currency = isCurrency(asked) ? asked : plan.currency;
     const portfolio = await getPortfolio();
-    const history = recordValue({ at: portfolio.at, value: Number(portfolio.totalValue) });
+    // the chart follows everything the investor owns here, so setting money aside never looks like a loss
+    const history = recordValue({ at: portfolio.at, value: Number(portfolio.totalValue) + Number(portfolio.setAside) });
     return Response.json({
       portfolio,
       history,

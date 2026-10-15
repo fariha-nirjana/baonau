@@ -1,5 +1,6 @@
 "use client";
 
+import { statusOf } from "@/lib/commitment-status";
 import { Fragment, useEffect, type ReactNode } from "react";
 import type { AssetSymbol } from "@/lib/assets";
 import { BRAND } from "@/lib/brand";
@@ -248,6 +249,10 @@ function ValueCard({
   const p = state.portfolio;
   const start = Number(p.today.startValue);
   const change = start > 0 ? ((Number(p.totalValue) - start) / start) * 100 : 0;
+  // everything the investor owns here, counted once: the portfolio plus what is set aside for commitments
+  const aside = Number(p.setAside);
+  const whole = Number(p.totalValue) + aside;
+  const shareOf = (usd: string | number) => (whole > 0 ? Math.round((Number(usd) / whole) * 1000) / 10 : 0);
   const rows: {
     key: string;
     icon: (typeof ASSET)["USD"];
@@ -260,7 +265,7 @@ function ValueCard({
       icon: ASSET.USD,
       name: t.overview.cash,
       usd: p.cash,
-      share: p.cashSharePct,
+      share: shareOf(p.cash),
     },
     ...p.positions
       .filter((x) => x.rule.allowed || Number(x.amount) > 0)
@@ -269,21 +274,30 @@ function ValueCard({
         icon: ASSET[x.symbol],
         name: ASSET_NAME[settings.language][x.symbol],
         usd: x.value,
-        share: x.sharePct,
+        share: shareOf(x.value),
       })),
+    ...(aside > 0
+      ? [{ key: "SET", icon: { icon: "lock" as const, tone: "bg-cream text-forest", token: t.nav.commitments }, name: t.commitments.sSetAside, usd: p.setAside, share: shareOf(aside) }]
+      : []),
   ];
   return (
     <Card className="flex flex-col overflow-hidden p-0!">
       <div className="px-7 pt-6">
         <div className="flex items-center justify-between gap-3">
-          <p className="eyebrow">{t.overview.value}</p>
+          <p className="eyebrow">{aside > 0 ? t.overview.valueAll : t.overview.value}</p>
           <p className="text-sm text-faint">{t.overview.testAssets}</p>
         </div>
         <div className="mt-4">
-          <BigMoney usd={p.totalValue} currency={settings.currency} />
+          <BigMoney usd={String(whole)} currency={settings.currency} />
         </div>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
           <Change pct={change} suffix={t.overview.today} />
+          {aside > 0 ? (
+            <span className="flex items-center gap-1.5 text-sm text-muted">
+              <Icon name="lock" size={14} />
+              {t.overview.setAsideLine}: <span className="num font-semibold text-ink">{money(p.setAside, settings.currency)}</span>
+            </span>
+          ) : null}
         </div>
         <div className="mt-8 mb-6 h-56">
           <ValueChart
@@ -302,11 +316,11 @@ function ValueCard({
         {rows.map((r, i) => (
           <li
             key={r.key}
-            className={`px-5 py-4 ${i ? "border-l border-line" : ""}`}
+            className={`${rows.length > 4 ? "px-3.5" : "px-5"} py-4 ${i ? "border-l border-line" : ""}`}
           >
             <span className="flex items-center gap-2.5">
               <span
-                className={`flex size-8 shrink-0 items-center justify-center rounded-full ${r.icon.tone}`}
+                className={`${rows.length > 4 ? "hidden 2xl:flex" : "flex"} size-8 shrink-0 items-center justify-center rounded-full ${r.icon.tone}`}
               >
                 <Icon name={r.icon.icon} size={16} />
               </span>
@@ -570,6 +584,53 @@ function BoundariesCard({
 
 // ---------------------------------------------------------------- recent moves
 
+/** The next commitments due, so investing sits next to what the money is already for. */
+function ComingUpCard({ state, settings, go, t }: { state: AppState; settings: Settings; go: (v: View) => void; t: Strings }) {
+  const now = new Date(state.portfolio.at);
+  const next = state.portfolio.commitments
+    .filter((c) => c.active && c.payee && c.nextDue)
+    .sort((a, b) => new Date(a.nextDue!).getTime() - new Date(b.nextDue!).getTime())
+    .slice(0, 3);
+  return (
+    <Card className="p-6!">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-display text-lg font-semibold">{t.overview.comingUp}</h3>
+        <button onClick={() => go("commitments")} className="flex items-center gap-1 text-sm font-semibold text-leaf hover:underline">
+          {t.overview.comingUpAll}
+          <Icon name="arrowUpRight" size={14} />
+        </button>
+      </div>
+      {next.length ? (
+        <ul className="mt-3 divide-y divide-line">
+          {next.map((c) => {
+            const meta = state.commitmentMeta[String(c.id)];
+            const status = statusOf(c, now);
+            const short = status.kind === "needs_funding";
+            return (
+              <li key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                <span className="min-w-0">
+                  <span className="block truncate text-[0.95rem] font-semibold">{meta?.name ?? `#${c.id}`}</span>
+                  <span className="num block text-xs text-muted">
+                    {new Date(c.nextDue!).toLocaleDateString(LOCALE[settings.language], { day: "numeric", month: "short" })}
+                  </span>
+                </span>
+                <span className="text-right">
+                  <span className="num block font-semibold">{money(c.maxAmount, settings.currency)}</span>
+                  <span className={`block text-xs font-semibold ${short ? "text-sun-ink" : "text-leaf"}`}>
+                    {short ? fill(t.commitments.stShort, { amount: money(status.shortBy, settings.currency) }) : t.commitments.stReady}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-muted">{t.overview.comingUpNone}</p>
+      )}
+    </Card>
+  );
+}
+
 function RecentCard({
   state,
   go,
@@ -807,7 +868,10 @@ export function OverviewView({
       </div>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(22rem,1fr)]">
         <BoundariesCard state={state} settings={settings} go={go} t={t} />
-        <RecentCard state={state} go={go} onOpen={onOpen} t={t} />
+        <div className="space-y-5">
+          <ComingUpCard state={state} settings={settings} go={go} t={t} />
+          <RecentCard state={state} go={go} onOpen={onOpen} t={t} />
+        </div>
       </div>
       <div className="border-t border-line pt-4">
         <ProofBar state={state} settings={settings} go={go} t={t} />

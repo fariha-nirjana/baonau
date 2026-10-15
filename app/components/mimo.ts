@@ -163,7 +163,9 @@ export function waitingCount(state: AppState): number {
   const pending = p.pending;
   return (
     [pending.mandate, pending.withdrawalAddress, pending.agentKey, pending.guardian, pending.waitingPeriod, pending.unpause, p.stopLoss.haltRequestAppliesFrom].filter(Boolean).length +
-    p.positions.filter((x) => x.pendingRule).length
+    p.positions.filter((x) => x.pendingRule).length +
+    p.commitments.filter((c) => c.pending).length +
+    p.commitments.filter((c) => c.pendingRelease).length
   );
 }
 
@@ -179,6 +181,7 @@ function waitingKey(state: AppState): string {
     p.pending.unpause?.appliesFrom,
     p.stopLoss.haltRequestAppliesFrom,
     ...p.positions.map((x) => x.pendingRule?.appliesFrom),
+    ...p.commitments.flatMap((c) => [c.pending?.appliesFrom, c.pendingRelease?.appliesFrom]),
   ].join("|");
 }
 

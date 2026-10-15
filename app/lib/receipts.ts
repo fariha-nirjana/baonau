@@ -42,6 +42,8 @@ export type Receipt = {
   declined: boolean;
   /** The commitment it was about, for payments, set-asides and releases. */
   commitment: number | null;
+  /** Set when money went to a commitment's payee: how much, in tUSD. */
+  paid: number | null;
 };
 
 type Result = {
@@ -184,6 +186,10 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
     ref: entry.ref,
     declined: Boolean(result.abstained) && record.args.kind === "declined",
     commitment: typeof record.args.commitment === "number" ? record.args.commitment : null,
+    paid: (() => {
+      const e = (result.events ?? []).find((x) => x.name === "CommitmentPaid");
+      return e ? Number(usd(e.args.amount)) : null;
+    })(),
   };
 }
 
