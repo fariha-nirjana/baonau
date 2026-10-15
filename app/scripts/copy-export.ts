@@ -50,6 +50,7 @@ const SECTIONS: Record<string, [string, string]> = {
   letter: ["Note to your future self", "Written on the mandate page or when signing a first mandate; quoted back on riskier changes."],
   check: ["Understanding check", "The questions before signing a first mandate. Right answers are worked out by fixed rules."],
   plain: ["Plain terms on a draft", "The terms of a mandate draft as plain sentences, on the card you sign."],
+  onboard: ["First-time setup and tour", "Shown when the vault's mandate is unsigned; the tour also opens from the ? button."],
   chat: ["Chat with Mimo", "The floating chat and its full-window mode."],
   launcher: ["Chat button in the corner", "The line under \"Talk to Mimo\", one per mood."],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],

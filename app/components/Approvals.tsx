@@ -7,6 +7,7 @@ import type { Draft } from "@/lib/drafts";
 import { clock, fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
 import { checkTermsOf, UnderstandingCheck } from "./Check";
+import { plainTerms } from "./terms";
 import { LetterField, LetterQuote } from "./Letter";
 import { HappyMascot } from "./Mascot";
 import { ASSET, ASSET_NAME, money } from "./Overview";
@@ -112,34 +113,6 @@ function ChangeList({ changes }: { changes: Change[] }) {
       ))}
     </div>
   );
-}
-
-// ---------------------------------------------------------------- plain terms
-
-/** A mandate draft as plain sentences with the investor's own money. */
-function plainTerms(payload: NonNullable<Draft["payload"]>, state: AppState, settings: Settings, t: Strings): string[] {
-  const m = payload.mandate;
-  const value = Number(state.portfolio.totalValue);
-  const names = ASSET_NAME[settings.language];
-  const out = [
-    fill(t.plain.trade, { pct: m.maxTradePct, amount: money(value * (m.maxTradePct / 100), settings.currency) }),
-    fill(t.plain.day, { pct: m.maxDailyVolumePct, amount: money(value * (m.maxDailyVolumePct / 100), settings.currency) }),
-    fill(t.plain.loss, { pct: m.dailyLossPct }),
-  ];
-  if (m.maxLossStreak) out.push(fill(t.plain.streak, { n: m.maxLossStreak, min: Math.round(m.cooldownSeconds / 60) }));
-  out.push(fill(t.plain.floor, { pct: m.minDefensivePct }), fill(t.plain.slippage, { pct: m.maxSlippagePct }));
-  for (const [symbol, rule] of Object.entries(payload.rules) as [keyof typeof names, NonNullable<(typeof payload.rules)[keyof typeof payload.rules]>][]) {
-    out.push(
-      rule.allowed
-        ? fill(t.plain.asset, { asset: names[symbol], pct: rule.maxExposurePct, stop: rule.stopPrice ? fill(t.plain.stop, { price: Number(rule.stopPrice) }) : "" })
-        : fill(t.plain.notAllowed, { asset: names[symbol] }),
-    );
-  }
-  for (const r of payload.plan.recurring) {
-    out.push(fill(r.everyHours === 24 ? t.plain.recurringDay : t.plain.recurring, { amount: money(r.usd, settings.currency), asset: names[r.symbol], hours: r.everyHours }));
-  }
-  out.push(t.plain.always);
-  return out;
 }
 
 // ---------------------------------------------------------------- needs your signature

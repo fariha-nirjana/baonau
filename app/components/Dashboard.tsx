@@ -11,6 +11,7 @@ import { Icon, type IconName } from "./icons";
 import { Avatar, faceOf, Mascot, MimoTile } from "./Mascot";
 import { mimoOf, waitingCount } from "./mimo";
 import type { Act, AppState, Settings, View } from "./types";
+import { Onboarding } from "./Onboarding";
 import { OverviewHeader, OverviewView, PlanDialog } from "./Overview";
 import { Button, Card, short } from "./ui";
 import { ProofHeader, ProofView } from "./Proof";
@@ -109,6 +110,9 @@ export function Dashboard() {
   const [planOpen, setPlanOpen] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [switchTo, setSwitchTo] = useState<Settings["role"] | null>(null);
+  // the first-time setup opens by itself while the vault's mandate is unsigned; the tour opens from the help button
+  const [onboarding, setOnboarding] = useState<"setup" | "tour" | null>(null);
+  const [setupDismissed, setSetupDismissed] = useState(false);
   const [confirm, setConfirm] = useState<{ role: Settings["role"]; action: "pause" | "unpause" } | null>(null);
   const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
@@ -156,6 +160,7 @@ export function Dashboard() {
       if (query.get("chat") === "open" || query.get("chat") === "full") setChatOpen(true);
       if (query.get("chat") === "full") setChatExpanded(true);
       if (query.get("plan") === "open") setPlanOpen(true);
+      if (query.get("tour") === "open") setOnboarding("tour");
       const sw = query.get("switch");
       if (sw === "guardian" || sw === "owner") setSwitchTo(sw);
       openReceiptAt.current = query.get("receipt") ? Number(query.get("receipt")) : null;
@@ -211,6 +216,25 @@ export function Dashboard() {
   }
 
   const p = state.portfolio;
+  const needsSetup = !p.mandateSigned && settings.role === "owner";
+  const showing = onboarding ?? (needsSetup && !setupDismissed ? "setup" : null);
+  if (showing) {
+    return (
+      <Onboarding
+        state={state}
+        settings={settings}
+        setLanguage={(language) => setSettings((x) => ({ ...x, language }))}
+        act={act}
+        refresh={refresh}
+        skew={skew}
+        mode={showing}
+        onClose={() => {
+          setOnboarding(null);
+          if (showing === "setup") setSetupDismissed(true);
+        }}
+      />
+    );
+  }
   const waiting = waitingCount(state);
   const mimo = mimoOf({ state, role: settings.role, attacking, thinking: chatBusy || inFlight > 0, seen, dismissed, stressedAt, language: settings.language });
   const ack = () => {
@@ -347,6 +371,9 @@ export function Dashboard() {
               </button>
             ) : null}
             <SyncedAgo at={syncedAt} t={t} />
+            <button onClick={() => setOnboarding("tour")} title={t.onboard.tour} aria-label={t.onboard.tour} className="flex size-8 items-center justify-center rounded-full border border-line text-muted hover:bg-cream hover:text-ink">
+              <Icon name="help" size={16} />
+            </button>
             <Segmented<Currency> label="Currency" value={settings.currency} options={[["BDT", "৳"], ["CNY", "¥"], ["USD", "$"]]} onChange={(currency) => setSettings((s) => ({ ...s, currency }))} />
             <Segmented<Language> label="Language" value={settings.language} options={[["en", "EN"], ["bn", "বাংলা"], ["zh", "中文"]]} onChange={(language) => setSettings((s) => ({ ...s, language }))} />
           </div>
@@ -394,7 +421,7 @@ export function Dashboard() {
             {!/^0x0+$/.test(p.agent.address) || !p.mandateSigned ? null : <p className="mt-5 rounded-2xl bg-sun-soft p-4 text-base text-sun-ink">{t.shell.noKey}</p>}
 
             <div className="mt-7">
-              {view === "portfolio" ? <OverviewView state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} openChat={() => setChatOpen(true)} onOpen={setReceipt} /> : null}
+              {view === "portfolio" ? <OverviewView state={state} settings={settings} mimo={mimo} onAck={ack} go={setView} openChat={() => setChatOpen(true)} onOpen={setReceipt} onSetup={() => setOnboarding("setup")} /> : null}
               {view === "holdings" ? <PortfolioView state={state} settings={settings} onAsk={askMimo} /> : null}
               {view === "mandate" ? <MandateView state={state} settings={settings} act={act} skew={skew} go={setView} onAsk={askMimo} /> : null}
               {view === "approvals" ? <ApprovalsView state={state} settings={settings} act={act} skew={skew} /> : null}

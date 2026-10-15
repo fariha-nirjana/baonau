@@ -22,6 +22,8 @@ type Props = {
   go: (v: View) => void;
   openChat: () => void;
   onOpen: (r: Receipt) => void;
+  /** Reopens the first-time setup while the mandate is unsigned. */
+  onSetup?: () => void;
 };
 
 const trim = (n: number, decimals: number) =>
@@ -742,8 +744,7 @@ export function OverviewView({
   onAck,
   go,
   openChat,
-  onOpen,
-}: Props) {
+  onOpen, onSetup }: Props) {
   const t = strings(settings.language, settings.role);
   const p = state.portfolio;
   if (!p.mandateSigned) {
@@ -774,10 +775,10 @@ export function OverviewView({
           ) : null}
           {settings.role === "owner" ? (
             <button
-              onClick={openChat}
+              onClick={onSetup ?? openChat}
               className="mt-5 rounded-xl bg-forest px-5 py-3 font-semibold text-white hover:bg-forest-soft"
             >
-              {fill(t.overview.talk, { agent: BRAND.agent })}
+              {onSetup ? t.onboard.resume : fill(t.overview.talk, { agent: BRAND.agent })}
             </button>
           ) : null}
         </div>
