@@ -18,6 +18,8 @@ export type AppState = {
   explorer: string;
   vault: string;
   mandate: string;
+  /** The owner's note to their future self, if they wrote one. */
+  letter: { text: string; writtenAt: string } | null;
 };
 
 export type Role = "owner" | "guardian";

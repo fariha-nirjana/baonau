@@ -6,6 +6,7 @@ import { BRAND } from "@/lib/brand";
 import type { Draft } from "@/lib/drafts";
 import { clock, fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
+import { LetterField, LetterQuote } from "./Letter";
 import { HappyMascot } from "./Mascot";
 import { ASSET, ASSET_NAME, money } from "./Overview";
 import type { Act, AppState, Settings } from "./types";
@@ -126,6 +127,7 @@ function DraftCard({
   t: Strings;
 }) {
   const { busy, run } = useBusy(act);
+  const [note, setNote] = useState("");
   const title = {
     sign_mandate: t.approvals.draftFirst,
     change_mandate: t.approvals.draftChange,
@@ -210,10 +212,22 @@ function DraftCard({
       ) : (
         terms
       )}
+      {raises && state.letter && settings.role === "owner" ? (
+        <div className="mt-5">
+          <LetterQuote letter={state.letter} settings={settings} moment="beforeSign" />
+        </div>
+      ) : null}
       {raises ? (
         <p className="mt-4 rounded-xl bg-sun-soft/80 px-4 py-3 text-sm text-sun-ink">
           {t.approvals.raisesNote}
         </p>
+      ) : null}
+      {draft.kind === "sign_mandate" && settings.role === "owner" ? (
+        <div className="mt-5">
+          <p className="text-sm font-semibold">{t.letter.firstField}</p>
+          <p className="mb-2 text-xs text-muted">{t.letter.firstHint}</p>
+          <LetterField value={note} onChange={setNote} settings={settings} rows={2} />
+        </div>
       ) : null}
       {settings.role === "owner" ? (
         <div className="mt-5 flex justify-end gap-2.5">
@@ -226,7 +240,11 @@ function DraftCard({
           </Btn>
           <Btn
             busy={busy === "sign"}
-            onClick={() => run("sign", "owner", "sign", draft.id)}
+            onClick={async () => {
+              // the note is saved with the first signature, so it is there from day one
+              if (draft.kind === "sign_mandate" && note.trim()) await act("owner", "letter", note);
+              await run("sign", "owner", "sign", draft.id);
+            }}
           >
             <Icon name="check" size={16} />
             {t.approvals.sign}
@@ -475,6 +493,11 @@ function QueuedCard({
           </div>
         </div>
         <div className="mt-5 text-[0.95rem]">{item.detail}</div>
+        {state.letter && !guardian ? (
+          <div className="mt-5">
+            <LetterQuote letter={state.letter} settings={settings} moment="whileWaiting" />
+          </div>
+        ) : null}
         <p className="mt-5 flex items-center gap-2 text-sm text-muted">
           <Icon name="shieldCheck" size={15} className="text-leaf" />
           {guardian

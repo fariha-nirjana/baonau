@@ -2,6 +2,8 @@ import type { AssetSymbol } from "@/lib/assets";
 import { SYMBOLS } from "@/lib/assets";
 import { runAutopilot } from "@/lib/autopilot";
 import { updateDraft } from "@/lib/drafts";
+import { writeLetter } from "@/lib/letters";
+import { getPortfolio } from "@/lib/vault";
 import { keeperTick, movePrices } from "@/lib/keeper";
 import { applyReady, approveRequest, guardianActions, ownerActions, rejectRequest, signDraft, type Vetoable } from "@/lib/owner-actions";
 
@@ -19,6 +21,11 @@ export async function POST(request: Request) {
     switch (key) {
       case "owner:sign":
         return Response.json(await signDraft(arg));
+      case "owner:letter": {
+        // only the owner writes their own note; the agent has no route here
+        const p = await getPortfolio();
+        return Response.json({ ok: true, letter: writeLetter(p.vaultAddress, arg) });
+      }
       case "owner:dismiss":
         updateDraft(arg, { status: "dismissed" });
         return Response.json({ ok: true });

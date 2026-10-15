@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
 import type { Receipt } from "@/lib/receipts";
 import { Icon } from "./icons";
+import { LetterQuote } from "./Letter";
 import { Avatar, faceOf, Mascot, MimoTile, type Face } from "./Mascot";
 import { soundsStressed, type MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
@@ -267,6 +268,9 @@ export function Chat({
             ) : (
               <div key={i} className="space-y-3">
                 {m.steps?.map((s, j) => <StepCard key={j} step={s} go={go} />)}
+                {state.letter && m.steps?.some((s) => s.tool === "request_stop_loss_halt" || (s.tool === "draft_mandate" && Array.isArray(s.result.raises_risk) && s.result.raises_risk.length > 0)) ? (
+                  <LetterQuote letter={state.letter} settings={settings} moment="beforeSign" />
+                ) : null}
                 <MimoBubble agent={agent} face={m.face ?? "calm"}>
                   {m.content}
                 </MimoBubble>

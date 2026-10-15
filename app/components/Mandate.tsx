@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
 import { fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
+import { LetterCard } from "./Letter";
 import { ASSET, ASSET_NAME, money } from "./Overview";
 import type { Act, AppState, Settings, View } from "./types";
 import { Card, short, useSecondsLeft } from "./ui";
@@ -340,6 +341,7 @@ export function MandateView(props: Props) {
       {signedOpen ? <SignedDialog state={state} settings={settings} onClose={() => setSignedOpen(false)} /> : null}
       <MandateDocument state={state} settings={settings} t={t} onSigned={() => setSignedOpen(true)} />
       <div className="space-y-5">
+        {settings.role === "owner" ? <LetterCard state={state} settings={settings} act={act} /> : null}
         <ChangesCard {...props} t={t} />
         <RolesCard state={state} settings={settings} t={t} />
         <SafetyNetsCard state={state} settings={settings} act={act} skew={skew} t={t} />
