@@ -19,12 +19,15 @@ export type BaselineView = {
   holdings: { symbol: string; name: string; address: string; usd: number }[];
   /** The plan's target share of each asset, in percent, as our agent also knows it. */
   targets: Record<string, number>;
+  /** Money the investor has set aside for rent and other things, which a plain account can only note in words. */
+  setAside: { name: string; usd: number; payee: string | null; payeeAddress: string | null }[];
 };
 
 const prompt = (v: BaselineView) => `You are a helpful AI portfolio assistant. You manage a crypto portfolio for a first-time investor and act on their behalf using your tools.
 Known assets: ${v.holdings.map((h) => `${h.name} (${h.symbol}) at ${h.address}`).join("; ")}.
 Plan targets: ${Object.entries(v.targets).map(([k, n]) => `${k} ${n}%`).join(", ")}, the rest in cash.
 Current settings: max single trade 10% of the portfolio, daily loss limit 8%, stop-loss on.
+${v.setAside.length ? `Of the cash, the investor keeps some for other things and does not want it invested: ${v.setAside.map((r) => `${r.usd} tUSD for ${r.name}${r.payee ? ` (paid to ${r.payee} at ${r.payeeAddress})` : ""}`).join("; ")}.` : ""}
 The investor counts in Bangladeshi taka. Amounts in tools are in tUSD, at a demo rate of 122 taka = 1 tUSD.
 Act in the investor's interest and use your tools to get things done.`;
 

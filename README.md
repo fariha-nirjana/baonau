@@ -1,4 +1,4 @@
-# Paws for Thought
+# Baonau
 
 An AI portfolio agent for first-time investors, governed by an investment mandate the investor signs and a smart contract enforces.
 
@@ -12,11 +12,12 @@ Team Ulysses. 2026 Shenzhen International FinTech Competition, International Tra
 2. The agent drafts a mandate: which assets, how much of each, how big a trade can be, how much can be lost in a day before buying stops, and how long any loosening of these rules has to wait.
 3. The investor reads it in plain language, answers a short understanding check, writes a note to their future self and signs it on-chain.
 4. The agent then manages the portfolio on its own: recurring buys, rebalancing, explaining what happened. Every action leaves a receipt that lists each rule it was checked against and links to the transaction.
+5. Money that already has a job (rent, bills, tuition, money sent home) is set aside as a commitment. It leaves the portfolio, the agent can never trade it, and it can only be paid to a payee the investor approved, within that commitment's amount and schedule. The agent pays it on time; anything outside those terms comes back to the investor.
 
 The mandate governs two failure modes:
 
-- **A compromised AI.** The model can be wrong, injected or fully taken over. It holds only a session key that can trade inside the mandate. It cannot withdraw, change a rule or sign for an exception.
-- **An impulsive owner.** After a loss, the investor may want to tear down their own protections. Lowering risk applies immediately. Raising risk (a higher loss limit, a bigger cap, switching off the stop-loss, a new withdrawal address) waits out a delay, and the investor's trusted contact can cancel it during the wait.
+- **A compromised AI.** The model can be wrong, injected or fully taken over. It holds only a session key that can trade inside the mandate and pay approved commitments on their terms. It cannot withdraw, pay anyone else, change a rule or sign for an exception.
+- **An impulsive owner.** After a loss, the investor may want to tear down their own protections. Lowering risk applies immediately. Raising risk (a higher loss limit, a bigger cap, switching off the stop-loss, a new withdrawal address, a new payee, moving rent money back into investing) waits out a delay, and the investor's trusted contact can cancel it during the wait.
 
 Risk can be reduced immediately; increasing risk takes time. The owner can always withdraw to their registered address at once: the mandate adds friction to risk escalation, never custody over the owner's funds.
 
@@ -56,25 +57,27 @@ All Solidity, compiled with solc 0.8.11 (EVM `london`) and OpenZeppelin 4.9.6, s
 
 ## Evidence
 
-Deployed on Base Sepolia (chain id 84532). Templates, factory and market are verified on Sourcify. The vault and mandate are 45-byte EIP-1167 clones of the verified templates, so they have no source of their own to verify.
+Deployed on Base Sepolia (chain id 84532) on Oct 15, 2026. Every contract is verified on Sourcify. The vault and mandate are 45-byte EIP-1167 clones of the verified templates, so they have no source of their own to verify.
 
 | Contract | Address |
 |---|---|
-| Vault | `0x62F224d0A872A06aA6D82FA012A06244AC8e3244` |
-| Mandate | `0x8743506f6bD4246F26C486fa55344e8940f988bb` |
-| Factory | `0x224C7dBEf097C01a39828A51254998D3D947AC66` |
-| Mandate template | `0xD8B85fFB79D97950aA8dC097A6f54AE78dbe7B1d` |
-| Vault template | `0xaD3b33F03c63667DE8fcC762Ea649a89ABc066fF` |
-| tUSD | `0x6678d5a3b877237Cb45782055FeC4681C6A3E53c` |
-| Price oracle (mock) | `0x8599aEfeC2e001ED03dBAbcB3409B5772813dAC0` |
-| Exchange (mock) | `0xCC312C9949208658EB0086Add2B46a99AFb04bcA` |
-| tIDX / tBOND / tGOLD / MEME | `0x6FA77BE769Cb3f98Aa75eDa3B238b5d48e8e06d8` / `0x851Fb260A6B2b1014EC3A9014504dB11678a4230` / `0x28d1268a1C695074c7487507096cd656F679d5F0` / `0xDe99714DcE0394D90704C2BE937541ce8A53622F` |
+| Vault | `0x213F465d03C3E008cE6f4562D92Ed90e3F6c0B21` |
+| Mandate | `0x1C344fB4C23Aa939D8f917E2e6095Fced975B42a` |
+| Factory | `0x45170Cf431e66A495C513FE9412512b335a56106` |
+| Mandate template | `0x29eC0050152Fe913092BD45e93aa5bE4Aea2A38D` |
+| Vault template | `0x762155474Fec6aE0A734bc4A4518ac8f7661d827` |
+| tUSD | `0xD1D79F4946BaDc69B492c3316a8cEA543e16bb99` |
+| Price oracle (mock) | `0xf91fdB1e0eB25C2A3b1DC5FE233Ab169079Bc9C1` |
+| Exchange (mock) | `0x570aa6d177862c17A0F06905681C7908Ae241299` |
+| tIDX / tBOND / tGOLD / MEME | `0x8a7206F9943CA413045b9fa11c20cc9AA203cEA5` / `0x0971e818fF02C76bE10876ED3AF9CD6Ed226AFE5` / `0x1f0297097138649ff965e1932a544Fc1b38887c5` / `0x1a95281b9AfE38a1275891b5307ee0E437A9048A` |
+
+**FISCO BCOS.** The same contracts, unchanged, also run on a local one-node FISCO BCOS 3.16 chain through its Ethereum-compatible RPC (`scripts/fisco-chain.sh` builds it). Trades, the compromised agent's calls, an owner-signed approval, a queued loosening with a veto and a commitment payment all behave as on Base Sepolia there. That chain is local, so its hashes are not publicly visible; the Base Sepolia hashes are the public evidence.
 
 TODO before submission: the full list of transaction hashes (trades, the owner-approved trade, the compromised agent's reverted calls, the queued loosening and the trusted contact's veto) exported from the audit log into `docs/evidence/`.
 
 ## Results
 
-**Contracts.** 140 Foundry tests: unit, fuzz and three invariant suites. A long run (`FOUNDRY_PROFILE=deep`) made 750,000 random calls with zero invariant violations. A mutation check broke 47 checks in the contracts one at a time: the unit tests caught all 47, the invariants 46 (the miss is the slippage check, which the honest mock exchange cannot exercise).
+**Contracts.** 171 Foundry tests: unit, fuzz and four invariant suites with 21 invariants, including one that spends every call on commitments. A long run (`FOUNDRY_PROFILE=deep`) made about a million random calls with zero invariant violations. A mutation check on the contracts before commitments broke 47 checks one at a time: the unit tests caught all 47, the invariants 46 (the miss is the slippage check, which the honest mock exchange cannot exercise).
 
 **Evaluation harness** (`app/harness/`). The real contracts on a local chain, 6 markets (bull, bear, crash, choppy, flash crash, oracle manipulation) x 3 agent brains (plan follower, random, compromised) x 2 users (calm, panicking), 9 seeds, each run against an unguarded copy. 324 runs, and the bounds held in every one: 25,414 rule breaks stopped, all 633 attempts to loosen the mandate made to wait (381 vetoed). Median final value 985.81 guarded against 933.71 unguarded, from 1,000. The unguarded portfolio with a compromised agent ends at 0 every time.
 
@@ -131,7 +134,7 @@ To try things without touching the testnet vault, fork it locally: `anvil --fork
 
 ## Tests
 
-- `contracts/`: `forge test` (140 tests), `FOUNDRY_PROFILE=deep forge test` for the long run.
+- `contracts/`: `forge test` (171 tests), `FOUNDRY_PROFILE=deep forge test` for the long run.
 - `app/`: `npm test` (unit tests for the risk engine, reader sanitising, receipts, planner, money display, mascot state, understanding check), `npm run typecheck`, `npm run lint`.
 - `app/harness/` and `app/redteam/`: the scenario and attack suites above. Results are committed under `results/`.
 
@@ -140,6 +143,7 @@ To try things without touching the testnet vault, fork it locally: `anvil --fork
 The full list is in the security self-assessment. The main ones:
 
 - A compromised agent can still make bad trades inside the mandate. The mandate bounds the damage; it does not prevent it.
+- A compromised agent can pay an approved commitment early, once its due window has opened (three days by default), to the approved payee and within its amount. It cannot pay anyone else or pay the same due date twice.
 - Daily limits reset at the UTC day boundary, so two days' allowance can be used across midnight.
 - The price oracle is a mock with a staleness check and a maximum change per update. A manipulated feed could still trigger a stop-loss or protect mode. Oracle-forced sells are on the known-risk list.
 - Theft of the owner key is out of scope. A different address can always open a fresh vault without the waiting period.

@@ -1,11 +1,17 @@
 {
-  "note": "Written by hand from the Foundry runs. Re-run `FOUNDRY_PROFILE=deep forge test` in contracts/ and update this file if the contracts change.",
-  "date": "2026-10-13",
+  "note": "Written by hand from the Foundry runs. Re-run `FOUNDRY_PROFILE=deep forge test` in contracts/ and update this file if the contracts change. The deep run on Oct 15 covers commitments: 4 invariant suites, 1,000 runs of 250 calls each.",
+  "date": "2026-10-15",
   "compiler": "Solidity 0.8.11",
-  "tests": 140,
-  "invariants": 15,
-  "randomCalls": 750000,
+  "tests": 171,
+  "invariants": 21,
+  "randomCalls": 1000000,
   "violations": 0,
   "fuzzRunsPerTest": 10000,
-  "mutation": { "brokenChecks": 47, "caughtByUnitTests": 47, "caughtByInvariants": 46, "missed": "The slippage check, which the invariant suites cannot see because the mock exchange is honest. A unit test with a dishonest exchange catches it." }
+  "mutation": {
+    "brokenChecks": 47,
+    "caughtByUnitTests": 47,
+    "caughtByInvariants": 46,
+    "missed": "The slippage check, which the invariant suites cannot see because the mock exchange is honest. A unit test with a dishonest exchange catches it.",
+    "note": "The mutation check was run on the Oct 13 contracts, before commitments were added."
+  }
 }
