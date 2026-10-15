@@ -408,7 +408,11 @@ contract PanickingOwner is Test {
         else if (field == 3) c.period = uint32(bound(r, old.period, 60 days));
         else if (field == 4) c.window = uint32(bound(r, old.window, old.period));
         else if (field == 5) c.window = uint32(bound(r, 1 hours, old.window));
-        else if (field == 6) c.nextDue = uint64(bound(r, block.timestamp, old.nextDue));
+        else if (field == 6) {
+            // an earlier due date, never one in the past
+            if (old.nextDue <= block.timestamp) return;
+            c.nextDue = uint64(bound(r, block.timestamp, old.nextDue));
+        }
         else if (field == 7) c.nextDue = uint64(bound(r, old.nextDue, old.nextDue + 30 days));
         else c.active = !old.active;
         // our own reading of the table, not the contract's
