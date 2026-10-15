@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { BRAND } from "@/lib/brand";
 import { fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
+import { UnderstandingCheck } from "./Check";
 import { LetterCard } from "./Letter";
 import { ASSET, ASSET_NAME, money } from "./Overview";
 import type { Act, AppState, Settings, View } from "./types";
@@ -336,8 +337,24 @@ export function MandateView(props: Props) {
   const t = strings(settings.language, settings.role);
   // ?signed=open opens it straight away, for links and screenshots (this screen only renders in the browser)
   const [signedOpen, setSignedOpen] = useState(() => new URLSearchParams(window.location.search).get("signed") === "open");
+  // ?check=open previews the understanding check with the current mandate's numbers
+  const [checkOpen, setCheckOpen] = useState(() => new URLSearchParams(window.location.search).get("check") === "open");
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+      {checkOpen ? (
+        <UnderstandingCheck
+          terms={{
+            maxTradePct: state.portfolio.mandate.maxTradePct,
+            maxDailyVolumePct: state.portfolio.mandate.maxDailyVolumePct,
+            dailyLossPct: state.portfolio.mandate.dailyLossPct,
+            waitSeconds: state.portfolio.settings.loosenDelaySeconds,
+            valueUsd: Number(state.portfolio.totalValue),
+          }}
+          settings={settings}
+          onPass={() => undefined}
+          onClose={() => setCheckOpen(false)}
+        />
+      ) : null}
       {signedOpen ? <SignedDialog state={state} settings={settings} onClose={() => setSignedOpen(false)} /> : null}
       <MandateDocument state={state} settings={settings} t={t} onSigned={() => setSignedOpen(true)} />
       <div className="space-y-5">

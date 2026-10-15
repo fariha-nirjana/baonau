@@ -6,6 +6,7 @@ import { BRAND } from "@/lib/brand";
 import type { Draft } from "@/lib/drafts";
 import { clock, fill, formatLeft, LOCALE, strings, type Strings } from "./i18n";
 import { Icon } from "./icons";
+import { UnderstandingCheck } from "./Check";
 import { LetterField, LetterQuote } from "./Letter";
 import { HappyMascot } from "./Mascot";
 import { ASSET, ASSET_NAME, money } from "./Overview";
@@ -30,11 +31,13 @@ function useBusy(act: Act) {
 function Btn({
   kind = "primary",
   busy,
+  disabled,
   children,
   onClick,
 }: {
   kind?: "primary" | "ghost";
   busy?: boolean;
+  disabled?: boolean;
   children: ReactNode;
   onClick: () => void;
 }) {
@@ -45,7 +48,7 @@ function Btn({
   return (
     <button
       onClick={onClick}
-      disabled={busy}
+      disabled={busy || disabled}
       className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${style}`}
     >
       {busy ? "…" : children}
@@ -111,6 +114,34 @@ function ChangeList({ changes }: { changes: Change[] }) {
   );
 }
 
+// ---------------------------------------------------------------- plain terms
+
+/** A mandate draft as plain sentences with the investor's own money. */
+function plainTerms(payload: NonNullable<Draft["payload"]>, state: AppState, settings: Settings, t: Strings): string[] {
+  const m = payload.mandate;
+  const value = Number(state.portfolio.totalValue);
+  const names = ASSET_NAME[settings.language];
+  const out = [
+    fill(t.plain.trade, { pct: m.maxTradePct, amount: money(value * (m.maxTradePct / 100), settings.currency) }),
+    fill(t.plain.day, { pct: m.maxDailyVolumePct, amount: money(value * (m.maxDailyVolumePct / 100), settings.currency) }),
+    fill(t.plain.loss, { pct: m.dailyLossPct }),
+  ];
+  if (m.maxLossStreak) out.push(fill(t.plain.streak, { n: m.maxLossStreak, min: Math.round(m.cooldownSeconds / 60) }));
+  out.push(fill(t.plain.floor, { pct: m.minDefensivePct }), fill(t.plain.slippage, { pct: m.maxSlippagePct }));
+  for (const [symbol, rule] of Object.entries(payload.rules) as [keyof typeof names, NonNullable<(typeof payload.rules)[keyof typeof payload.rules]>][]) {
+    out.push(
+      rule.allowed
+        ? fill(t.plain.asset, { asset: names[symbol], pct: rule.maxExposurePct, stop: rule.stopPrice ? fill(t.plain.stop, { price: Number(rule.stopPrice) }) : "" })
+        : fill(t.plain.notAllowed, { asset: names[symbol] }),
+    );
+  }
+  for (const r of payload.plan.recurring) {
+    out.push(fill(r.everyHours === 24 ? t.plain.recurringDay : t.plain.recurring, { amount: money(r.usd, settings.currency), asset: names[r.symbol], hours: r.everyHours }));
+  }
+  out.push(t.plain.always);
+  return out;
+}
+
 // ---------------------------------------------------------------- needs your signature
 
 function DraftCard({
@@ -128,6 +159,11 @@ function DraftCard({
 }) {
   const { busy, run } = useBusy(act);
   const [note, setNote] = useState("");
+  // a first mandate is signed only after the understanding check, which runs here in the app
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [understood, setUnderstood] = useState(false);
+  const first = draft.kind === "sign_mandate" && draft.payload;
+  const blocked = Boolean(first) && !understood;
   const title = {
     sign_mandate: t.approvals.draftFirst,
     change_mandate: t.approvals.draftChange,
@@ -143,9 +179,11 @@ function DraftCard({
     draft.kind === "change_mandate" && draft.payload
       ? policyChanges(state.portfolio.mandate, draft.payload.mandate, t)
       : [];
+  // the terms are written here from the draft's own numbers, so they read plainly in every language
+  const lines = draft.payload ? plainTerms(draft.payload, state, settings, t) : draft.kind === "halt_stop_loss" ? [t.approvals.draftHalt] : draft.summary;
   const terms = (
     <ul className="mt-4 divide-y divide-line border-y border-line">
-      {draft.summary.map((line) => (
+      {lines.map((line) => (
         <li
           key={line}
           className="flex items-start gap-2.5 py-2.5 text-[0.95rem]"
@@ -205,7 +243,7 @@ function DraftCard({
               size={15}
               className="transition-transform group-open:rotate-180"
             />
-            {fill(t.approvals.restSame, { n: draft.summary.length })}
+            {fill(t.approvals.restSame, { n: lines.length })}
           </summary>
           {terms}
         </details>
@@ -221,6 +259,37 @@ function DraftCard({
         <p className="mt-4 rounded-xl bg-sun-soft/80 px-4 py-3 text-sm text-sun-ink">
           {t.approvals.raisesNote}
         </p>
+      ) : null}
+      {first && settings.role === "owner" ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-paper px-4 py-3">
+          {understood ? (
+            <span className="flex items-center gap-2 text-sm font-semibold text-leaf">
+              <Icon name="check" size={16} strokeWidth={2.4} />
+              {t.check.passed}
+            </span>
+          ) : (
+            <span className="text-sm text-muted">{t.check.needed}</span>
+          )}
+          {!understood ? (
+            <button onClick={() => setCheckOpen(true)} className="rounded-lg bg-forest px-3.5 py-2 text-sm font-semibold text-white hover:bg-forest-soft">
+              {t.check.open}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {checkOpen && draft.payload ? (
+        <UnderstandingCheck
+          terms={{
+            maxTradePct: draft.payload.mandate.maxTradePct,
+            maxDailyVolumePct: draft.payload.mandate.maxDailyVolumePct,
+            dailyLossPct: draft.payload.mandate.dailyLossPct,
+            waitSeconds: state.portfolio.settings.loosenDelaySeconds,
+            valueUsd: Number(state.portfolio.totalValue),
+          }}
+          settings={settings}
+          onPass={() => setUnderstood(true)}
+          onClose={() => setCheckOpen(false)}
+        />
       ) : null}
       {draft.kind === "sign_mandate" && settings.role === "owner" ? (
         <div className="mt-5">
@@ -240,6 +309,7 @@ function DraftCard({
           </Btn>
           <Btn
             busy={busy === "sign"}
+            disabled={blocked}
             onClick={async () => {
               // the note is saved with the first signature, so it is there from day one
               if (draft.kind === "sign_mandate" && note.trim()) await act("owner", "letter", note);
