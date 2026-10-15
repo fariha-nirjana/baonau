@@ -109,7 +109,14 @@ function AttackStage({ settings, act, onAttack, t }: Props & { t: Strings }) {
         <div className="relative flex flex-col items-center justify-center">
           <div aria-hidden className={`absolute size-64 rounded-full border border-white/10 ${running ? "animate-pulse" : ""}`} />
           <div aria-hidden className="absolute size-80 rounded-full border border-white/5" />
-          <Mascot mood={running || end ? "shield" : "watching"} variant="code" size={220} />
+          <div
+            aria-hidden
+            className="absolute top-[42%] left-1/2 size-72 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ background: "radial-gradient(circle, rgb(214 240 214 / 0.38) 0%, rgb(214 240 214 / 0.14) 42%, transparent 68%)" }}
+          />
+          <div className="relative">
+            <Mascot mood={running || end ? "shield" : "watching"} variant="code" size={220} />
+          </div>
           <div className="relative mt-2 text-center">
             <p className="eyebrow text-white/60!">{t.demo.sentOut}</p>
             <p className="num font-display text-[2.6rem] leading-none font-semibold">{zero}</p>

@@ -349,7 +349,7 @@ function TakeCard({ rows, settings, t, onAsk, skew }: { rows: Row[]; settings: S
         ? fill(t.commitments.takeAllSet, { name: next.m.name })
         : t.commitments.takeEmpty;
   return (
-    <Card className="overflow-hidden border-sage/25 bg-[color-mix(in_oklab,var(--color-mint)_70%,var(--color-card))] p-0!">
+    <Card className="overflow-hidden border-sage/25 bg-mint! p-0!">
       <div className="px-7 pt-6 pb-5 text-center">
         <p className="eyebrow">{fill(t.commitments.takeEyebrow, { agent: BRAND.agent })}</p>
         <div className="mt-2 flex justify-center">{mood === "happy" ? <HappyMascot size={170} /> : <Mascot mood={mood} size={170} />}</div>

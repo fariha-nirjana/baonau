@@ -412,6 +412,12 @@ function MimoCard({
           className="absolute top-1/2 left-1/2 size-56 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-25 blur-2xl transition-colors duration-500"
           style={{ background: "var(--mood-line)" }}
         />
+        {/* a soft mint spotlight, so the green mascot stands off the forest-green card */}
+        <div
+          aria-hidden
+          className="absolute top-1/2 left-1/2 size-72 -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ background: "radial-gradient(circle, rgb(214 240 214 / 0.42) 0%, rgb(214 240 214 / 0.16) 42%, transparent 68%)" }}
+        />
         <div className="relative">
           <Mascot mood={mimo.mood} variant={mimo.variant} size={230} />
         </div>
