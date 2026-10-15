@@ -17,7 +17,8 @@
     "owner": "tsx --env-file=../.env scripts/owner.ts",
     "autopilot": "tsx --env-file=../.env scripts/autopilot.ts",
     "harness": "tsx harness/run.ts",
-    "copy": "tsx scripts/copy-export.ts"
+    "copy": "tsx scripts/copy-export.ts",
+    "redteam": "tsx --env-file=../.env redteam/run.ts"
   },
   "dependencies": {
     "lottie-web": "5.13.0",

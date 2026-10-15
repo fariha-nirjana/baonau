@@ -72,7 +72,7 @@ const knownErrors = [...policyVaultAbi, ...mandateAbi, ...priceOracleAbi, ...moc
 export function decodePolicyError(err: unknown): PolicyError | null {
   if (!(err instanceof BaseError)) return null;
   const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
-  if (!(revert instanceof ContractFunctionRevertedError)) return null;
+  if (!(revert instanceof ContractFunctionRevertedError)) return fromRawData(err);
 
   let name = revert.data?.errorName;
   let args: readonly unknown[] = revert.data?.args ?? [];
@@ -92,6 +92,23 @@ export function decodePolicyError(err: unknown): PolicyError | null {
     args: args.map(String),
     explanation: explain[name]?.(args) ?? `The contract refused this call (${name}).`,
   };
+}
+
+/**
+ * FISCO BCOS returns the revert data with its own error code and an empty
+ * message, so viem does not recognise it as a revert. Decode the data directly.
+ */
+function fromRawData(err: BaseError): PolicyError | null {
+  const withData = err.walk((e) => typeof (e as { data?: unknown }).data === "string" && /^0x[0-9a-f]{8}/i.test((e as { data: string }).data));
+  const data = (withData as { data?: string } | null)?.data;
+  if (!data) return null;
+  try {
+    const decoded = decodeErrorResult({ abi: knownErrors, data: data as `0x${string}` });
+    const args = decoded.args ?? [];
+    return { name: decoded.errorName, args: args.map(String), explanation: explain[decoded.errorName]?.(args) ?? `The contract refused this call (${decoded.errorName}).` };
+  } catch {
+    return null;
+  }
 }
 
 export function errorMessage(err: unknown) {
