@@ -194,6 +194,19 @@ contract CommitmentsTest is VaultFixture {
         vault.tradeWithApproval(a, sig, REF);
     }
 
+    function test_CanSetMoneyAsideForANewPayeeStillWaiting() public {
+        vm.startPrank(owner);
+        mandate.proposeCommitment(1, _rent(uint64(START + 10 days)));
+        vault.reserve(1, RENT);
+        vm.stopPrank();
+        assertFalse(mandate.getCommitment(1).active);
+        assertEq(vault.reserved(1), RENT);
+        // and nothing can be paid from it until the payee is approved
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(PolicyVault.CommitmentNotPayable.selector, 1));
+        vault.payCommitment(1, RENT, REF);
+    }
+
     function test_CannotReserveMoreThanFreeCash() public {
         vm.startPrank(owner);
         mandate.proposeCommitment(1, _reserveOnly());

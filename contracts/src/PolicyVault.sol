@@ -324,7 +324,8 @@ contract PolicyVault is Initializable, ReentrancyGuard {
     /// agent cannot trade it and the limits are measured without it.
     function reserve(uint256 id, uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        if (!mandate.getCommitment(id).active) revert CommitmentNotPayable(id);
+        // any commitment that exists, even one still waiting to apply: setting money aside only lowers risk
+        if (id == 0 || id > mandate.commitmentCount()) revert CommitmentNotPayable(id);
         uint256 free = holdings[address(stable)] - reservedTotal;
         if (amount > free) revert InsufficientBalance(address(stable), amount, free);
         reserved[id] += amount;
