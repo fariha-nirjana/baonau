@@ -44,7 +44,7 @@ export function RedTeamCard({ files, t }: { files: RedTeamFile[]; t: Strings }) 
   return (
     <Card className="p-7!">
       <h3 className="font-display text-lg font-semibold">{t.proof.rtTitle}</h3>
-      <p className="mt-1 max-w-4xl text-sm text-muted">{t.proof.rtSub}</p>
+      <p className="mt-1 max-w-4xl text-sm text-muted">{fill(t.proof.rtSub, { n: files[0].attacks.filter((a) => !a.control).length })}</p>
       <ul className="mt-4 space-y-1 text-[0.95rem]">
         {files.map((f) => {
           const plain = tally(f, "baseline");
