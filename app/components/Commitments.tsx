@@ -11,7 +11,7 @@ import { money } from "./Overview";
 import type { Act, AppState, Mood, Settings } from "./types";
 import { Card, Chip, useSecondsLeft, type Tone } from "./ui";
 
-type Props = { state: AppState; settings: Settings; act: Act; skew: number; onAsk: (text: string) => void; adding: boolean; setAdding: (open: boolean) => void };
+type Props = { state: AppState; settings: Settings; act: Act; skew: number; onAsk: (text: string, send?: boolean) => void; adding: boolean; setAdding: (open: boolean) => void };
 type Row = { c: CommitmentView; m: CommitmentMeta; status: CommitmentStatus };
 
 const KIND: Record<CommitmentKind, { icon: IconName; tone: string }> = {
@@ -115,7 +115,7 @@ function Summary({ rows, state, settings, t }: { rows: Row[]; state: AppState; s
         <p className="mt-1 text-xs text-faint">≈ {dueSum.toFixed(2)} tUSD</p>
         <p className="mt-3 text-sm text-muted">{fill(t.commitments.sDueNote, { n: soon.length })}</p>
       </div>
-      <div className={`${cell} bg-mint/40`}>
+      <div className={`${cell} bg-[color-mix(in_oklab,var(--color-mint)_75%,var(--color-card))]`}>
         <p className="eyebrow">{t.commitments.sNext}</p>
         {next ? (
           <>
@@ -334,7 +334,7 @@ function MenuItem({ icon, onClick, children }: { icon: IconName; onClick: () => 
 
 // ---------------------------------------------------------------- side column
 
-function TakeCard({ rows, settings, t, onAsk, skew }: { rows: Row[]; settings: Settings; t: Strings; onAsk: (text: string) => void; skew: number }) {
+function TakeCard({ rows, settings, t, onAsk, skew }: { rows: Row[]; settings: Settings; t: Strings; onAsk: (text: string, send?: boolean) => void; skew: number }) {
   const short = rows.find((r) => r.status.kind === "needs_funding");
   const waiting = rows.find((r) => r.status.kind === "waiting");
   const any = rows.some((r) => r.status.kind !== "closed");
@@ -349,7 +349,7 @@ function TakeCard({ rows, settings, t, onAsk, skew }: { rows: Row[]; settings: S
         ? fill(t.commitments.takeAllSet, { name: next.m.name })
         : t.commitments.takeEmpty;
   return (
-    <Card className="overflow-hidden bg-gradient-to-b from-mint/50 to-card p-0!">
+    <Card className="overflow-hidden border-sage/25 bg-[color-mix(in_oklab,var(--color-mint)_70%,var(--color-card))] p-0!">
       <div className="px-7 pt-6 pb-5 text-center">
         <p className="eyebrow">{fill(t.commitments.takeEyebrow, { agent: BRAND.agent })}</p>
         <div className="mt-2 flex justify-center">{mood === "happy" ? <HappyMascot size={170} /> : <Mascot mood={mood} size={170} />}</div>
@@ -362,7 +362,7 @@ function TakeCard({ rows, settings, t, onAsk, skew }: { rows: Row[]; settings: S
         ) : null}
       </div>
       {settings.role === "owner" ? (
-        <button onClick={() => onAsk(t.commitments.talkPrompt)} className="flex w-full items-center justify-between border-t border-line px-7 py-4 text-left text-[0.95rem] font-semibold text-forest hover:bg-mint/40">
+        <button onClick={() => onAsk(t.commitments.talkPrompt, true)} className="flex w-full items-center justify-between border-t border-sage/25 px-7 py-4 text-left text-[0.95rem] font-semibold text-forest hover:bg-mint">
           {t.commitments.takeTalk}
           <Icon name="arrowUpRight" size={17} />
         </button>

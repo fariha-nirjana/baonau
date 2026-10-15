@@ -7,12 +7,38 @@ import { LetterQuote } from "./Letter";
 import { Avatar, faceOf, Mascot, MimoTile, type Face } from "./Mascot";
 import { soundsStressed, type MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
-import { fill, strings, ownerName } from "./i18n";
+import { fill, LOCALE, strings, ownerName } from "./i18n";
 import { Chip, moneyText, type Tone } from "./ui";
 
 type Step = { tool: string; result: Record<string, unknown>; receipt?: Receipt | null };
 /** An assistant message keeps the face Mimo had when it was sent; old messages never change. */
 type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; face?: Face };
+/** A finished conversation, kept in this browser only, as a convenience for the person using it. */
+type Saved = { id: string; at: string; messages: Message[] };
+
+const HISTORY = "baonau:chat-history";
+const CURRENT = "baonau:chat-current";
+// storage can be missing or blocked (private windows, previews); the chat works without it
+function load<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+/** Keeps a finished conversation in the history, newest first, at most 20. Called from button handlers only. */
+function archived(msgs: Message[], rest: Saved[]): Saved[] {
+  if (!msgs.length) return rest;
+  const at = new Date();
+  return [{ id: String(at.getTime()), at: at.toISOString(), messages: msgs }, ...rest].slice(0, 20);
+}
+
+function store(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
 
 /** The face for a reply: happy when something was done, determined when something was refused or declined, worried after a stressed message. */
 function replyFace(steps: Step[] | undefined, stressed: boolean): Face {
@@ -149,20 +175,58 @@ export function Chat({
   /** Full window, with the plan beside the conversation. */
   expanded: boolean;
   onExpand: (expanded: boolean) => void;
-  /** Text to put in the box, for example from "Change it with Mimo". A new id puts it in again. */
-  prefill?: { id: number; text: string } | null;
+  /** Text to put in the box, for example from "Change it with Mimo". A new id puts it in again. With `send`, it is asked at once. */
+  prefill?: { id: number; text: string; send?: boolean } | null;
 }) {
   const t = strings(settings.language, settings.role);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastPrefill, setLastPrefill] = useState<number | null>(null);
+  const [history, setHistory] = useState<Saved[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [confirmFresh, setConfirmFresh] = useState(false);
+  const loaded = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   if (prefill && prefill.id !== lastPrefill) {
     // adjusting state from a prop while rendering, as React recommends instead of an effect
     setLastPrefill(prefill.id);
-    setInput(prefill.text);
+    if (!prefill.send) setInput(prefill.text);
+  }
+  const asked = useRef<number | null>(null);
+  // the conversation and the history are read after mounting, so the server render and the first client render agree
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMessages((now) => (now.length ? now : load<Message[]>(CURRENT, [])));
+      setHistory(load<Saved[]>(HISTORY, []));
+      loaded.current = true;
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (loaded.current) store(CURRENT, messages);
+  }, [messages]);
+
+  /** Keeps the current conversation in the history, newest first, at most 20. */
+  const archive = (msgs: Message[], rest: Saved[]) => archived(msgs, rest);
+  function startFresh() {
+    const next = archive(messages, history);
+    setHistory(next);
+    store(HISTORY, next);
+    setMessages([]);
+    setConfirmFresh(false);
+    setShowHistory(false);
+  }
+  function reopen(saved: Saved) {
+    const next = archive(
+      messages,
+      history.filter((h) => h.id !== saved.id),
+    );
+    setHistory(next);
+    store(HISTORY, next);
+    setMessages(saved.messages);
+    setShowHistory(false);
   }
   useEffect(() => {
     // braces on purpose: newer browsers return a promise from scrollIntoView, and an effect must not return one
@@ -197,6 +261,15 @@ export function Chat({
     refresh();
   }
 
+  // a question asked from elsewhere on the page ("Talk through my commitments") goes straight in
+  useEffect(() => {
+    if (!prefill?.send || asked.current === prefill.id) return;
+    asked.current = prefill.id;
+    const timer = setTimeout(() => send(prefill.text), 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per new prefill
+  }, [prefill]);
+
   const agent = state.brand.agent;
   const name = ownerName(settings.language);
   const p = state.portfolio;
@@ -217,7 +290,10 @@ export function Chat({
           {p.agent.paused ? t.chat.paused : mimo.mood === "calm" ? t.chat.role : mimo.status}
         </p>
       </div>
-      <button onClick={() => setMessages([])} title={t.chat.newChat} aria-label={t.chat.newChat} className="rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
+      <button onClick={() => setShowHistory((v) => !v)} title={t.chat.history} aria-label={t.chat.history} aria-pressed={showHistory} className={`rounded-lg p-2 hover:bg-mint hover:text-ink ${showHistory ? "bg-mint text-forest" : "text-muted"}`}>
+        <Icon name="clock" size={17} />
+      </button>
+      <button onClick={() => (messages.length ? setConfirmFresh(true) : undefined)} title={t.chat.newChat} aria-label={t.chat.newChat} className="rounded-lg p-2 text-muted hover:bg-mint hover:text-ink">
         <Icon name="plus" size={18} />
       </button>
       <button onClick={() => onExpand(!expanded)} title={expanded ? t.chat.shrink : t.chat.expand} aria-label={expanded ? t.chat.shrink : t.chat.expand} className="rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
@@ -229,9 +305,61 @@ export function Chat({
     </header>
   );
 
-  const conversation = (
+  const historyPanel = (
+    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <div className={`mx-auto ${expanded ? "max-w-3xl" : ""}`}>
+        <div className="flex items-center justify-between">
+          <p className="eyebrow">{t.chat.history}</p>
+          <button onClick={() => setShowHistory(false)} className="flex items-center gap-1 text-sm font-semibold text-leaf hover:underline">
+            {t.chat.historyBack}
+          </button>
+        </div>
+        {history.length ? (
+          <ul className="mt-4 space-y-2.5">
+            {history.map((h) => {
+              const first = h.messages.find((m) => m.role === "user")?.content ?? "";
+              return (
+                <li key={h.id}>
+                  <button onClick={() => reopen(h)} className="w-full rounded-2xl border border-line bg-card px-4 py-3 text-left hover:border-sage">
+                    <span className="block truncate text-[0.95rem] font-semibold">{first}</span>
+                    <span className="mt-0.5 flex justify-between text-xs text-muted">
+                      <span>{new Date(h.at).toLocaleString(LOCALE[settings.language], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                      <span>{fill(t.chat.messages, { n: h.messages.length })}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-muted">{t.chat.historyEmpty}</p>
+        )}
+      </div>
+    </div>
+  );
+
+  const freshDialog = confirmFresh ? (
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-ink/20 p-5 backdrop-blur-sm" onClick={() => setConfirmFresh(false)}>
+      <div role="dialog" aria-modal="true" aria-label={t.chat.freshTitle} className="slide-in relative w-full max-w-md rounded-(--radius-card) bg-card p-7 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => setConfirmFresh(false)} aria-label={t.chat.close} className="absolute top-4 right-4 rounded-lg p-2 text-muted hover:bg-cream hover:text-ink">
+          <Icon name="close" size={18} />
+        </button>
+        <p className="eyebrow">{t.chat.freshEyebrow}</p>
+        <h2 className="mt-2 font-serif text-[2rem] leading-tight">{t.chat.freshTitle}</h2>
+        <p className="mt-2 text-[0.95rem] text-muted">{t.chat.freshBody}</p>
+        <button onClick={startFresh} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-forest px-4 py-3 font-semibold text-white hover:bg-forest-soft">
+          {t.chat.freshGo}
+          <Icon name="arrowUpRight" size={16} />
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  const conversation = showHistory ? (
+    historyPanel
+  ) : (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-line bg-paper/70 px-5 py-2 text-xs text-muted">
+      <div className="flex items-center justify-between gap-3 border-b border-sage/20 bg-mint/50 px-5 py-2 text-xs text-muted">
         <span className="flex items-center gap-1.5">
           <Icon name="shieldCheck" size={14} className="text-leaf" />
           {t.chat.context}
@@ -338,15 +466,16 @@ export function Chat({
 
   if (!expanded) {
     return (
-      <aside className={`mood-${mimo.mood} flex h-full w-full flex-col overflow-hidden rounded-(--radius-card) border border-line bg-paper shadow-[0_30px_60px_-30px_rgb(25_60_50/0.45)]`}>
-        <div className="bg-card">{header}</div>
+      <aside className={`mood-${mimo.mood} relative flex h-full w-full flex-col overflow-hidden rounded-(--radius-card) border border-sage/30 bg-[color-mix(in_oklab,var(--color-mint)_45%,var(--color-paper))] shadow-[0_30px_60px_-30px_rgb(25_60_50/0.45)]`}>
+        <div className="bg-card/70">{header}</div>
         {conversation}
+        {freshDialog}
       </aside>
     );
   }
 
   return (
-    <aside className={`mood-${mimo.mood} flex h-full w-full overflow-hidden rounded-(--radius-card) border border-line bg-paper shadow-[0_30px_80px_-30px_rgb(25_60_50/0.5)]`}>
+    <aside className={`mood-${mimo.mood} relative flex h-full w-full overflow-hidden rounded-(--radius-card) border border-sage/30 bg-[color-mix(in_oklab,var(--color-mint)_45%,var(--color-paper))] shadow-[0_30px_80px_-30px_rgb(25_60_50/0.5)]`}>
       {/* the plan stays in view beside the conversation */}
       <div className="hidden w-80 shrink-0 flex-col border-r border-line bg-card px-7 py-7 lg:flex">
         <p className="eyebrow">{t.chat.sideEyebrow}</p>
@@ -384,9 +513,10 @@ export function Chat({
         </p>
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="bg-card">{header}</div>
+        <div className="bg-card/70">{header}</div>
         {conversation}
       </div>
+      {freshDialog}
     </aside>
   );
 }

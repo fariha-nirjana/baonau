@@ -9,7 +9,7 @@ export const BRAND = {
   tagline: "Money, safely minded",
   /** The agent's persona and mascot. */
   agent: "Bunbun",
-  agentRole: "Your money guardian",
+  agentRole: "Your money buddy",
   /** The demo investor's first name, in Latin and Bangla script. */
   owner: "Nirjana",
   ownerBn: "নির্জনা",

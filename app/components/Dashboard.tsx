@@ -109,7 +109,7 @@ export function Dashboard() {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(false);
-  const [prefill, setPrefill] = useState<{ id: number; text: string } | null>(null);
+  const [prefill, setPrefill] = useState<{ id: number; text: string; send?: boolean } | null>(null);
   const [addingCommitment, setAddingCommitment] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -254,8 +254,9 @@ export function Dashboard() {
   const name = ownerName(settings.language);
   const crumb = [...NAV, ...NAV_TEST].find((n) => n.view === view);
 
-  const askMimo = (text: string) => {
-    setPrefill({ id: Date.now(), text });
+  /** Opens the chat with `text` in the box; with `send`, asks it straight away. */
+  const askMimo = (text: string, send = false) => {
+    setPrefill({ id: Date.now(), text, send });
     setChatOpen(true);
   };
 
@@ -287,11 +288,8 @@ export function Dashboard() {
       <nav className="flex w-64 shrink-0 flex-col border-r border-line bg-card px-4 pt-6 pb-4">
         <div className="flex items-center gap-2.5 px-2">
           {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG, no optimisation needed */}
-          <img src="/brand/baonau-icon.svg" alt="" className="size-10 rounded-xl shadow-[0_4px_10px_rgb(24_60_48/0.18)]" />
-          <p className="font-display text-lg leading-tight font-bold tracking-[-0.03em] whitespace-nowrap">
-            {state.brand.product}
-            <span className="text-sage">.</span>
-          </p>
+          <img src="/brand/baonau-icon.svg" alt="" className="size-12 rounded-2xl shadow-[0_4px_12px_rgb(24_60_48/0.2)]" />
+          <p className="font-display text-[1.4rem] leading-tight font-bold tracking-[-0.03em] whitespace-nowrap">{state.brand.product}</p>
         </div>
         <div className="mt-9 space-y-1">
           {NAV.map((item) => (
@@ -470,7 +468,7 @@ export function Dashboard() {
           </div>
           {!chatOpen ? (
             <button onClick={() => setChatOpen(true)} className={`mood-${mimo.mood} group fixed right-6 bottom-6 z-40 flex items-center gap-3`}>
-              <span className="card-shadow rounded-xl border border-line bg-card px-4 py-2.5 text-left">
+              <span className="card-shadow rounded-xl border border-sage/35 bg-mint px-4 py-2.5 text-left">
                 <span className="block text-sm font-semibold">{fill(t.shell.talk, { agent: BRAND.agent })}</span>
                 <span className="block text-xs text-muted">{p.agent.paused ? t.chat.paused : t.launcher[mimo.mood]}</span>
               </span>
