@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { fill, LOCALE, strings, type Strings } from "./i18n";
 import type { Settings } from "./types";
 import { Icon } from "./icons";
+import { RedTeamCard, type RedTeamFile } from "./RedTeam";
 import { Card } from "./ui";
 
 type Side = { medianFinalValue: number; worstFinalValue: number; medianMaxDrawdownPct: number; worstMaxDrawdownPct: number };
@@ -129,7 +130,7 @@ export function ProofHeader({ settings }: { settings: Settings }) {
 
 export function ProofView({ settings }: { settings: Settings }) {
   const tr = strings(settings.language, settings.role);
-  const [data, setData] = useState<{ harness: Harness | null; outdated?: boolean; invariants: Invariants | null } | null>(null);
+  const [data, setData] = useState<{ harness: Harness | null; outdated?: boolean; invariants: Invariants | null; redteam?: RedTeamFile[] } | null>(null);
   useEffect(() => {
     fetch("/api/results", { cache: "no-store" })
       .then((r) => r.json())
@@ -284,6 +285,8 @@ export function ProofView({ settings }: { settings: Settings }) {
           </p>
         </Card>
       ) : null}
+
+      <RedTeamCard files={data.redteam ?? []} t={tr} />
 
       <Card className="p-7!">
         <details className="group">
