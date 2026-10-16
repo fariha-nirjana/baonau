@@ -42,8 +42,24 @@ echo "Starting the app on port $APP_PORT..."
 pids+=($!)
 until curl -s -o /dev/null "http://127.0.0.1:$APP_PORT"; do sleep 0.5; done
 
-echo "Opening the tunnel. Send teammates the https://...trycloudflare.com link below and the password."
-echo "Any username works in the browser prompt."
-cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:$APP_PORT" &
+echo "Opening the tunnel (takes up to 30 seconds)..."
+TUNNEL_LOG="$DATA/tunnel.log"
+: > "$TUNNEL_LOG"
+cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:$APP_PORT" >"$TUNNEL_LOG" 2>&1 &
 pids+=($!)
+URL=""
+for _ in $(seq 1 120); do
+  URL=$(grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" "$TUNNEL_LOG" | head -1 || true)
+  [ -n "$URL" ] && break
+  sleep 0.5
+done
+if [ -z "$URL" ]; then
+  echo "No link after 60 seconds. cloudflared said:"; tail -15 "$TUNNEL_LOG"; exit 1
+fi
+echo
+echo "=============================================================="
+echo "  Link:      $URL"
+echo "  Password:  $SITE_PASSWORD   (any username)"
+echo "=============================================================="
+echo "Leave this window open. Ctrl+C stops everything."
 wait
