@@ -1,8 +1,10 @@
 import { formatUnits } from "viem";
 import { assetByAddress } from "./assets";
 import type { AuditEntry } from "./audit";
+import { commitmentKey, releaseKey } from "./commitments";
 import { display, type Currency } from "./money";
 import { GATE_LABELS, type Outcome } from "./risk";
+import { CHANGE_KEYS } from "./vault";
 
 /**
  * A receipt: one audit entry in words a person can read. Every attempt gets
@@ -20,6 +22,10 @@ export type Receipt = {
     | "reverted by the contract"
     | "sent to the owner"
     | "waiting out the delay"
+    /** a change that waited and was later cancelled by the owner or the trusted contact */
+    | "cancelled"
+    /** a change that waited out its delay and was then applied */
+    | "applied after the wait"
     | "decided not to act"
     | "failed";
   /** The agent's stated reason, or the keeper's trigger. */
@@ -169,7 +175,9 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
         ? "Recorded today's starting value"
         : "Could not record today's starting value"
       : result.abstained
-      ? `Did not ${lowerFirst(String(record.args.what ?? "act"))}`
+      ? record.args.what
+        ? `Decided not to: ${lowerFirst(String(record.args.what))}`
+        : "Decided not to act"
       : result.signed
         ? "Signed an approval for one trade"
         : result.ok && done.length
@@ -193,10 +201,68 @@ export function receiptOf(entry: AuditEntry, currency: Currency = "BDT"): Receip
   };
 }
 
+/** The key a queued change is filed under, from the event that queued it. */
+function queuedKey(e: { name: string; args: Record<string, unknown> }): string | null {
+  switch (e.name) {
+    case "PolicyProposed": return CHANGE_KEYS.mandate;
+    case "StopLossHaltProposed": return CHANGE_KEYS.stopLossHalt;
+    case "WithdrawalAddressProposed": return CHANGE_KEYS.withdrawalAddress;
+    case "AgentProposed": return CHANGE_KEYS.agentKey;
+    case "GuardianProposed": return CHANGE_KEYS.guardian;
+    case "LoosenDelayProposed": return CHANGE_KEYS.waitingPeriod;
+    case "UnpauseProposed": return CHANGE_KEYS.unpause;
+    case "AssetRuleProposed": return CHANGE_KEYS.rule(String(e.args.asset) as `0x${string}`);
+    case "CommitmentProposed": return commitmentKey(Number(e.args.id));
+    case "ReleaseProposed": return releaseKey(Number(e.args.id));
+    default: return null;
+  }
+}
+
+/** The key a later entry settled: cancelled through cancelChange, or applied through an apply call. */
+function settledKey(entry: AuditEntry): { key: string; how: "cancelled" | "applied after the wait" } | null {
+  const result = (entry.result ?? {}) as Result;
+  if (!result.ok) return null;
+  const args = entry.record.args as { call?: string; args?: unknown[] };
+  const first = args.args?.[0];
+  switch (args.call) {
+    case "cancelChange": return { key: String(first).toLowerCase(), how: "cancelled" };
+    case "applyPolicy": return { key: CHANGE_KEYS.mandate, how: "applied after the wait" };
+    case "applyStopLossHalt": return { key: CHANGE_KEYS.stopLossHalt, how: "applied after the wait" };
+    case "applyWithdrawalAddress": return { key: CHANGE_KEYS.withdrawalAddress, how: "applied after the wait" };
+    case "applyAgent": return { key: CHANGE_KEYS.agentKey, how: "applied after the wait" };
+    case "applyGuardian": return { key: CHANGE_KEYS.guardian, how: "applied after the wait" };
+    case "applyLoosenDelay": return { key: CHANGE_KEYS.waitingPeriod, how: "applied after the wait" };
+    case "applyUnpause": return { key: CHANGE_KEYS.unpause, how: "applied after the wait" };
+    case "applyAssetRule": return { key: CHANGE_KEYS.rule(String(first) as `0x${string}`), how: "applied after the wait" };
+    case "applyCommitment": return { key: commitmentKey(Number(first)), how: "applied after the wait" };
+    case "applyRelease": return { key: releaseKey(Number(first)), how: "applied after the wait" };
+    default: return null;
+  }
+}
+
 export function recentReceipts(entries: AuditEntry[], limit: number, currency: Currency = "BDT"): Receipt[] {
+  // a receipt for a queued change says what became of it: a later cancel or apply with the same key settles it
+  const settled = new Map<number, Receipt["outcome"]>();
+  entries.forEach((entry, i) => {
+    const events = ((entry.result ?? {}) as Result).events ?? [];
+    const key = events.map(queuedKey).find((k) => k !== null)?.toLowerCase();
+    if (!key) return;
+    for (const later of entries.slice(i + 1)) {
+      const s = settledKey(later);
+      if (s && s.key.toLowerCase() === key) {
+        settled.set(i, s.how);
+        break;
+      }
+    }
+  });
   return entries
-    .filter((e) => e.record.tool !== "set_prices")
+    .map((entry, i) => ({ entry, i }))
+    .filter(({ entry }) => entry.record.tool !== "set_prices")
     .slice(-limit)
     .reverse()
-    .map((e) => receiptOf(e, currency));
+    .map(({ entry, i }) => {
+      const r = receiptOf(entry, currency);
+      const how = settled.get(i);
+      return how && r.outcome === "waiting out the delay" ? { ...r, outcome: how } : r;
+    });
 }

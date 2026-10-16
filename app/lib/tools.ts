@@ -135,7 +135,7 @@ const schemas = {
     reason,
   }),
   decline: z.object({
-    what: z.string().min(1).max(200).describe("The trade or action you are not doing, in a few words."),
+    what: z.string().min(1).max(200).describe("The trade or action you are not doing, as a short verb phrase, like \"buy the index fund with the rent money\"."),
     reason: z.string().min(1).describe("Why not, in one plain sentence. It goes into the receipt."),
   }),
 } as const;

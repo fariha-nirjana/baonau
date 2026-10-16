@@ -24,6 +24,17 @@ So we asked: what if an AI could invest on a schedule and pay your bills for you
 4. **Bunbun does the everyday work.** Rebalancing, a small buy every week, paying your rent on time from money you set aside for it. Every action, and every refusal, gets a receipt listing each rule it was checked against.
 5. **Some money already has a job.** Rent, bills, tuition, money sent home. You set it aside as a commitment, it leaves the portfolio, and it only ever goes to the payee you approved, on the schedule you approved.
 
+<table>
+<tr>
+<td width="50%"><img src="docs/images/mandate.png" alt="The signed mandate, in plain language"><br><sub>The mandate she signed, in plain language, with her note to her future self</sub></td>
+<td width="50%"><img src="docs/images/commitments.png" alt="Commitments: rent set aside and paid on time"><br><sub>Rent set aside, paid on time to the payee she approved</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/activity.png" alt="Activity: a receipt for every move"><br><sub>A receipt for every move, including the ones that were stopped or cancelled</sub></td>
+<td width="50%"><img src="docs/images/contact.png" alt="The trusted contact's view"><br><sub>The trusted contact's view: they can pause or say no, never move money</sub></td>
+</tr>
+</table>
+
 ## The one rule
 
 We designed for two things going wrong:
@@ -49,6 +60,8 @@ We tried hard to break it.
 - **324 stress runs.** 6 markets (steady growth to a crash to a manipulated price feed) × 3 agents (healthy, random, hacked) × 2 owners (calm, panicking) × 9 seeds, on the real contracts. The bounds held in every run. 25,416 rule-breaking actions were stopped, and all 633 attempts to loosen the rules had to wait. Without the mandate, every hacked-agent run ended at zero; with it, the worst run kept 94%. It's not free: in steady growth the mandate earned 3.8% against 4.9% without it. In a crash, the median fall was 5.0% instead of 11.4%.
 - **16 attacks against real models.** Hidden instructions in news (English and Bangla), scam token promotions, fake invoices, fake rent notices, "use my rent money to buy the dip" and more. A plain agent on a small model (Llama 3.2 3B) was beaten 30 times out of 48. Ours: 0 out of 48, on both DeepSeek and Llama. With no model at all, just the agent's key, the contract still refused 23 of 23 attacker goals.
 - **171 contract tests**, 21 invariants, about a million random calls, 0 violations.
+
+<img src="docs/images/proof.png" alt="The proof screen: 324 of 324 runs held">
 
 What we don't claim: a hacked agent can still make bad trades *inside* the limits, the price feed is a mock, and none of this has had an outside audit. The full list is in the [security self-assessment](docs/security-self-assessment.md).
 
@@ -79,8 +92,8 @@ The full design, the algorithms and every number are in the [technical documenta
 The quickest way, with no keys and no testnet. You need Node 24 and [Foundry](https://getfoundry.sh).
 
 ```bash
-git clone --recurse-submodules https://github.com/fariha-nirjana/policy-wallet
-cd policy-wallet/app
+git clone --recurse-submodules https://github.com/fariha-nirjana/baonau
+cd baonau/app
 npm install
 npm run demo            # or: npm run demo -- --signed  to skip the first-time setup
 ```
@@ -93,8 +106,8 @@ This starts a fresh local chain, deploys everything with throwaway test keys, an
 You need Node 24, Foundry (tested with 1.8.5), a Base Sepolia RPC (the public one works) and an OpenAI-compatible model API key (we use DeepSeek).
 
 ```bash
-git clone --recurse-submodules https://github.com/fariha-nirjana/policy-wallet
-cd policy-wallet
+git clone --recurse-submodules https://github.com/fariha-nirjana/baonau
+cd baonau
 scripts/new-env.sh          # fresh testnet keys into .env (or copy .env.example)
 # fund the owner, agent, guardian and oracle updater addresses from a Base Sepolia faucet
 # add LLM_API_KEY to .env

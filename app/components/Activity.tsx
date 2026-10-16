@@ -19,6 +19,8 @@ export const OUTCOME_ICON: Record<Receipt["outcome"], [IconName, string]> = {
   "reverted by the contract": ["shield", "bg-coral-soft text-coral"],
   "sent to the owner": ["clock", "bg-sun-soft text-sun-ink"],
   "waiting out the delay": ["clock", "bg-sun-soft text-sun-ink"],
+  cancelled: ["x", "bg-cream text-muted"],
+  "applied after the wait": ["check", "bg-mint text-leaf"],
   "decided not to act": ["x", "bg-cream text-muted"],
   failed: ["alert", "bg-sun-soft text-sun-ink"],
 };
@@ -29,6 +31,8 @@ export const OUTCOME_TEXT: Record<Receipt["outcome"], string> = {
   "reverted by the contract": "text-coral",
   "sent to the owner": "text-sun-ink",
   "waiting out the delay": "text-sun-ink",
+  cancelled: "text-muted",
+  "applied after the wait": "text-muted",
   "decided not to act": "text-muted",
   failed: "text-sun-ink",
 };

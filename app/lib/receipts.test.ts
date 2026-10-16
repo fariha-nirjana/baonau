@@ -45,8 +45,19 @@ test("a queued change is shown as waiting, not as done", () => {
 test("a decision not to act gets a receipt of its own", () => {
   const r = receiptOf(entry("chat", "abstain", { ok: true, abstained: true }, { args: { what: "Buy MEME for the investor" }, reason: "It is not in the mandate and is on the scam list." }));
   assert.equal(r.outcome, "decided not to act");
-  assert.equal(r.what, "Did not buy MEME for the investor");
+  assert.equal(r.what, "Decided not to: buy MEME for the investor");
   assert.equal(r.why, "It is not in the mandate and is on the scam list.");
+});
+
+test("a queued change shows what became of it: cancelled by a later veto, or applied after the wait", () => {
+  const queued = entry("owner", "change_mandate", { ok: true, url: "u", events: [{ name: "PolicyProposed", args: { eta: "1791831888" } }] });
+  const veto = entry("guardian", "veto", { ok: true, url: "v", events: [{ name: "ChangeCancelled", args: {} }] }, {
+    args: { call: "cancelChange", args: ["0x706f6c6963790000000000000000000000000000000000000000000000000000"] },
+  });
+  const apply = entry("owner", "apply_change", { ok: true, url: "w", events: [{ name: "PolicyChanged", args: {} }] }, { args: { call: "applyPolicy", args: [] } });
+  assert.equal(recentReceipts([queued, veto], 10).at(-1)?.outcome, "cancelled");
+  assert.equal(recentReceipts([queued, apply], 10).at(-1)?.outcome, "applied after the wait");
+  assert.equal(recentReceipts([queued], 10)[0].outcome, "waiting out the delay");
 });
 
 test("the gate trace lists every check with its outcome, and the contract's verdict sits beside it", () => {
