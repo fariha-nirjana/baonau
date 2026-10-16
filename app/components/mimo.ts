@@ -70,7 +70,7 @@ export const SAY: Record<string, Partial<Record<Language, (v: N) => [line: strin
   },
   blocked: {
     en: () => ["I stopped that before it was signed. Here is why in Activity.", "Shield up"],
-    bn: () => ["সই হওয়ার আগেই আমি ওটা থামিয়েছি। কারণটা কার্যকলাপে আছে।", "ঢাল তোলা"],
+    bn: () => ["সই হওয়ার আগেই আমি ওটা থামিয়েছি। কারণটা লেনদেন ও সিদ্ধান্তে আছে।", "ঢাল তোলা"],
     zh: () => ["签名之前我就拦下了，原因见操作记录。", "防护中"],
   },
   protect: {

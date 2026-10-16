@@ -9,6 +9,7 @@ import type { Receipt } from "@/lib/receipts";
 import type { ValuePoint } from "@/lib/values";
 import { clock, fill, LOCALE, strings, type Strings, ownerName } from "./i18n";
 import { Icon, type IconName } from "./icons";
+import { localize } from "./localize";
 import { Mascot } from "./Mascot";
 import type { MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
@@ -642,11 +643,13 @@ function RecentCard({
   go,
   onOpen,
   t,
+  settings,
 }: {
   state: AppState;
   go: (v: View) => void;
   onOpen: (r: Receipt) => void;
   t: Strings;
+  settings: Settings;
 }) {
   const recent = state.receipts.slice(0, 3);
   return (
@@ -684,7 +687,7 @@ function RecentCard({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[0.95rem] font-semibold">
-                      {r.what}
+                      {localize(r.what, settings.language)}
                     </span>
                     <span
                       className={`mt-0.5 block text-sm ${OUTCOME_TEXT[r.outcome]}`}
@@ -876,7 +879,7 @@ export function OverviewView({
         <BoundariesCard state={state} settings={settings} go={go} t={t} />
         <div className="space-y-5">
           <ComingUpCard state={state} settings={settings} go={go} t={t} />
-          <RecentCard state={state} go={go} onOpen={onOpen} t={t} />
+          <RecentCard state={state} go={go} onOpen={onOpen} t={t} settings={settings} />
         </div>
       </div>
       <div className="border-t border-line pt-4">

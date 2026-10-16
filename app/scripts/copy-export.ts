@@ -55,6 +55,7 @@ const SECTIONS: Record<string, [string, string]> = {
   chat: [`Chat with ${BRAND.agent}`, "The floating chat and its full-window mode."],
   launcher: ["Chat button in the corner", `The line under "Talk to ${BRAND.agent}", one per mood.`],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],
+  commitments: ["Commitments screen", "Money with a job: rent, bills, tuition. The cards, the add / top up / pay / move back dialogs, and Bunbun's take."],
   outcome: ["Receipt outcome labels", "The short status on every receipt."],
   mood: [`${BRAND.agent}'s card on the Overview`, `"chip" is the label under ${BRAND.agent}, "headline" the big serif text. One per mood.`],
 };

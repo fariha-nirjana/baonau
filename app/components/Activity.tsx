@@ -5,6 +5,7 @@ import { BRAND } from "@/lib/brand";
 import type { Receipt } from "@/lib/receipts";
 import { clock, fill, LOCALE, strings, type Strings } from "./i18n";
 import { Icon, type IconName } from "./icons";
+import { localize } from "./localize";
 import type { AppState, Settings } from "./types";
 import { Card } from "./ui";
 
@@ -121,7 +122,7 @@ export function ReceiptDialog({
         <h2
           className={`mt-2 font-serif leading-tight ${r.what.length > 70 ? "text-[1.35rem]" : "text-[1.8rem]"}`}
         >
-          {r.what}
+          {localize(r.what, settings.language)}
         </h2>
         <p
           className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold ${tone}`}
@@ -148,7 +149,7 @@ export function ReceiptDialog({
           {r.refusal ? (
             <div className="py-3">
               <dt className="text-coral">{t.activity.refused}</dt>
-              <dd className="mt-1">{r.refusal}</dd>
+              <dd className="mt-1">{localize(r.refusal, settings.language)}</dd>
             </div>
           ) : null}
         </dl>
@@ -174,7 +175,7 @@ export function ReceiptDialog({
                       {gateLabel(g.id, g.label)}
                     </span>
                     {g.detail ? (
-                      <span className="block text-muted">{g.detail}</span>
+                      <span className="block text-muted">{localize(g.detail, settings.language)}</span>
                     ) : null}
                   </span>
                 </li>
@@ -208,7 +209,7 @@ export function ReceiptDialog({
                           {gateLabel(g.id, g.label)}
                         </span>
                         {g.detail ? (
-                          <span className="block text-muted">{g.detail}</span>
+                          <span className="block text-muted">{localize(g.detail, settings.language)}</span>
                         ) : null}
                       </span>
                     </li>
@@ -244,7 +245,7 @@ export function ReceiptDialog({
                   : t.activity.contractReverted}
               </span>
               {r.contract.reason ? (
-                <span className="block text-muted">{r.contract.reason}</span>
+                <span className="block text-muted">{localize(r.contract.reason, settings.language)}</span>
               ) : null}
             </span>
           </div>
@@ -416,7 +417,7 @@ export function ActivityView({
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[0.95rem] font-semibold group-hover:text-leaf">
-                          {r.what}
+                          {localize(r.what, settings.language)}
                         </span>
                         <span
                           className={`block truncate text-sm ${attack ? "text-coral" : "text-muted"}`}

@@ -140,7 +140,7 @@ Handy scripts, all from `app/`:
 ## Tests
 
 - `contracts/`: `forge test` (171 tests). `FOUNDRY_PROFILE=deep forge test` for the long run.
-- `app/`: `npm test` (62 tests), `npm run typecheck`, `npm run lint`.
+- `app/`: `npm test` (66 tests), `npm run typecheck`, `npm run lint`.
 - `app/harness/` and `app/redteam/`: the stress runs and attacks above. Results are committed under `results/`.
 
 ## Deployments

@@ -319,7 +319,7 @@ The mandate gives up a little in calm markets, and when the stop-loss sells into
 
 ### 7.4 App tests
 
-62 tests (`npm test` in `app/`) for the risk engine, the planner, approvals, commitments, receipts, the mascot's mood logic and the understanding check. Typecheck, lint and a production build all run clean.
+66 tests (`npm test` in `app/`) for the risk engine, the planner, approvals, commitments, receipts and their translations, the mascot's mood logic and the understanding check. Typecheck, lint and a production build all run clean.
 
 ---
 

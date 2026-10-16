@@ -7,7 +7,9 @@ import { LetterQuote } from "./Letter";
 import { Avatar, faceOf, Mascot, MimoTile, type Face } from "./Mascot";
 import { soundsStressed, type MimoSay } from "./mimo";
 import type { AppState, Settings, View } from "./types";
-import { fill, LOCALE, strings, ownerName } from "./i18n";
+import { fill, LOCALE, strings, ownerName, type Strings } from "./i18n";
+import { localize } from "./localize";
+import type { Language } from "@/lib/plan";
 import { Chip, moneyText, type Tone } from "./ui";
 
 type Step = { tool: string; result: Record<string, unknown>; receipt?: Receipt | null };
@@ -70,35 +72,34 @@ const SUGGESTIONS: Record<Settings["language"], [label: string, prompt: string][
   ],
 };
 
-const TOOL_LABEL: Record<string, string> = {
-  buy: "Buy",
-  sell: "Sell",
-  rebalance: "Rebalance",
-  request_owner_approval: "Request to you",
-  draft_mandate: "Mandate draft",
-  request_stop_loss_halt: "Stop-loss halt request",
-  decline: "Decided not to act",
-};
-
 const MARK = { pass: ["check", "bg-mint text-leaf"], escalate: ["clock", "bg-sun-soft text-sun-ink"], block: ["x", "bg-coral-soft text-coral"] } as const;
 
-function StepCard({ step, go }: { step: Step; go: (v: View) => void }) {
+function StepCard({ step, go, t, language }: { step: Step; go: (v: View) => void; t: Strings; language: Language }) {
+  const TOOL_LABEL: Record<string, string> = {
+    buy: t.chat.cardBuy,
+    sell: t.chat.cardSell,
+    rebalance: t.chat.cardRebalance,
+    request_owner_approval: t.chat.cardRequest,
+    draft_mandate: t.chat.cardDraft,
+    request_stop_loss_halt: t.chat.cardHalt,
+    decline: t.chat.cardDeclined,
+  };
   const r = step.result;
   const ok = r.ok === true;
   const draft = typeof r.draft_id === "string";
   const declined = step.tool === "decline";
   const stopped = !ok && !draft && !declined;
   const [tone, status]: [Tone, string] = draft
-    ? ["warn", "Needs your OK"]
+    ? ["warn", t.chat.stNeedsOk]
     : r.escalated
-      ? ["warn", "Sent for your approval"]
+      ? ["warn", t.chat.stSent]
       : declined
-        ? ["plain", "Not done"]
+        ? ["plain", t.chat.cardDeclined]
         : ok
-          ? ["good", "Done"]
+          ? ["good", t.chat.stDone]
           : r.stage === "risk"
-            ? ["bad", "Blocked"]
-            : ["bad", "Refused by the contract"];
+            ? ["bad", t.chat.stBlocked]
+            : ["bad", t.chat.stRefused];
   const detail = (r.what_happens_next as string | undefined) ?? (r.message as string | undefined) ?? (r.error as { explanation?: string } | null | undefined)?.explanation ?? "";
   const receipt = step.receipt;
   // a blocked card lists the checks that failed first, then a reminder that nothing was signed
@@ -107,7 +108,7 @@ function StepCard({ step, go }: { step: Step; go: (v: View) => void }) {
   return (
     <div className={`slide-in rounded-2xl border bg-card p-4 ${stopped ? "border-coral/40" : "border-line"}`}>
       <div className="flex items-start justify-between gap-3">
-        <span className="font-semibold">{receipt?.what ?? TOOL_LABEL[step.tool] ?? step.tool}</span>
+        <span className="font-semibold">{receipt?.what ? localize(receipt.what, language) : (TOOL_LABEL[step.tool] ?? step.tool)}</span>
         <Chip tone={tone} icon={stopped ? "x" : ok && !draft && !r.escalated && !declined ? "check" : "clock"}>
           {status}
         </Chip>
@@ -119,7 +120,7 @@ function StepCard({ step, go }: { step: Step; go: (v: View) => void }) {
               <span className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full ${MARK[g.outcome][1]}`}>
                 <Icon name={MARK[g.outcome][0]} size={12} strokeWidth={3} />
               </span>
-              <span>{g.outcome === "pass" ? g.label : g.detail}</span>
+              <span>{g.outcome === "pass" ? ((t.gates as Record<string, string>)[g.id] ?? g.label) : localize(g.detail, language)}</span>
             </li>
           ))}
           {stopped ? (
@@ -127,7 +128,7 @@ function StepCard({ step, go }: { step: Step; go: (v: View) => void }) {
               <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-mint text-leaf">
                 <Icon name="check" size={12} strokeWidth={3} />
               </span>
-              <span>Nothing was signed, so nothing moved</span>
+              <span>{r.stage === "risk" ? t.chat.notSigned : t.chat.reverted}</span>
             </li>
           ) : null}
         </ul>
@@ -137,12 +138,12 @@ function StepCard({ step, go }: { step: Step; go: (v: View) => void }) {
       <div className="mt-2 flex gap-4 text-[0.95rem] font-semibold text-leaf">
         {typeof r.url === "string" ? (
           <a href={r.url} target="_blank" rel="noreferrer" className="underline">
-            View transaction
+            {t.chat.viewTx}
           </a>
         ) : null}
         {draft || r.escalated ? (
           <button onClick={() => go("approvals")} className="underline">
-            Open approvals
+            {t.chat.openApprovals}
           </button>
         ) : null}
       </div>
@@ -394,7 +395,7 @@ export function Chat({
               </div>
             ) : (
               <div key={i} className="space-y-3">
-                {m.steps?.map((s, j) => <StepCard key={j} step={s} go={go} />)}
+                {m.steps?.map((s, j) => <StepCard key={j} step={s} go={go} t={t} language={settings.language} />)}
                 {state.letter && m.steps?.some((s) => s.tool === "request_stop_loss_halt" || (s.tool === "draft_mandate" && Array.isArray(s.result.raises_risk) && s.result.raises_risk.length > 0)) ? (
                   <LetterQuote letter={state.letter} settings={settings} moment="beforeSign" />
                 ) : null}
