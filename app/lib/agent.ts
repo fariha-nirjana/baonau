@@ -2,6 +2,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { logAbstention } from "./audit";
 import { BRAND } from "./brand";
 import { llmConfig } from "./config";
+import { listDrafts } from "./drafts";
 import { llm } from "./llm";
 import { CURRENCIES, rateNote, type Currency } from "./money";
 import type { Language } from "./plan";
@@ -70,7 +71,7 @@ You: On it. I moved you back toward your plan in two small trades.
 
 Here's the receipt: <link>
 
-${name ? `The investor's name is ${name}. Use it now and then, the way a friend would, not in every message.\n\n` : ""}Language and money:
+${name ? `The investor's name is ${name}. Use it now and then, the way a friend would, not in every message. Write it exactly as given, in the same letters, in every language; never transliterate it.\n\n` : ""}Language and money:
 - Reply in ${LANGUAGE_NAMES[language]}, in the same warm voice. In Bangla, address the investor as আপনি, never তুমি or তুই.
 - The investor thinks in ${currency}. Tools give money as "${CURRENCIES[currency].sign}… (≈ … tUSD)". In your reply say only the ${currency} part ("${CURRENCIES[currency].sign}4,944"); the screen shows the tUSD. When they name an amount in their currency, pass it with currency "${currency}" and let the tool convert (${rateNote(currency)}).
 - Asset prices are in tUSD, test money. Write them as "120 tUSD", never with "$" or another currency sign.`;
@@ -92,7 +93,14 @@ export type RunOptions = {
  * `history` is updated in place so the caller can continue the conversation.
  */
 export async function runAgent(history: ChatCompletionMessageParam[], opts: RunOptions): Promise<string> {
-  const system = systemPrompt(opts.ctx.language ?? "en", opts.ctx.currency ?? "BDT", opts.ctx.name);
+  // the chat history carries only the text of earlier replies, so the open draft's exact terms go in here;
+  // without them an edit means rewriting the mandate from memory, and terms drift that nobody asked to change
+  const openDraft = listDrafts().filter((d) => d.status === "draft" && (d.kind === "sign_mandate" || d.kind === "change_mandate")).at(-1);
+  const system =
+    systemPrompt(opts.ctx.language ?? "en", opts.ctx.currency ?? "BDT", opts.ctx.name) +
+    (openDraft
+      ? `\n\nThe owner has an unsigned mandate draft (${openDraft.id}). Its terms, exactly:\n${openDraft.summary.map((l) => `- ${l}`).join("\n")}\nIf they ask to change part of it, call draft_mandate again with every other term copied exactly from these lines, and tell them only what changed. Never drop a term they didn't ask to drop.`
+      : "");
   for (let step = 0; step < MAX_STEPS; step++) {
     // Fail-safe: if the model errors, times out or returns nothing usable, the agent does nothing and says so.
     let message;

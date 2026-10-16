@@ -21,7 +21,7 @@ import {
   type CommitmentKind,
   type CommitmentView,
 } from "./commitments";
-import { addDraft, type MandateDraft } from "./drafts";
+import { addDraft, listDrafts, updateDraft, type MandateDraft } from "./drafts";
 import { display, rateNote, toUsd, type Currency } from "./money";
 import { markBought, readPlan, type Language } from "./plan";
 import { planRebalance } from "./planner";
@@ -564,8 +564,15 @@ function buildDraft(a: DraftArgs, p: Portfolio, ctx: ToolContext) {
   }
 
   const risk = !p.mandateSigned ? "first_mandate" : raises.length ? "raises" : "lowers";
+  const kind = p.mandateSigned ? "change_mandate" : "sign_mandate";
+  // a new draft replaces the open one of the same kind, and the model is told exactly what moved,
+  // so it can never say "nothing else changed" when something did
+  const open = listDrafts().filter((d) => d.status === "draft" && d.kind === kind);
+  const previous = open.at(-1);
+  const changedFromPrevious = previous ? summary.filter((line) => !previous.summary.includes(line)) : [];
+  for (const d of open) updateDraft(d.id, { status: "dismissed" });
   const draft = addDraft({
-    kind: p.mandateSigned ? "change_mandate" : "sign_mandate",
+    kind,
     summary,
     risk,
     reason: a.reason,
@@ -578,6 +585,15 @@ function buildDraft(a: DraftArgs, p: Portfolio, ctx: ToolContext) {
     summary,
     raises_risk: raises,
     lowers_risk: lowers,
+    ...(previous
+      ? {
+          replaces_draft: previous.id,
+          changed_from_previous_draft: changedFromPrevious,
+          tell_the_owner: changedFromPrevious.length
+            ? "Name every line in changed_from_previous_draft when you reply. Never say nothing else changed if this list has more than what they asked for."
+            : "Nothing differs from the previous draft.",
+        }
+      : {}),
     what_happens_next:
       risk === "first_mandate"
         ? "Nothing is in force yet. When the owner signs, the mandate goes on-chain and the agent can start."
