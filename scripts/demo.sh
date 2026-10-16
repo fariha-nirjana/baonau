@@ -47,13 +47,21 @@ RPC="http://127.0.0.1:$CHAIN_PORT"
 DATA="$ROOT/app/data/demo"
 rm -rf "$DATA" && mkdir -p "$DATA"
 
-pids=()
-cleanup() { kill "${pids[@]}" 2>/dev/null || true; }
+for port in $CHAIN_PORT $APP_PORT; do
+  if lsof -tiTCP:$port -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port $port is in use (an earlier demo still running?). Stop it with:"
+    echo "  kill \$(lsof -tiTCP:$port -sTCP:LISTEN)"
+    exit 1
+  fi
+done
+
+# Ctrl+C stops everything this script started, children included.
+killtree() { local c; for c in $(pgrep -P "$1"); do killtree "$c"; done; kill "$1" 2>/dev/null || true; }
+cleanup() { trap - EXIT INT TERM; for c in $(pgrep -P $$); do killtree "$c"; done; }
 trap cleanup EXIT INT TERM
 
 echo "Starting a fresh local chain on port $CHAIN_PORT..."
 anvil --port $CHAIN_PORT --block-time 1 --silent &
-pids+=($!)
 until cast block-number --rpc-url "$RPC" >/dev/null 2>&1; do sleep 0.5; done
 
 # anvil's well-known test accounts 0 to 3. Public keys, local chain only.
@@ -83,16 +91,18 @@ echo "Vault $VAULT_ADDRESS (settings in app/data/demo/local.env)"
 echo "Building the app (about a minute)..."
 (cd app && npm run build > "$DATA/build.log" 2>&1) || { echo "Build failed:"; tail -20 "$DATA/build.log"; exit 1; }
 if $SHARE; then export SITE_PASSWORD; else unset SITE_PASSWORD; fi
-(cd app && npx next start -p $APP_PORT > "$DATA/app.log" 2>&1) &
-pids+=($!)
-until curl -s -o /dev/null "http://127.0.0.1:$APP_PORT"; do sleep 0.5; done
+(cd app && exec npx next start -p $APP_PORT > "$DATA/app.log" 2>&1) &
+APP_PID=$!
+until curl -s -o /dev/null "http://127.0.0.1:$APP_PORT"; do
+  kill -0 $APP_PID 2>/dev/null || { echo "The app did not start:"; tail -15 "$DATA/app.log"; exit 1; }
+  sleep 0.5
+done
 [ -z "$LLM_API_KEY" ] && echo "No LLM_API_KEY: everything works except chat."
 
 if $SHARE; then
   echo "Opening the tunnel (takes up to 30 seconds)..."
   cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:$APP_PORT" > "$DATA/tunnel.log" 2>&1 &
-  pids+=($!)
-  URL=""
+    URL=""
   for _ in $(seq 1 120); do
     URL=$(grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" "$DATA/tunnel.log" | head -1 || true)
     [ -n "$URL" ] && break
