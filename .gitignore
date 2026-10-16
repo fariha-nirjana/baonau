@@ -17,6 +17,7 @@ contracts/cache/
 contracts/broadcast/*/31337/
 contracts/broadcast/**/dry-run/
 .next/
+.next-demo/
 
 .DS_Store
 

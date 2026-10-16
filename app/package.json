@@ -19,7 +19,8 @@
     "harness": "tsx harness/run.ts",
     "copy": "tsx scripts/copy-export.ts",
     "redteam": "tsx --env-file=../.env redteam/run.ts",
-    "story": "tsx --env-file=../.env scripts/story.ts"
+    "story": "tsx --env-file=../.env scripts/story.ts",
+    "demo": "bash ../scripts/demo.sh"
   },
   "dependencies": {
     "lottie-web": "5.13.0",

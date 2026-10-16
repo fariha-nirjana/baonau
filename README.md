@@ -93,6 +93,21 @@ A strong model refuses most attacks by itself; a small one does not. Our agent's
 
 ## Running it
 
+### Quick local demo (no keys, no testnet)
+
+Requirements: Node 24 and [Foundry](https://getfoundry.sh).
+
+```bash
+git clone --recurse-submodules https://github.com/fariha-nirjana/policy-wallet
+cd policy-wallet/app
+npm install
+npm run demo            # or: npm run demo -- --signed  to skip the first-time setup
+```
+
+This starts a fresh local chain, deploys every contract with throwaway test keys, and opens the app at http://localhost:3002 on the first-time setup. Chat needs a model key (`LLM_API_KEY=... npm run demo`); everything else works without one. Each run starts from nothing.
+
+### Full setup on Base Sepolia
+
 Requirements: Node 24, [Foundry](https://getfoundry.sh) (tested with 1.8.5), a Base Sepolia RPC (the public one works) and an OpenAI-compatible model API key (we use DeepSeek).
 
 ```bash
