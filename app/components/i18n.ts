@@ -39,7 +39,7 @@ const en = {
     askUnpause: "Ask to unpause (waits)",
     unpauseWaiting: "Paused by trusted contact, unpause waiting",
     owner: "Owner",
-    guardian: "Guardian",
+    guardian: "Trusted contact",
     testnet: "Testnet",
     synced: "Read from the chain {ago}",
     justNow: "just now",

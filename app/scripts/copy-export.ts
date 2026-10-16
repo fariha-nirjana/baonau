@@ -8,6 +8,7 @@
 // the app fills in a value.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { BRAND } from "../lib/brand";
 import { strings } from "../components/i18n";
 import { SAY } from "../components/mimo";
 import { GATE_LABELS } from "../lib/risk";
@@ -18,7 +19,7 @@ const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
 const lines: string[] = [];
 const out = (s = "") => lines.push(s);
 
-out("# Paws for Thought: all the words in the app");
+out(`# ${BRAND.product}: all the words in the app`);
 out();
 out("How to review: change the text right here, in place (English and Bangla). Add a line starting with `NOTE:` anywhere for a comment or a question. When you're done, the changes are compared with the original and applied in one go.");
 out();
@@ -51,11 +52,11 @@ const SECTIONS: Record<string, [string, string]> = {
   check: ["Understanding check", "The questions before signing a first mandate. Right answers are worked out by fixed rules."],
   plain: ["Plain terms on a draft", "The terms of a mandate draft as plain sentences, on the card you sign."],
   onboard: ["First-time setup and tour", "Shown when the vault's mandate is unsigned; the tour also opens from the ? button."],
-  chat: ["Chat with Mimo", "The floating chat and its full-window mode."],
-  launcher: ["Chat button in the corner", "The line under \"Talk to Mimo\", one per mood."],
+  chat: [`Chat with ${BRAND.agent}`, "The floating chat and its full-window mode."],
+  launcher: ["Chat button in the corner", `The line under "Talk to ${BRAND.agent}", one per mood.`],
   plan: ["Your investment plan card", "Opens from the Overview's top right button."],
   outcome: ["Receipt outcome labels", "The short status on every receipt."],
-  mood: ["Mimo's card on the Overview", "\"chip\" is the label under Mimo, \"headline\" the big serif text. One per mood."],
+  mood: [`${BRAND.agent}'s card on the Overview`, `"chip" is the label under ${BRAND.agent}, "headline" the big serif text. One per mood.`],
 };
 
 function walk(prefix: string, a: Tree, b: Tree, c: Tree, rows: string[][]) {
@@ -86,9 +87,9 @@ for (const [section, [title, where]] of Object.entries(SECTIONS)) {
 }
 
 // ---------------------------------------------------------------- mascot lines
-out("## Part 2: what Mimo says on its card and in the chat button");
+out(`## Part 2: what ${BRAND.agent} says on its card and in the chat button`);
 out();
-out("_The line under the headline on Mimo's card, and the status next to its name. The app picks one by what is happening. `{n}` is a number._");
+out(`_The line under the headline on ${BRAND.agent}'s card, and the status next to its name. The app picks one by what is happening. \`{n}\` is a number._`);
 out();
 out("| When | English line | English status | Bangla line | Bangla status |");
 out("|---|---|---|---|---|");
@@ -96,7 +97,7 @@ const WHEN: Record<string, string> = {
   attack: "The security demo attack is running",
   revertedMany: "Several moves were refused by the contract",
   reverted: "One move was refused by the contract",
-  declined: "Mimo said no to something you asked in the chat",
+  declined: `${BRAND.agent} said no to something you asked in the chat`,
   blocked: "The risk check stopped a move before signing",
   protect: "Protect mode is on (buying paused after a loss)",
   stale: "The price feed is out of date",
@@ -105,7 +106,7 @@ const WHEN: Record<string, string> = {
   holding: "Owner view, a riskier change is waiting",
   down: "The portfolio is down a fair bit today",
   stressed: "Your last chat message sounded stressed",
-  thinking: "Mimo is answering or an action is running",
+  thinking: `${BRAND.agent} is answering or an action is running`,
   paused: "The AI is paused",
   moving: "Prices are moving a little",
   calm: "Nothing going on",
@@ -119,7 +120,7 @@ for (const [id, langs] of Object.entries(SAY)) {
 out();
 
 // ---------------------------------------------------------------- agent voice
-out("## Part 3: how Mimo talks in the chat");
+out(`## Part 3: how ${BRAND.agent} talks in the chat`);
 out();
 out("_This is the instruction the AI model gets, not text shown on screen. The examples set its tone. Edit the rules or the examples; the model's real replies will vary but follow them._");
 out();
@@ -169,7 +170,7 @@ const EVENT_FILES: [string, string, string, string?, string?][] = [
   ["Stop-loss keeper", "When the automatic stop-loss runs.", "lib/keeper.ts"],
   ["Scheduled checks", "The recurring buy and rebalance.", "lib/autopilot.ts"],
   ["Compromised agent demo", "The scripted attacker's steps in the security demo.", "lib/compromised.ts"],
-  ["Chat action cards", "The card above Mimo's reply when it acted.", "components/Chat.tsx", "const TOOL_LABEL", "export function Chat("],
+  ["Chat action cards", `The card above ${BRAND.agent}'s reply when it acted.`, "components/Chat.tsx", "const TOOL_LABEL", "export function Chat("],
 ];
 for (const [title, where, file, from, to] of EVENT_FILES) {
   const found = sentences(file, from, to);
