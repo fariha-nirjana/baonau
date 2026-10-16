@@ -2,7 +2,7 @@
 
 Team Ulysses · FinTechathon 2026, International Track · Topic F, agent wallet
 
-Repository: github.com/fariha-nirjana/policy-wallet · Contracts on Base Sepolia (chain 84532), also run on FISCO BCOS 3.16 · Everything uses simulated test assets on test networks.
+Repository: github.com/fariha-nirjana/baonau · Contracts on Base Sepolia (chain 84532), also run on FISCO BCOS 3.16 · Everything uses simulated test assets on test networks.
 
 ## Contents
 
