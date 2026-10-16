@@ -9,6 +9,9 @@
  * - Gains and losses are never red or green (in China red means up): they use
  *   neutral ink with ▲/▼ and +/− signs.
  * - Red (coral) only means "blocked". Amber (sun) only means "warning".
+ * - Accents (ocean, teal, lilac, plum, olive; Oct 16) only label things: a
+ *   page, an asset, a kind of commitment. They never mean good, bad, up or
+ *   down, and none of them sits near red, orange or amber.
  */
 @theme {
   /* Oct 14 redo: cream paper and forest green, after the team's design reference. */
@@ -23,7 +26,7 @@
   --color-mint-line: #cfdcc4;
   --color-cream: #eef1e8;
   --color-paper: #f6f7f1;
-  --color-card: #fcfdf8;
+  --color-card: #fefefb;
   --color-line: #e4e8df;
   --color-ink: #193c32;
   /* darker than the reference's grey so small text keeps 4.5:1 on paper */
@@ -38,6 +41,18 @@
   --color-sky: #3f6a8a;
   --color-sky-soft: #e5edf2;
   --color-dot: #e2e6da;
+
+  /* Accents: labels only (see the rules above). Each has a soft tint for tiles. */
+  --color-ocean: #2f6a9e;
+  --color-ocean-soft: #e3edf8;
+  --color-teal: #1d7a74;
+  --color-teal-soft: #dcf0ec;
+  --color-lilac: #6656a8;
+  --color-lilac-soft: #ebe7f7;
+  --color-plum: #8c4a86;
+  --color-plum-soft: #f4e6f1;
+  --color-olive: #5c7424;
+  --color-olive-soft: #eaf1d6;
 
   /*
    * Charts. The guarded result is the one hue; the unguarded baseline is a
@@ -83,4 +98,36 @@
   --mood: var(--color-coral);
   --mood-soft: var(--color-coral-soft);
   --mood-line: #f5c4ba;
+}
+
+/*
+ * Dark sidebar (Oct 16, team's pick). The sidebar redefines the palette for itself only,
+ * so every element inside follows and nothing outside changes.
+ */
+.side-dark {
+  /* text that inherits its colour picks up the sidebar's own ink */
+  color: var(--color-ink);
+  --color-card: #183c30;
+  --color-ink: #f1f5ee;
+  --color-muted: #b7c8bc;
+  --color-faint: #8fa797;
+  --color-line: rgb(255 255 255 / 0.12);
+  --color-cream: rgb(255 255 255 / 0.08);
+  --color-mint: rgb(255 255 255 / 0.2);
+  --color-mint-line: rgb(255 255 255 / 0.2);
+  --color-forest: #e3f1e6;
+  --color-forest-soft: #ffffff;
+  --color-leaf: #8fd3a8;
+  --color-sage: #a9c8a2;
+  --color-sky-soft: rgb(173 205 230 / 0.18);
+  --color-sky: #b9d6ee;
+}
+/* the pause button keeps dark text on its now-light face */
+.side-dark .bg-forest {
+  color: #183c30;
+}
+/* the manifesto card: a soft green glow and edge, so it doesn't melt into the sidebar */
+.side-dark .side-note {
+  border-color: rgb(143 211 168 / 0.32);
+  background: radial-gradient(ellipse at 90% 0%, rgb(143 211 168 / 0.3), transparent 70%), rgb(255 255 255 / 0.06);
 }

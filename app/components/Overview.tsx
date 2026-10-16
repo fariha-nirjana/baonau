@@ -212,8 +212,8 @@ export const ASSET: Record<
   { icon: IconName; tone: string; token: string }
 > = {
   USD: { icon: "coins", tone: "bg-mint text-leaf", token: "tUSD" },
-  IDX: { icon: "chart", tone: "bg-sky-soft text-sky", token: "tIDX" },
-  BOND: { icon: "bond", tone: "bg-mint text-leaf", token: "tBOND" },
+  IDX: { icon: "chart", tone: "bg-ocean-soft text-ocean", token: "tIDX" },
+  BOND: { icon: "bond", tone: "bg-teal-soft text-teal", token: "tBOND" },
   GOLD: { icon: "gold", tone: "bg-sun-soft text-sun-ink", token: "tGOLD" },
   MEME: { icon: "bolt", tone: "bg-coral-soft text-coral", token: "MEME" },
 };
@@ -890,8 +890,8 @@ export function OverviewView({
 
 export const MIX_TONE: Record<AssetSymbol | "USD", string> = {
   USD: "bg-forest",
-  IDX: "bg-sage",
-  BOND: "bg-moss",
+  IDX: "bg-ocean",
+  BOND: "bg-teal",
   GOLD: "bg-sun",
   MEME: "bg-coral",
 };

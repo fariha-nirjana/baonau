@@ -17,6 +17,8 @@ export type AppState = {
   receipts: Receipt[];
   brand: { product: string; tagline: string; agent: string; agentRole: string };
   explorer: string;
+  /** The chain's name, for the top bar. */
+  network: string;
   vault: string;
   mandate: string;
   /** The owner's note to their future self, if they wrote one. */

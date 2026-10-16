@@ -2,7 +2,7 @@ import { listApprovals } from "@/lib/approvals";
 import { readAudit } from "@/lib/audit";
 import { BRAND } from "@/lib/brand";
 import { listPaymentRequests, readMeta } from "@/lib/commitments";
-import { chainConfig } from "@/lib/config";
+import { chainConfig, networkName } from "@/lib/config";
 import { listDrafts } from "@/lib/drafts";
 import { readLetter } from "@/lib/letters";
 import { readProfile } from "@/lib/profile";
@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       receipts: recentReceipts(readAudit(), 40, currency),
       brand: BRAND,
       explorer: chainConfig().EXPLORER_URL,
+      network: networkName(chainConfig().CHAIN_ID),
       vault: portfolio.vaultAddress,
       mandate: portfolio.mandateAddress,
       letter: readLetter(portfolio.vaultAddress),

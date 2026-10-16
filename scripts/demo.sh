@@ -84,8 +84,9 @@ for name in USD ORACLE EXCHANGE IDX BOND GOLD MEME FACTORY MANDATE VAULT; do
 done
 export RPC_URL="$RPC" CHAIN_ID=31337 EXPLORER_URL="$RPC" DATA_DIR="$DATA"
 export LLM_API_KEY="${LLM_API_KEY:-}" LLM_BASE_URL="${LLM_BASE_URL:-https://api.deepseek.com}" LLM_MODEL="${LLM_MODEL:-deepseek-flash}"
-env | grep -E '^(RPC_URL|CHAIN_ID|EXPLORER_URL|DATA_DIR|[A-Z_]+_ADDRESS|[A-Z_]+_PRIVATE_KEY|LOOSEN_DELAY|MAX_PRICE_AGE|ORACLE_MIN_INTERVAL)=' \
-  > "$DATA/local.env"
+for name in $(env | grep -oE '^(RPC_URL|CHAIN_ID|EXPLORER_URL|DATA_DIR|[A-Z_]+_ADDRESS|[A-Z_]+_PRIVATE_KEY|LOOSEN_DELAY|MAX_PRICE_AGE|ORACLE_MIN_INTERVAL)='); do
+  name=${name%=}; printf '%s=%q\n' "$name" "${!name}"
+done > "$DATA/local.env"
 echo "Vault $VAULT_ADDRESS (settings in app/data/demo/local.env)"
 
 echo "Building the app (about a minute)..."

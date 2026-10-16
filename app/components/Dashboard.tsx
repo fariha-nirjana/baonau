@@ -23,20 +23,21 @@ import { PauseDialog, RoleAvatar, RoleDialog, RolePicker } from "./Roles";
 import { SecurityHeader, SecurityView } from "./Security";
 import { CommitmentsHeader, CommitmentsView } from "./Commitments";
 
-type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName };
+/** tile: the icon's own colour, a label only (theme.css rules) */
+type NavItem = { view: View; key: keyof Strings["nav"]; icon: IconName; tile: string; on: string };
 
 const NAV: NavItem[] = [
-  { view: "portfolio", key: "overview", icon: "grid" },
-  { view: "holdings", key: "holdings", icon: "wallet" },
-  { view: "commitments", key: "commitments", icon: "calendar" },
-  { view: "mandate", key: "mandate", icon: "mandate" },
-  { view: "approvals", key: "approvals", icon: "approvals" },
-  { view: "activity", key: "activity", icon: "activity" },
+  { view: "portfolio", key: "overview", icon: "grid", tile: "bg-mint text-leaf", on: "bg-leaf text-white" },
+  { view: "holdings", key: "holdings", icon: "pie", tile: "bg-ocean-soft text-ocean", on: "bg-ocean text-white" },
+  { view: "commitments", key: "commitments", icon: "repeat", tile: "bg-teal-soft text-teal", on: "bg-teal text-white" },
+  { view: "mandate", key: "mandate", icon: "scale", tile: "bg-lilac-soft text-lilac", on: "bg-lilac text-white" },
+  { view: "approvals", key: "approvals", icon: "approvals", tile: "bg-plum-soft text-plum", on: "bg-plum text-white" },
+  { view: "activity", key: "activity", icon: "activity", tile: "bg-olive-soft text-olive", on: "bg-olive text-white" },
 ];
 /** Proof and the security demo get their own group, so judges find them without a menu. */
 const NAV_TEST: NavItem[] = [
-  { view: "proof", key: "proof", icon: "proof" },
-  { view: "demo", key: "demo", icon: "shield" },
+  { view: "proof", key: "proof", icon: "proof", tile: "bg-forest/10 text-forest", on: "bg-forest text-white" },
+  { view: "demo", key: "demo", icon: "shield", tile: "bg-forest/10 text-forest", on: "bg-forest text-white" },
 ];
 
 /** Headings for the screens that have not been redone yet. The overview draws its own. */
@@ -68,7 +69,7 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
   );
 }
 
-function SyncedAgo({ at, t }: { at: number; t: Strings }) {
+function SyncedAgo({ at, t, network }: { at: number; t: Strings; network: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -78,7 +79,7 @@ function SyncedAgo({ at, t }: { at: number; t: Strings }) {
   return (
     <span className="flex items-center gap-2 text-sm text-muted" title={fill(t.shell.synced, { ago: s < 5 ? t.shell.justNow : fill(t.shell.secondsAgo, { s }) })}>
       <span className={`size-2 rounded-full ${s < 15 ? "bg-leaf" : "bg-sun"}`} />
-      <span className="font-semibold text-ink">Base Sepolia</span>
+      <span className="font-semibold text-ink">{network}</span>
       <span className="text-faint">· {t.shell.testnet}</span>
     </span>
   );
@@ -89,14 +90,17 @@ function NavButton({ item, active, count, onClick, t, contact }: { item: NavItem
     <button
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[0.92rem] transition-colors ${active ? (contact ? "bg-sky-soft font-semibold text-sky" : "bg-mint font-semibold text-forest") : "text-muted hover:bg-cream hover:text-ink"}`}
+      className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-1.5 text-left text-[0.92rem] transition-colors ${active ? (contact ? "bg-sky-soft font-semibold text-sky" : "bg-mint font-semibold text-forest") : "text-muted hover:bg-cream hover:text-ink"}`}
     >
-      <Icon name={item.icon} size={19} strokeWidth={1.7} />
+      <span className={`flex size-8 shrink-0 items-center justify-center rounded-[0.6rem] transition-colors ${active ? item.on : item.tile}`}>
+        <Icon name={item.icon} size={17} strokeWidth={1.8} />
+      </span>
       <span className="flex-1">{t.nav[item.key]}</span>
       {count ? <span className="num rounded-md bg-sun-soft px-1.5 py-0.5 text-xs font-semibold text-sun-ink">{count}</span> : active ? <span className={`size-1.5 rounded-full ${contact ? "bg-sky" : "bg-leaf"}`} /> : null}
     </button>
   );
 }
+
 
 export function Dashboard() {
   const [state, setState] = useState<AppState | null>(null);
@@ -285,7 +289,7 @@ export function Dashboard() {
 
   return (
     <div lang={settings.language} className="flex h-full bg-paper">
-      <nav className="flex w-64 shrink-0 flex-col border-r border-line bg-card px-4 pt-6 pb-4">
+      <nav className="side-dark flex w-64 shrink-0 flex-col border-r border-line bg-card px-4 pt-6 pb-4">
         <div className="flex items-center gap-2.5 px-2">
           {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG, no optimisation needed */}
           <img src="/brand/baonau-icon.svg" alt="" className="size-12 rounded-2xl shadow-[0_4px_12px_rgb(24_60_48/0.2)]" />
@@ -327,7 +331,7 @@ export function Dashboard() {
               </span>
             </span>
           </button>
-          <div className="rounded-2xl border border-line bg-[radial-gradient(ellipse_at_90%_0%,var(--color-mint),transparent_70%)] p-4">
+          <div className="side-note rounded-2xl border border-line bg-[radial-gradient(ellipse_at_90%_0%,var(--color-mint),transparent_70%)] p-4">
             <Icon name="sparkle" size={18} strokeWidth={1.4} className="text-sage" />
             <p className="mt-2 text-[0.95rem] leading-snug font-semibold">
               {t.shell.manifesto1}
@@ -373,7 +377,7 @@ export function Dashboard() {
                 {t.shell.staleShort}
               </button>
             ) : null}
-            <SyncedAgo at={syncedAt} t={t} />
+            <SyncedAgo at={syncedAt} t={t} network={state?.network ?? ""} />
             <button onClick={() => setOnboarding("tour")} title={t.onboard.tour} aria-label={t.onboard.tour} className="flex size-8 items-center justify-center rounded-full border border-line text-muted hover:bg-cream hover:text-ink">
               <Icon name="help" size={16} />
             </button>

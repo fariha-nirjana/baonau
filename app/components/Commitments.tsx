@@ -15,10 +15,10 @@ type Props = { state: AppState; settings: Settings; act: Act; skew: number; onAs
 type Row = { c: CommitmentView; m: CommitmentMeta; status: CommitmentStatus };
 
 const KIND: Record<CommitmentKind, { icon: IconName; tone: string }> = {
-  rent: { icon: "home", tone: "bg-mint text-leaf" },
-  bill: { icon: "bolt", tone: "bg-sun-soft text-sun-ink" },
-  tuition: { icon: "cap", tone: "bg-sky-soft text-sky" },
-  family: { icon: "heart", tone: "bg-cream text-forest" },
+  rent: { icon: "home", tone: "bg-teal-soft text-teal" },
+  bill: { icon: "bolt", tone: "bg-lilac-soft text-lilac" },
+  tuition: { icon: "cap", tone: "bg-ocean-soft text-ocean" },
+  family: { icon: "heart", tone: "bg-plum-soft text-plum" },
   savings: { icon: "lock", tone: "bg-mint text-forest" },
   other: { icon: "wallet", tone: "bg-cream text-muted" },
 };

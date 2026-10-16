@@ -47,6 +47,10 @@ const PATHS = {
   heart: "M12 20s-7-4.5-9-9a4.5 4.5 0 0 1 9-3 4.5 4.5 0 0 1 9 3c-2 4.5-9 9-9 9z",
   dots: "M5 12h.01M12 12h.01M19 12h.01",
   calendar: "M4 6h16v15H4zM4 10h16M8 3v4M16 3v4",
+  /* sidebar: shapes that cannot be mistaken for one another (Oct 16) */
+  pie: "M11 4a8 8 0 1 0 9 9h-9zM14 2.5a7.5 7.5 0 0 1 7.5 7.5H14z",
+  repeat: "M20 11a8 8 0 0 0-14.5-4.5M4 13a8 8 0 0 0 14.5 4.5M5 3v4h4M19 21v-4h-4M12 9.5v5",
+  scale: "M12 4v17M8 21h8M5 7h14M12 4l0 0M5 7l-3 6a3 3 0 0 0 6 0zM19 7l-3 6a3 3 0 0 0 6 0z",
 } as const;
 
 export type IconName = keyof typeof PATHS;

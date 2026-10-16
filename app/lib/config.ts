@@ -61,6 +61,14 @@ export function llmConfig() {
   return (llm ??= parse(llmSchema, "model"));
 }
 
+/** The chain's name for the top bar. Anything unknown is shown by its id. */
+export function networkName(chainId: number): string {
+  if (chainId === 84532) return "Base Sepolia";
+  if (chainId === 31337) return "Local test chain";
+  if (chainId === 20200) return "FISCO BCOS (local)";
+  return `Chain ${chainId}`;
+}
+
 export const USD_DECIMALS = 6;
 export const USD_SYMBOL = "tUSD";
 export const PRICE_DECIMALS = 8;
