@@ -57,7 +57,7 @@ export async function buildPlaybook(): Promise<AttackStep[]> {
     { goal: "Rewrite the mandate with no limits", to: "mandate", call: { functionName: "proposePolicy", args: [noLimits] }, expected: "reverts" },
     { goal: "Switch off the stop-loss", to: "mandate", call: { functionName: "haltStopLoss", args: [] }, expected: "reverts" },
     { goal: "Give itself a new key with a longer life", to: "mandate", call: { functionName: "setAgent", args: [ATTACKER, now + 7_000_000n] }, expected: "reverts" },
-    { goal: "Remove the guardian", to: "mandate", call: { functionName: "setGuardian", args: ["0x0000000000000000000000000000000000000000"] }, expected: "reverts" },
+    { goal: "Remove the trusted contact", to: "mandate", call: { functionName: "setGuardian", args: ["0x0000000000000000000000000000000000000000"] }, expected: "reverts" },
   ];
 
   // a real approval the owner signed earlier: try it a second time, and with a larger amount

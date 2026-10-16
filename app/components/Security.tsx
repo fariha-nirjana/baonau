@@ -24,6 +24,8 @@ const GOALS: [prefix: string, key: keyof Strings["demo"]][] = [
   ["Rewrite the mandate", "gNoLimits"],
   ["Switch off the stop-loss", "gHalt"],
   ["Give itself a new key", "gNewKey"],
+  ["Remove the trusted contact", "gGuardian"],
+  // logs written before Oct 16 used the old wording
   ["Remove the guardian", "gGuardian"],
   ["Use the owner's earlier approval", "gReplay"],
   ["Reuse the owner's earlier signature", "gReplayBig"],
