@@ -336,7 +336,18 @@ Deployed on 15 October 2026. Templates, factory and market contracts are verifie
 | tGOLD | `0x1f0297097138649ff965e1932a544Fc1b38887c5` |
 | MEME | `0x1a95281b9AfE38a1275891b5307ee0E437A9048A` |
 
-**Live run transactions [LIVE RUN]:** mandate signed; trade inside the limits; rebalance; rent paid to its payee; each refused attack by the compromised agent; stop-loss; the queued risk increase; the trusted contact's cancellation; a tightening applied at once. The full list with explorer links is in `docs/evidence/`.
+**Live run, 16 October 2026.** We ran the whole story on a fresh vault from the same factory (vault `0x4F39604cdF8078a48a20DFFc39d79b3551ea7D6F`, mandate `0xA75F62d72e9c5Ddf303A7Bd4d1A8899FEb2cef8F`), with DeepSeek as the agent. All 33 transactions are listed with explorer links in `docs/evidence/README.md`, and the raw audit log sits next to it. The key ones:
+
+| Scene | Transaction |
+|---|---|
+| Owner signs the mandate Bunbun drafted from her Bangla goal | `0xa85975ad926b25d49b4d81fbc72d461dc62e1cdc7816d26fd1b0a277b79eefcf` |
+| Bunbun pays rent on time to the approved payee | `0x9267c7dfd7af751ee8040914e1ce392191ba267e11a1a8910091da41b0733dbb` |
+| Bunbun rebalances toward the plan | `0xd27cde081ffe159c633dbc629fdb82935bbd26495555014ad24a1db71a4dc244` |
+| Compromised agent tries to buy the scam asset: refused, `AssetNotAllowed` (one of 10 attempts, all 10 refused, nothing sent out) | `0x44f15852505311fc6a51df0433ee3eca6f6f494f9828f38cedf2c33b993893a5` |
+| Keeper (no AI) fires the stop-loss | `0x35d5d6c3a380aa01a0e52184ddac4c8f4e919e00a2ac97e7eb10b364cfa1b4e1` |
+| Owner asks to triple the loss limit: queued, not applied | `0xca111f1f33e068fd8838f350f52fd4272405076526f2b14b890d17d92bc4cbc5` |
+| Trusted contact cancels it | `0xdc841a45fc49e5cd6f1ba098720152762dc8f1cb93446ef33711efa826fbffd7` |
+| Owner lowers the loss limit to 2%: applied in the same transaction | `0x7d40866899133a37557b8c16d5f4eddaef4337c01ab8288629761d6693609875` |
 
 ### 8.2 FISCO BCOS 3.16
 
