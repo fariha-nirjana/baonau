@@ -381,7 +381,7 @@ export function Dashboard() {
             <button onClick={() => setOnboarding("tour")} title={t.onboard.tour} aria-label={t.onboard.tour} className="flex size-8 items-center justify-center rounded-full border border-line text-muted hover:bg-cream hover:text-ink">
               <Icon name="help" size={16} />
             </button>
-            <Segmented<Currency> label="Currency" value={settings.currency} options={[["BDT", "৳"], ["CNY", "¥"], ["USD", "$"]]} onChange={(currency) => setSettings((s) => ({ ...s, currency }))} />
+            <Segmented<Currency> label="Currency" value={settings.currency} options={[["USD", "$"], ["BDT", "৳"], ["CNY", "¥"]]} onChange={(currency) => setSettings((s) => ({ ...s, currency }))} />
             <Segmented<Language> label="Language" value={settings.language} options={[["en", "EN"], ["bn", "বাংলা"], ["zh", "中文"]]} onChange={(language) => setSettings((s) => ({ ...s, language }))} />
           </div>
         </header>
