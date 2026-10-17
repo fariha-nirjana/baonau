@@ -2,16 +2,16 @@
   "note": "Written by hand from the Foundry runs. Re-run `FOUNDRY_PROFILE=deep forge test` in contracts/ and update this file if the contracts change. The deep run on Oct 15 covers commitments: 4 invariant suites, 1,000 runs of 250 calls each.",
   "date": "2026-10-15",
   "compiler": "Solidity 0.8.11",
-  "tests": 185,
+  "tests": 187,
   "invariants": 21,
   "randomCalls": 1000000,
   "violations": 0,
   "fuzzRunsPerTest": 10000,
   "mutation": {
     "brokenChecks": 77,
-    "caughtByUnitTests": 75,
-    "caughtByInvariants": 32,
-    "missed": "The zero-amount checks on buy and sell: with either switched off, the same zero amount is refused a step later with the same error.",
+    "caughtByUnitTests": 77,
+    "caughtByInvariants": 31,
+    "missed": "None.",
     "note": "Run Oct 17 on the current contracts: every if-revert check in PolicyVault.sol and Mandate.sol switched off one at a time."
   }
 }

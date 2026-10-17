@@ -267,11 +267,11 @@ We didn't want to just say it's safe, so we tried to break it four different way
 
 ### 7.1 Contract testing (`contracts/test/`)
 
-- 185 Foundry tests: a unit test for every limit and every refusal, fuzz tests (10,000 runs each in the deep profile), and 4 invariant suites.
+- 187 Foundry tests: a unit test for every limit and every refusal, fuzz tests (10,000 runs each in the deep profile), and 4 invariant suites.
 - 21 invariants (19 distinct; some run in more than one suite), including: the agent can't change the rules; agent trades stay inside the limits; the vault never holds an asset off the allowlist; money only leaves to the withdrawal address or an approved payee; no buying in protect mode; portfolio rules hold after every buy; risk goes down immediately; risk only goes up after the delay; approvals work once and only as signed; an expired or revoked key can do nothing; the stop-loss only fires at the stop price; commitments are paid only on their terms; reserves are backed and add up; clones are bound once and for good.
 - In the invariant suites, a simulated compromised agent holds the real agent key and calls everything it can, in random order.
 - The deep run (`FOUNDRY_PROFILE=deep`) made about 1,000,000 random calls with 0 violations.
-- We also did a mutation check on the current contracts: we switched off each of the 77 `if (…) revert` checks in `PolicyVault.sol` and `Mandate.sol`, one at a time, and ran the tests against each. They caught 75. The first run caught 61; the 16 that got through were all input checks (zero amounts, malformed setup values), so we added a direct test for each (`test/InputChecks.t.sol`). The two still surviving are the zero-amount checks on buy and sell: with either switched off, the same zero amount is refused a step later with the same error, so the vault behaves the same.
+- We also did a mutation check on the current contracts: we switched off each of the 77 `if (…) revert` checks in `PolicyVault.sol` and `Mandate.sol`, one at a time, and ran the tests against each. The final run caught all 77 (the unit tests caught every one; the invariant suites alone caught 31). The first run caught 61; the 16 that got through were all input checks (zero amounts, malformed setup values, the order in which errors are reported), so we added a direct test for each (`test/InputChecks.t.sol`) and ran the whole check again.
 
 ### 7.2 Red team (`app/redteam/`)
 
