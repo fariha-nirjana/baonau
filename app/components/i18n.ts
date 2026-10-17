@@ -4,11 +4,9 @@ import { BRAND } from "@/lib/brand";
 import type { Mood } from "./types";
 
 /**
- * Screen text in English, Bangla and Chinese. English and Bangla are complete;
- * Chinese covers the key labels and receipts (team decision, Oct 13), and any
- * line it leaves out falls back to English. Screens are moved in here one at
- * a time as they are redone. Bangla is reviewed by Fariha, Chinese by a
- * Chinese-reading teammate.
+ * Screen text in English, Bangla and Chinese. Every screen is in all three;
+ * any Chinese line that is missing falls back to English. Bangla is reviewed
+ * by Fariha, Chinese by a Chinese-reading teammate.
  *
  * `{agent}`, `{name}` and other braces are filled in by `fill`.
  */
