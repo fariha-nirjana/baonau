@@ -24,7 +24,7 @@ This is how Baonau works under the hood: the architecture, the algorithms, how w
 
 ## 1. What Baonau is
 
-Baonau is an AI wallet that invests for anyone with money to invest. We built it first for people who are just starting out. You tell it your goal in your own words, in Bangla or English. The agent, Bunbun, drafts an **investment mandate** from that: which assets you can hold, how much of each, how big a trade can be, how much you can lose in a day before buying stops, and where the stop-losses sit. You read it, check you understand it, and sign. After that, Bunbun does the everyday work inside the mandate: it rebalances to your plan, makes your recurring buys, and pays bills like rent from money you've set aside for them.
+Baonau is an AI wallet that invests for anyone with money to invest. We built it first for people who are just starting out. You tell it your goal in your own words and your own language: English, Chinese or Bangla, and you can switch any time. The agent, Bunbun, drafts an **investment mandate** from that: which assets you can hold, how much of each, how big a trade can be, how much you can lose in a day before buying stops, and where the stop-losses sit. You read it, check you understand it, and sign. After that, Bunbun does the everyday work inside the mandate: it rebalances to your plan, makes your recurring buys, and pays bills like rent from money you've set aside for them.
 
 The mandate is enforced by a smart contract, not by the agent and not by our server. We built it around two things going wrong:
 
