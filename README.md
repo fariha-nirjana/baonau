@@ -149,6 +149,8 @@ Base Sepolia (chain 84532), deployed 15 Oct 2026. Every contract is verified on 
 
 | Contract | Address |
 |---|---|
+| Vault (demo-video recording, 17 Oct) | `0xC3Da7a268e4B373093D1e3A6f0789CE8e5fac08d` |
+| Mandate (demo-video recording, 17 Oct) | `0x6d4C768bFCCEC456fCe81E812078F422e47c172C` |
 | Vault (live run, 16 Oct) | `0x4F39604cdF8078a48a20DFFc39d79b3551ea7D6F` |
 | Mandate (live run, 16 Oct) | `0xA75F62d72e9c5Ddf303A7Bd4d1A8899FEb2cef8F` |
 | Vault (first, 15 Oct) | `0x213F465d03C3E008cE6f4562D92Ed90e3F6c0B21` |
