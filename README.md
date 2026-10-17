@@ -89,16 +89,79 @@ The full design, the algorithms and every number are in the [technical documenta
 
 ## Try it
 
-The quickest way, with no keys and no testnet. You need Node 24 and [Foundry](https://getfoundry.sh).
+### Just want to see it?
 
-```bash
-git clone --recurse-submodules https://github.com/fariha-nirjana/baonau
-cd baonau/app
-npm install
-npm run demo            # or: npm run demo -- --signed  to skip the first-time setup
-```
+Watch the demo video: **[VIDEO LINK]**. It shows the whole story on the public testnet: a goal typed in Bangla, signing, rent paid on time, the hacked-agent attack, a crash, and a risk increase cancelled by the trusted contact. The screenshots near the top of this page show the main screens.
 
-This starts a fresh local chain, deploys everything with throwaway test keys, and opens the app at http://localhost:3002 on the first-time setup. Chat needs a model key (`LLM_API_KEY=... npm run demo`); everything else works without one.
+### Run it on your own computer
+
+This runs everything on your own computer: a private practice blockchain, our contracts and the app. No real money is involved, and nothing goes to a public network.
+
+**What you need**
+
+| | |
+|---|---|
+| A Mac or Linux computer | On Windows, install [WSL](https://learn.microsoft.com/windows/wsl/install) first and do every step below inside its Ubuntu terminal. The demo won't run in the normal Windows Command Prompt or PowerShell. |
+| Git | Already on most Macs (type `git --version`; if it's missing, your Mac offers to install it). On Linux or WSL: `sudo apt install git`. |
+| Node.js 24 | From [nodejs.org](https://nodejs.org), version 24. To check, type `node -v`: it should print `v24` and some more numbers. |
+| Foundry | Type `curl -L https://foundry.paradigm.xyz \| bash`, open a new terminal window, then type `foundryup`. To check, type `anvil --version`. |
+| About 10 minutes | Installing takes a few minutes; after that the demo starts in about one. |
+
+**Steps**, typed in a terminal:
+
+1. Download the project and install what the app needs. Please use this command rather than GitHub's "Download ZIP" button: the ZIP leaves out two libraries the contracts need.
+
+   ```bash
+   git clone --recurse-submodules https://github.com/fariha-nirjana/baonau
+   cd baonau/app
+   npm install
+   ```
+
+2. Start the demo:
+
+   ```bash
+   npm run demo -- --signed
+   ```
+
+3. When the terminal shows `Open: http://localhost:3002`, open that address in your browser.
+4. Leave the terminal window open while you use the app. Press Ctrl+C in it to stop everything. Every run starts fresh.
+
+`--signed` starts with a sample mandate already signed, so you land straight on the dashboard. Use it if you don't have an AI key (see below).
+
+**What works without an AI key**
+
+Everything except talking to Bunbun:
+
+- the dashboard, portfolio, mandate, commitments, approvals and the receipts in Activity
+- the **Security demo**: a scripted attacker uses Bunbun's real key, every attempt is sent to the chain, and you see the contract refuse them (an attempt that stays inside the mandate's limits can go through, and the screen says so)
+- the **Proof** screen, with the stress-run and red-team results
+- the trusted contact's view (switch to it in the sidebar), the currency (৳, $, ¥) and the language (English, বাংলা, 中文)
+
+**To chat with Bunbun, or to do the first-time setup**
+
+Chatting with Bunbun, and the first-time setup where Bunbun writes the mandate from your goal, need an AI model. We use DeepSeek:
+
+1. Make an account at [platform.deepseek.com](https://platform.deepseek.com), add a small amount of credit, and create an API key. It starts with `sk-`.
+2. Start the demo with your key, and without `--signed`:
+
+   ```bash
+   LLM_API_KEY=sk-your-key npm run demo
+   ```
+
+   The app now opens on the first-time setup. Your key stays on your computer and is only used by the app running there. Any other OpenAI-compatible provider works too: also set `LLM_BASE_URL` and `LLM_MODEL`.
+
+**If something doesn't work**
+
+| What you see | Why, and what to do |
+|---|---|
+| Bunbun says "I could not think this through just now" | There's no AI key, or it's wrong or out of credit. Bunbun does nothing rather than guess. Restart with `npm run demo -- --signed`, or add a key as above. |
+| The setup is stuck on "What would you like your money to do?" | The same reason: Bunbun needs the AI key to write the mandate. Restart with `--signed`, or add a key. |
+| `Foundry missing` | Install Foundry (see "What you need"), then open a new terminal window so it's found. |
+| `Deploy failed` | Usually the contract libraries are missing because the project came from a ZIP. Download it with the `git clone --recurse-submodules` command above. |
+| `Port 8552 is in use` or `Port 3002 is in use` | An earlier demo is still running. Close that terminal window, or type the command the message shows. |
+| `command not found` on Windows | Use the WSL Ubuntu terminal (see "What you need"). |
+| Errors during `npm install` | Check that `node -v` shows version 24. |
+| It seems stuck at "Building the app" | The first build takes about a minute. |
 
 <details>
 <summary>Full setup on Base Sepolia</summary>
