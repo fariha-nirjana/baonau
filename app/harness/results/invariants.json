@@ -11,7 +11,7 @@
     "brokenChecks": 77,
     "caughtByUnitTests": 77,
     "caughtByInvariants": 31,
-    "missed": "None.",
+    "missed": "",
     "note": "Run Oct 17 on the current contracts: every if-revert check in PolicyVault.sol and Mandate.sol switched off one at a time."
   }
 }
