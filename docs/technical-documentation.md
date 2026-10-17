@@ -24,7 +24,7 @@ This is how Baonau works under the hood: the architecture, the algorithms, how w
 
 ## 1. What Baonau is
 
-Baonau is an AI wallet that invests for anyone with money to invest. We built it first for people who are just starting out. You tell it your goal in your own words and your own language: English, Chinese or Bangla, and you can switch any time. The agent, Bunbun, drafts an **investment mandate** from that: which assets you can hold, how much of each, how big a trade can be, how much you can lose in a day before buying stops, and where the stop-losses sit. You read it, check you understand it, and sign. After that, Bunbun does the everyday work inside the mandate: it rebalances to your plan, makes your recurring buys, and pays bills like rent from money you've set aside for them.
+Baonau is an AI wallet for first-time investors, though anyone with money to invest can use it. We see it as a financial inclusion tool: for people who have money left after their bills but have only ever been offered a fixed deposit. You tell it your goal in your own words and your own language: English, Chinese or Bangla, and you can switch any time. The agent, Bunbun, drafts an **investment mandate** from that: which assets you can hold, how much of each, how big a trade can be, how much you can lose in a day before buying stops, and where the stop-losses sit. You read it, check you understand it, and sign. After that, Bunbun does the everyday work inside the mandate: it rebalances to your plan, makes your recurring buys, and pays bills like rent from money you've set aside for them.
 
 The mandate is enforced by a smart contract, not by the agent and not by our server. We built it around two things going wrong:
 
@@ -387,7 +387,7 @@ Putting limits on AI agents isn't new, and we built on that. We checked these by
 | ERC-8238 Coercion-Resistant Vault (draft, Apr 2026) | Raising spending limits and adding whitelist targets wait on-chain, removing is instant, to resist physical coercion; no AI agent |
 | Thaler and Benartzi (2004), Save More Tomorrow | The classic commitment device: people commit future decisions in advance |
 
-Every piece of what we do has a precedent somewhere in that table. What we haven't found is all of it together, for everyday investors and especially people just starting out: portfolio-level rules on-chain (caps, a defensive floor, a daily loss limit with protect mode), delays that bind the owner's own risk increases, and an agent that acts on its own inside them, tested against compromised agents and panicking owners. That combination is what we built and measured.
+Every piece of what we do has a precedent somewhere in that table. What we haven't found is all of it together, for first-time investors: portfolio-level rules on-chain (caps, a defensive floor, a daily loss limit with protect mode), delays that bind the owner's own risk increases, and an agent that acts on its own inside them, tested against compromised agents and panicking owners. That combination is what we built and measured.
 
 ---
 

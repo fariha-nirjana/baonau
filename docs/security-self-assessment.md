@@ -10,7 +10,7 @@ Everything here runs on test networks with simulated test assets. No real money 
 
 ## 1. What we're protecting, and from whom
 
-Baonau lets an AI agent (we call it Bunbun) manage someone's portfolio inside rules they sign, called the mandate. We built it first for people who are just starting to invest, but it's for anyone with money to invest. The money sits in a smart contract, the vault. So the questions are: who can move it, who can change the rules, and how fast?
+Baonau lets an AI agent (we call it Bunbun) manage a first-time investor's portfolio inside rules they sign, called the mandate. Anyone with money to invest can use it, but first-time investors are who we built it for. The money sits in a smart contract, the vault. So the questions are: who can move it, who can change the rules, and how fast?
 
 We designed for two things going wrong.
 
