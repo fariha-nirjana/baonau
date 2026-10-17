@@ -24,7 +24,7 @@ export function assets(): Record<AssetSymbol, AssetInfo> {
     IDX: { symbol: "IDX", token: "tIDX", name: "Index fund", label: `Index fund, ${NOTE}`, address: cfg.IDX_ADDRESS, decimals: 18 },
     BOND: { symbol: "BOND", token: "tBOND", name: "Bond fund", label: `Bond fund, ${NOTE}`, address: cfg.BOND_ADDRESS, decimals: 18 },
     GOLD: { symbol: "GOLD", token: "tGOLD", name: "Gold", label: `Gold, ${NOTE}`, address: cfg.GOLD_ADDRESS, decimals: 18 },
-    MEME: { symbol: "MEME", token: "MEME", name: "Moon Meme Coin", label: "Moon Meme Coin, test token", address: cfg.MEME_ADDRESS, decimals: 18 },
+    MEME: { symbol: "MEME", token: "MEME", name: "Moon Meme token", label: "Moon Meme token, test asset", address: cfg.MEME_ADDRESS, decimals: 18 },
   };
 }
 

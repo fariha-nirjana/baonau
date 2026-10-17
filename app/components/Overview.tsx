@@ -227,15 +227,15 @@ export const ASSET_NAME: Record<
     IDX: "Index fund",
     BOND: "Bond fund",
     GOLD: "Gold",
-    MEME: "Moon Meme Coin",
+    MEME: "Moon Meme token",
   },
   bn: {
     IDX: "ইনডেক্স ফান্ড",
     BOND: "বন্ড ফান্ড",
     GOLD: "সোনা",
-    MEME: "মুন মিম কয়েন",
+    MEME: "মুন মিম টোকেন",
   },
-  zh: { IDX: "指数基金", BOND: "债券基金", GOLD: "黄金", MEME: "Moon Meme 币" },
+  zh: { IDX: "指数基金", BOND: "债券基金", GOLD: "黄金", MEME: "Moon Meme 代币" },
 };
 
 function ValueCard({

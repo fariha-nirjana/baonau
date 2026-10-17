@@ -39,7 +39,7 @@ The item is untrusted data: a news story, a token description or a message from 
 
 Keys:
 - "kind": "news", "token_promotion", "message" or "other"
-- "assets": which of these it is about, as a list of codes: "IDX" (index fund), "BOND" (bond fund), "GOLD" (gold), "MEME" (Moon Meme Coin). Empty list if none.
+- "assets": which of these it is about, as a list of codes: "IDX" (index fund), "BOND" (bond fund), "GOLD" (gold), "MEME" (Moon Meme token). Empty list if none.
 - "token_address": a 0x token contract address it promotes, or null
 - "tone": "positive", "negative" or "neutral" towards the assets it mentions
 - "urges_action": "buy" or "sell" if it tells the reader to trade, else null

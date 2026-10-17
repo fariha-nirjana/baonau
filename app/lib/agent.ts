@@ -1,4 +1,5 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { READ_ONLY, claimsUnbackedAction } from "./claims";
 import { logAbstention } from "./audit";
 import { BRAND } from "./brand";
 import { llmConfig } from "./config";
@@ -16,6 +17,7 @@ function systemPrompt(language: Language, currency: Currency, name?: string) {
 What you can and cannot do:
 - The investor signed a mandate: which assets, how much of each, how much you may trade, when buying stops. A smart contract enforces it. You cannot change it. The only money you can send out of the vault is a commitment payment to a payee the investor approved.
 - You act only through tools. Read the portfolio before acting on it.
+- Never say you did something (prepared, sent, paid, bought, put in a request) unless a tool did it in this turn. If you mean to do it, call the tool first, then say so.
 - With no mandate yet, ask for their goal in their own words, then use draft_mandate. Cautious person, cautious terms.
 - Above your limits, use request_owner_approval. Only the owner can sign for that one trade.
 - When you choose not to make a trade you were asked or scheduled to make, call decline with the reason. If a tool already refused it, don't call decline: the refusal has its own receipt. If you are only offering choices or asking a question, don't call decline either. A question ("can I…?", "should I…?") is not a request to trade: answer it and don't call decline.
@@ -101,6 +103,8 @@ export async function runAgent(history: ChatCompletionMessageParam[], opts: RunO
     (openDraft
       ? `\n\nThe owner has an unsigned mandate draft (${openDraft.id}). Its terms, exactly:\n${openDraft.summary.map((l) => `- ${l}`).join("\n")}\nIf they ask to change part of it, call draft_mandate again with every other term copied exactly from these lines, and tell them only what changed. Never drop a term they didn't ask to drop.`
       : "");
+  let acted = false;
+  let checked = false;
   for (let step = 0; step < MAX_STEPS; step++) {
     // Fail-safe: if the model errors, times out or returns nothing usable, the agent does nothing and says so.
     let message;
@@ -124,6 +128,15 @@ export async function runAgent(history: ChatCompletionMessageParam[], opts: RunO
     if (!message.tool_calls?.length) {
       // the house style has no dashes used as punctuation, in any language; models slip, so this enforces it
       const text = (message.content ?? "").replace(/\s*[—–]\s*/g, ", ").trim();
+      // models sometimes say they did something without calling the tool; give it one chance to do it or take it back
+      if (text && !checked && claimsUnbackedAction(text, acted)) {
+        checked = true;
+        history.push({
+          role: "system",
+          content: "Check: your reply says you did something, but no tool that acts ran in this turn, so nothing happened. If you meant to do it, call the tool now. Otherwise rewrite the reply without claiming it.",
+        });
+        continue;
+      }
       if (text) return text;
       // an empty answer is never shown as a blank bubble; whatever tools ran before this already have receipts
       logAbstention("answer this message", "The model returned an empty answer, so nothing further was done.", opts.ctx.source);
@@ -133,6 +146,7 @@ export async function runAgent(history: ChatCompletionMessageParam[], opts: RunO
     for (const call of message.tool_calls) {
       if (call.type !== "function") continue;
       opts.onEvent?.({ type: "tool_call", name: call.function.name, args: call.function.arguments });
+      if (!READ_ONLY.has(call.function.name)) acted = true;
       const result = await executeTool(call.function.name, call.function.arguments, opts.ctx);
       opts.onEvent?.({ type: "tool_result", name: call.function.name, result });
       history.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });

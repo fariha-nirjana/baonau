@@ -121,6 +121,8 @@ export function Dashboard() {
   // the first-time setup opens by itself while the vault's mandate is unsigned; the tour opens from the help button
   const [onboarding, setOnboarding] = useState<"setup" | "tour" | null>(null);
   const [setupDismissed, setSetupDismissed] = useState(false);
+  // once the setup has opened by itself it stays open until closed, so the "all set" step shows after signing
+  const [setupLatched, setSetupLatched] = useState(false);
   const [confirm, setConfirm] = useState<{ role: Settings["role"]; action: "pause" | "unpause" } | null>(null);
   const [stressedAt, setStressedAt] = useState<number | null>(null);
   const [inFlight, setInFlight] = useState(0);
@@ -227,7 +229,8 @@ export function Dashboard() {
   setOwnerName(state.profile?.name);
   const p = state.portfolio;
   const needsSetup = !p.mandateSigned && settings.role === "owner";
-  const showing = onboarding ?? (needsSetup && !setupDismissed ? "setup" : null);
+  if (needsSetup && !setupDismissed && !setupLatched) setSetupLatched(true);
+  const showing = onboarding ?? ((needsSetup || setupLatched) && !setupDismissed ? "setup" : null);
   if (showing) {
     return (
       <Onboarding

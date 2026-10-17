@@ -302,6 +302,7 @@ export function CheckRound({
               return (
                 <button
                   key={o}
+                  data-correct={i === q.correct ? "yes" : undefined}
                   disabled={right}
                   onClick={() => setPicked(i)}
                   className={`num flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-[0.95rem] transition-colors ${tone}`}

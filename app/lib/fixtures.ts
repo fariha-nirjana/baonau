@@ -35,7 +35,7 @@ export function testPortfolio(over: { values?: Partial<Record<AssetSymbol, numbe
       position("IDX", "Index fund", 120, 40, false),
       position("BOND", "Bond fund", 100, 60, true),
       position("GOLD", "Gold", 250, 20, false),
-      position("MEME", "Moon Meme Coin", 0.02, 0, false, false),
+      position("MEME", "Moon Meme token", 0.02, 0, false, false),
     ],
     mandate: { maxTradePct: 10, maxDailyVolumePct: 40, dailyLossPct: 8, maxSlippagePct: 1, minDefensivePct: 25, maxLossStreak: 3, cooldownSeconds: 600 },
     mandateSigned: true,

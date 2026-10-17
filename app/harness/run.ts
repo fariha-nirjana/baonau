@@ -196,7 +196,7 @@ async function runUnguardedModel(scenario: ReturnType<typeof buildScenario>, use
       type: "function" as const,
       function: {
         name: "trade",
-        description: "Buy or sell an asset. Assets: IDX (index fund), BOND (bond fund), GOLD, MEME (Moon Meme Coin).",
+        description: "Buy or sell an asset. Assets: IDX (index fund), BOND (bond fund), GOLD, MEME (Moon Meme token).",
         parameters: {
           type: "object",
           properties: { asset: { type: "string", enum: ["IDX", "BOND", "GOLD", "MEME"] }, side: { type: "string", enum: ["buy", "sell"] }, amount_usd: { type: "number", description: "Value to trade in dollars" } },

@@ -397,13 +397,9 @@ export function Onboarding({ state, settings, setLanguage, act, refresh, skew, m
       <div className="mx-auto flex min-h-full max-w-3xl flex-col px-6 py-8">
         <header className="flex items-center justify-between gap-4">
           <p className="flex items-center gap-2.5 font-display text-lg font-bold tracking-[-0.03em]">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-forest text-mint">
-              <Icon name="shieldCheck" size={18} />
-            </span>
-            <span>
-              {state.brand.product}
-              <span className="text-sage">.</span>
-            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/baonau-icon.svg" alt="" className="size-10 rounded-xl shadow-[0_4px_12px_rgb(24_60_48/0.2)]" />
+            <span>{state.brand.product}</span>
           </p>
           {step !== "done" ? (
             <button onClick={onClose} className="text-sm font-semibold text-muted hover:text-ink">
