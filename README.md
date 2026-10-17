@@ -56,7 +56,7 @@ The idea is old. Ulysses had himself tied to the mast before he heard the sirens
 
 We tried hard to break it.
 
-- **Live on the public testnet (16 Oct 2026).** We ran the whole story on Base Sepolia with DeepSeek as the agent: the Bangla goal, signing, rent paid on time, a hacked-agent attack (10 attempts, all 10 refused by the contract, nothing sent out), a crash with the stop-loss firing, and "triple my loss limit" being queued and cancelled by the trusted contact. All 33 transactions, with explorer links: [`docs/evidence/`](docs/evidence/README.md).
+- **Live on the public testnet (16 Oct 2026).** We ran the whole story on Base Sepolia with DeepSeek as the agent: the Bangla goal, signing, rent paid on time, a hacked-agent attack (10 attempts, all 10 refused by the contract, nothing sent out), a crash with the stop-loss firing, and "triple my loss limit" being queued and cancelled by the trusted contact. All 33 transactions, with explorer links: [`docs/evidence/`](docs/evidence/README.md). We recorded the demo video the next day on another fresh vault, so every scene in it is a real transaction too (30 more, same file).
 - **324 stress runs.** 6 markets (steady growth to a crash to a manipulated price feed) × 3 agents (healthy, random, hacked) × 2 owners (calm, panicking) × 9 seeds, on the real contracts. The bounds held in every run. 25,416 rule-breaking actions were stopped, and all 633 attempts to loosen the rules had to wait. Without the mandate, every hacked-agent run ended at zero; with it, the worst run kept 94%. It's not free: in steady growth the mandate earned 3.8% against 4.9% without it. In a crash, the median fall was 5.0% instead of 11.4%.
 - **16 attacks against real models.** Hidden instructions in news (English and Bangla), scam token promotions, fake invoices, fake rent notices, "use my rent money to buy the dip" and more. A plain agent on a small model (Llama 3.2 3B) was beaten 30 times out of 48. Ours: 0 out of 48, on both DeepSeek and Llama. With no model at all, just the agent's key, the contract still refused 23 of 23 attacker goals.
 - **187 contract tests**, 21 invariants, about a million random calls, 0 violations.
@@ -83,7 +83,7 @@ your words / news / invoices ──▶ quarantined reader (a model with no tools
 ```
 
 - **Contracts** (`contracts/src/`): `Mandate.sol` holds every rule and decides which changes apply now and which wait (the table at the top of the file is the spec). `PolicyVault.sol` holds the assets and checks the mandate on every trade. `VaultFactory.sol` makes new vaults as clones. Solidity 0.8.11, so the same contracts also run unchanged on WeBank's FISCO BCOS.
-- **App** (`app/`): TypeScript, Next.js and viem. The agent runs on DeepSeek through an OpenAI-compatible API, so the model can be swapped. English and Bangla throughout, Chinese for key labels.
+- **App** (`app/`): TypeScript, Next.js and viem. The agent runs on DeepSeek through an OpenAI-compatible API, so the model can be swapped. English, Bangla and Chinese throughout.
 
 The full design, the algorithms and every number are in the [technical documentation](docs/technical-documentation.md).
 
@@ -140,7 +140,7 @@ Handy scripts, all from `app/`:
 ## Tests
 
 - `contracts/`: `forge test` (187 tests). `FOUNDRY_PROFILE=deep forge test` for the long run.
-- `app/`: `npm test` (66 tests), `npm run typecheck`, `npm run lint`.
+- `app/`: `npm test` (68 tests), `npm run typecheck`, `npm run lint`.
 - `app/harness/` and `app/redteam/`: the stress runs and attacks above. Results are committed under `results/`.
 
 ## Deployments

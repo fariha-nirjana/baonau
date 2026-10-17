@@ -81,7 +81,7 @@ The interesting part for us: DeepSeek refused almost everything on its own, whic
 
 The "healthy" agent in those runs is a scripted plan follower, not DeepSeek. We used a script there so we could run hundreds of seeds for free. The real-model evidence is the red team above.
 
-**Live run on the testnet.** On 16 October we ran the whole story on a fresh vault on Base Sepolia, with DeepSeek as the agent, including the compromised-agent attack. Every attempt is a real transaction you can look up: 10 attempts, all 10 refused by the contract, nothing sent out. Section 6 has the evidence.
+**Live run on the testnet.** On 16 October we ran the whole story on a fresh vault on Base Sepolia, with DeepSeek as the agent, including the compromised-agent attack. Every attempt is a real transaction you can look up: 10 attempts, all 10 refused by the contract, nothing sent out. On 17 October we recorded the demo video on another fresh vault, and the same 10 attempts were refused again. Section 6 has the evidence.
 
 ---
 
@@ -111,6 +111,7 @@ These are the weak spots we know about. For each one we say how bad it is, what 
 
 - **Contracts on Base Sepolia (chain 84532), deployed 15 Oct 2026, verified on Sourcify:** vault `0x213F465d03C3E008cE6f4562D92Ed90e3F6c0B21`, mandate `0x1C344fB4C23Aa939D8f917E2e6095Fced975B42a`, factory `0x45170Cf431e66A495C513FE9412512b335a56106`. The full address list is in the README.
 - **Live run on 16 Oct 2026** (fresh vault `0x4F39604cdF8078a48a20DFFc39d79b3551ea7D6F`): the signed mandate, a recurring buy, rent paid on time, a rebalance, all 10 refused attacks from the compromised agent, the stop-loss, the queued risk increases with the trusted contact's cancellations, and a tightening applied at once. All 33 transactions with explorer links are in `docs/evidence/README.md`.
+- **Demo-video recording on 17 Oct 2026** (fresh vault `0xC3Da7a268e4B373093D1e3A6f0789CE8e5fac08d`): every scene in the video, including the 10 refused attacks, as 30 transactions in the same file.
 - **FISCO BCOS:** the same contracts ran unchanged on a local FISCO BCOS 3.16 chain, and the same attacks were refused there. That chain is local, so its hashes aren't public; logs are in the repository.
 - **Test results:** `contracts/test/`, `app/harness/results/`, `app/redteam/results/`.
 

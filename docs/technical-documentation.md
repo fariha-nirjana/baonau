@@ -79,7 +79,7 @@ We didn't want any single layer to be the whole story, so each one has a job and
 | 4 | Contracts (`contracts/src/`) | Enforcing the mandate | Knowing the true price (it trusts the oracle) |
 | 5 | People (owner, trusted contact) | Signing, approving, saying no | Nothing is assumed about their mood |
 
-**Tech stack.** Solidity 0.8.11 with OpenZeppelin 4.9.6 and Foundry. We pinned 0.8.11 on purpose, because that's the newest compiler FISCO BCOS supports, and we wanted the exact same bytecode on both chains. The app is TypeScript on Node 24, with viem for chain calls and the OpenAI SDK pointed at DeepSeek (`deepseek-flash`); the model provider is just an environment variable, so it can be swapped. The web app is Next.js 16. Everything is in English and Bangla, with Chinese for the key labels and receipts.
+**Tech stack.** Solidity 0.8.11 with OpenZeppelin 4.9.6 and Foundry. We pinned 0.8.11 on purpose, because that's the newest compiler FISCO BCOS supports, and we wanted the exact same bytecode on both chains. The app is TypeScript on Node 24, with viem for chain calls and the OpenAI SDK pointed at DeepSeek (`deepseek-flash`); the model provider is just an environment variable, so it can be swapped. The web app is Next.js 16. Every screen, receipt and chat reply works in English, Bangla and Chinese.
 
 ---
 
@@ -208,6 +208,8 @@ When the owner asks to change part of a draft, the tool hands back exactly which
 
 A model error, a timeout (45 seconds), output we can't use, or running out of steps all mean **no action**, logged as an abstention with its own receipt. Silence is never treated as a yes.
 
+The opposite can go wrong too: a model can say "I've sent the request" when no tool ran. If a reply claims an action and no tool that acts ran in that turn, the agent gets one chance to actually call the tool or take the claim back (`app/lib/claims.ts`). Our own rehearsal for the demo video caught this, so we fixed it before recording.
+
 ### 5.3 The quarantined reader
 
 News items, invoices, token descriptions and messages the owner didn't write go to a separate model call that has no tools. It can only fill in a few narrow, typed fields, and anything that doesn't fit its type gets dropped: the kind of item, the assets it mentions (only symbols this vault knows), a promoted token address, its tone, whether it urges a buy or a sell, and four yes-or-no flags (promises returns, asks to change limits or keys, contains instructions to the assistant, pressures for urgency). Any free text it writes goes to the owner only. The agent with tools never sees the raw text, and anything it proposes after reading such an item is marked as prompted by untrusted text, which sends it to the owner. Chat messages from the owner do go to the agent directly, so we covered attacks typed into the chat in the red team (section 7.2).
@@ -319,7 +321,7 @@ The mandate gives up a little in calm markets, and when the stop-loss sells into
 
 ### 7.4 App tests
 
-66 tests (`npm test` in `app/`) for the risk engine, the planner, approvals, commitments, receipts and their translations, the mascot's mood logic and the understanding check. Typecheck, lint and a production build all run clean.
+68 tests (`npm test` in `app/`) for the risk engine, the planner, approvals, commitments, receipts and their translations, the mascot's mood logic, the understanding check and the check for claimed actions. Typecheck, lint and a production build all run clean.
 
 ---
 
@@ -356,6 +358,8 @@ We deployed on 15 October 2026. The templates, factory and market contracts are 
 | Owner asks to triple the loss limit: queued, not applied | `0xca111f1f33e068fd8838f350f52fd4272405076526f2b14b890d17d92bc4cbc5` |
 | Trusted contact cancels it | `0xdc841a45fc49e5cd6f1ba098720152762dc8f1cb93446ef33711efa826fbffd7` |
 | Owner lowers the loss limit to 2%: applied in the same transaction | `0x7d40866899133a37557b8c16d5f4eddaef4337c01ab8288629761d6693609875` |
+
+**Demo-video recording, 17 October 2026.** We recorded the demo video on another fresh vault from the same factory (vault `0xC3Da7a268e4B373093D1e3A6f0789CE8e5fac08d`, mandate `0x6d4C768bFCCEC456fCe81E812078F422e47c172C`), so every scene in the video is a real transaction too. Its 30 transactions are in the same evidence file, including the same 10 attacks from the compromised agent, all refused again.
 
 ### 8.2 FISCO BCOS 3.16
 

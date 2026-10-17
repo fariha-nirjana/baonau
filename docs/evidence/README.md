@@ -1,6 +1,10 @@
-# Execution evidence: live run on Base Sepolia, 16 October 2026
+# Execution evidence: Base Sepolia, 16 and 17 October 2026
 
-We ran the whole Baonau story on the public Base Sepolia testnet (chain 84532), on a fresh vault, in one sitting. Every line below is a real transaction you can open on the explorer, including the ones the contract refused. Everything uses simulated test assets; no real money is involved.
+This file has two runs on the public Base Sepolia testnet: the live run on 16 October, and the demo-video recording on 17 October. Every line is a real transaction you can open on the explorer, including the ones the contract refused. Everything uses simulated test assets; no real money is involved.
+
+## First run: the live run, 16 October 2026
+
+We ran the whole Baonau story on the public Base Sepolia testnet (chain 84532), on a fresh vault, in one sitting, with DeepSeek as the agent.
 
 - Vault `0x4F39604cdF8078a48a20DFFc39d79b3551ea7D6F`, mandate `0xA75F62d72e9c5Ddf303A7Bd4d1A8899FEb2cef8F` (EIP-1167 clones of the verified templates; factory and templates are listed in the README)
 - The raw audit log for this run, with the reason and rule checks for every action, is `live-run-2026-10-16.audit.jsonl` next to this file. Each trade's `ref` on-chain is the hash of its record in that log.
