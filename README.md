@@ -126,7 +126,7 @@ This runs everything on your own computer: a private practice blockchain, our co
 3. When the terminal shows `Open: http://localhost:3002`, open that address in your browser.
 4. Leave the terminal window open while you use the app. Press Ctrl+C in it to stop everything. Every run starts fresh.
 
-`--signed` starts with a sample mandate already signed, so you land straight on the dashboard. Use it if you don't have an AI key (see below).
+`--signed` starts with a sample mandate already signed by our demo investor, Nirjana, so you land straight on the dashboard and the app greets you by that name. Use it if you don't have an AI key (see below). In the full setup, the app uses the name you type.
 
 **What works without an AI key**
 
