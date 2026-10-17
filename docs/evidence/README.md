@@ -16,7 +16,7 @@ We ran the whole Baonau story on the public Base Sepolia testnet (chain 84532), 
 | 10:52 | Owner approves the vault to take the deposit | done | [0x50917d91…](https://sepolia.basescan.org/tx/0x50917d917d26fa14fad39e22eed8b518a41f59a511aded078b2c7c58c98bb934) |
 | 10:52 | Owner deposits ৳5,000 into the vault | done | [0x0b9e8c69…](https://sepolia.basescan.org/tx/0x0b9e8c699990676aa1759ea9741bb69485f25a8297fca3fb440e4c7833108b91) |
 | 10:53 | Keeper pushes prices to the mock feed | done | [0xb04477aa…](https://sepolia.basescan.org/tx/0xb04477aa3d46997f7b69091e22f70dcf017e63cb3d557e62a0e8eca6cda6a562) |
-| 10:58 | Owner signs the mandate Bunbun drafted from her Bangla goal | done | [0xa85975ad…](https://sepolia.basescan.org/tx/0xa85975ad926b25d49b4d81fbc72d461dc62e1cdc7816d26fd1b0a277b79eefcf) |
+| 10:58 | Owner signs the mandate Bunbun drafted from a goal typed in Bangla | done | [0xa85975ad…](https://sepolia.basescan.org/tx/0xa85975ad926b25d49b4d81fbc72d461dc62e1cdc7816d26fd1b0a277b79eefcf) |
 | 10:58 | Owner adds rent (Riverbend Housing, ৳500 a month); the new payee waits | done | [0x2e244081…](https://sepolia.basescan.org/tx/0x2e244081dd080e94d730cc4901d99c51ee695676a1e9429ef331df8ee52d7371) |
 | 10:58 | Owner sets ৳500 aside for rent (instant) | done | [0x753f6075…](https://sepolia.basescan.org/tx/0x753f6075b495deda2e3e917eb9b7f52e637f2afd1af5964bbf50f5d80a8fd944) |
 | 11:00 | New rent payee applies after its 2-minute wait | done | [0x91ed657f…](https://sepolia.basescan.org/tx/0x91ed657fddab00342c6ce55128861a21fda15d3735a95c8594293c39006f8ea3) |

@@ -26,8 +26,8 @@ So we asked: what if an AI could invest on a schedule and pay your bills for you
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/mandate.png" alt="The signed mandate, in plain language"><br><sub>The mandate she signed, in plain language, with her note to her future self</sub></td>
-<td width="50%"><img src="docs/images/commitments.png" alt="Commitments: rent set aside and paid on time"><br><sub>Rent set aside, paid on time to the payee she approved</sub></td>
+<td width="50%"><img src="docs/images/mandate.png" alt="The signed mandate, in plain language"><br><sub>The mandate the user signed, in plain language, with their note to their future self</sub></td>
+<td width="50%"><img src="docs/images/commitments.png" alt="Commitments: rent set aside and paid on time"><br><sub>Rent set aside, paid on time to the payee the user approved</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/images/activity.png" alt="Activity: a receipt for every move"><br><sub>A receipt for every move, including the ones that were stopped or cancelled</sub></td>

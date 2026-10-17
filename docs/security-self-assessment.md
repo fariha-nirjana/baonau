@@ -10,7 +10,7 @@ Everything here runs on test networks with simulated test assets. No real money 
 
 ## 1. What we're protecting, and from whom
 
-Baonau lets an AI agent (we call it Bunbun) manage a first-time investor's portfolio inside rules she signs, called the mandate. The money sits in a smart contract, the vault. So the questions are: who can move it, who can change the rules, and how fast?
+Baonau lets an AI agent (we call it Bunbun) manage someone's portfolio inside rules they sign, called the mandate. We built it first for people who are just starting to invest, but it's for anyone with money to invest. The money sits in a smart contract, the vault. So the questions are: who can move it, who can change the rules, and how fast?
 
 We designed for two things going wrong.
 
@@ -100,7 +100,7 @@ These are the weak spots we know about. For each one we say how bad it is, what 
 | R7 | **The trusted contact could be the wrong person** (careless, or colluding) | Medium | They can only say no. Worst case, they block a risk increase or pause the agent. They can never move money, and can be replaced (after the wait) | Let the owner name more than one, with any one able to cancel |
 | R8 | **In the pilot app, the owner and trusted contact keys sit on our server** so the demo's sign buttons work | High if deployed like this | Demo only, test keys, test money | In a real deployment they sign in their own wallets, and our server never sees those keys |
 | R9 | The waiting period is **2 minutes** in the demo | Not a risk in the demo itself | Configurable from 1 minute to 30 days; tightening it is instant | A day by default in the pilot design (the stress runs used a day) |
-| R10 | **A delay doesn't stop a determined owner.** After the wait, she can raise her risk | By design | The wait, the trusted contact's veto, and a note to her future self shown before she confirms | This is a nudge, not a guardian of last resort, and we say so |
+| R10 | **A delay doesn't stop a determined owner.** After the wait, they can raise their risk | By design | The wait, the trusted contact's veto, and a note to their future self shown before they confirm | This is a nudge, not a guardian of last resort, and we say so |
 | R11 | **No external audit** | Medium | Tests, invariants, the mutation check, red team, stress runs | An independent audit before anything real |
 | R12 | Model provider outage or bad output | Low | Fail-safe: no action, logged as an abstention. The stop-loss doesn't need the AI | Nothing more needed |
 | R13 | Reorgs or a misbehaving chain | Low on a testnet | Every check runs on-chain at execution time | Standard confirmation handling on a real network |
