@@ -118,4 +118,18 @@ contract InputChecksTest is VaultFixture {
         vm.expectRevert(Mandate.InvalidCommitment.selector);
         mandate.proposeCommitment(1, c);
     }
+
+    // a zero amount is refused first, before the asset is even looked at
+
+    function test_RevertWhen_ZeroBuyOfAnAssetOutsideTheMandate() public {
+        vm.prank(agent);
+        vm.expectRevert(PolicyVault.ZeroAmount.selector);
+        vault.buy(address(meme), 0, REF);
+    }
+
+    function test_RevertWhen_ZeroSellOfAnAssetOutsideTheMandate() public {
+        vm.prank(agent);
+        vm.expectRevert(PolicyVault.ZeroAmount.selector);
+        vault.sell(address(meme), 0, REF);
+    }
 }
