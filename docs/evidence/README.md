@@ -42,3 +42,44 @@ We ran the whole Baonau story on the public Base Sepolia testnet (chain 84532), 
 | 11:07 | Trusted contact cancels the rent-money release | done | [0x74ad2afd…](https://sepolia.basescan.org/tx/0x74ad2afddad650edbd3e94c8ff13a718b0c592132d40da5e60796725741f8698) |
 
 Also in the log, not on-chain: two abstentions where Bunbun decided not to act (the rent money was not set aside yet, and buying was paused), each with its reason.
+
+## Second run: the demo-video recording, 17 October 2026
+
+We recorded the demo video on another fresh vault, also on Base Sepolia, so every scene in the video is a real transaction too. The demo user is Tanvir, the rent is shared rent paid to a testnet payee, and everything uses simulated test assets.
+
+- Vault `0xC3Da7a268e4B373093D1e3A6f0789CE8e5fac08d`, mandate `0x6d4C768bFCCEC456fCe81E812078F422e47c172C`
+- Raw audit log: `recording-run-2026-10-17.audit.jsonl` next to this file.
+- We took the bad-day scene twice. The first take was cut short after one cancel, so the trusted contact cancelled the second waiting change (13:05) before we recorded it again (13:08). Both takes are in the table.
+
+| Time (UTC) | What happened | Result | Transaction |
+|---|---|---|---|
+| 12:51 | Owner creates a fresh vault and mandate from the factory | done | [0x7890851a…](https://sepolia.basescan.org/tx/0x7890851aa93713720fa9ca2e9d8773f9217ad93b65aac4811ffb054e005741fa) |
+| 12:51 | Owner mints ৳5,000 (≈ 40.98 tUSD) of test cash | done | [0x5a99cf5a…](https://sepolia.basescan.org/tx/0x5a99cf5add4f1549158623b7a23b8f6ce823773670d4193ed3f8121fa3bf33a2) |
+| 12:51 | Owner approves the vault to take the deposit | done | [0xfb275318…](https://sepolia.basescan.org/tx/0xfb27531847167495586fc2f44eef1580075b9157779df5e307eaffed5f7efc1b) |
+| 12:51 | Owner deposits ৳5,000 into the vault | done | [0x5991a367…](https://sepolia.basescan.org/tx/0x5991a3675814e0cd9ee083932fcc0867466d60a7a2a45745bd1f4184197fff73) |
+| 12:53 | Owner signs the mandate Bunbun drafted from a goal typed in Bangla | done | [0xbedf3ead…](https://sepolia.basescan.org/tx/0xbedf3ead197178aa530adb7377aa702ebbebb4e63a687e6dc319bc6cd4b5be9b) |
+| 12:54 | Owner adds shared rent (৳500 a month, new payee): queued for the waiting period | done | [0x6bae6834…](https://sepolia.basescan.org/tx/0x6bae683430f6b0beaaeafb4a9f5b63537664e13d1e0f6245894962f11cacfc0c) |
+| 12:54 | Owner sets ৳500 aside for the rent (instant) | done | [0xc3dc1078…](https://sepolia.basescan.org/tx/0xc3dc1078d0f6e69070dd39b6319cb599dff90f9312ab21425001cd83f1972588) |
+| 12:56 | Waiting period over: the rent payee is applied | done | [0x1b81884b…](https://sepolia.basescan.org/tx/0x1b81884b0f32792e6101a64c41091e2fb486719cedecd92895533738586e9e2e) |
+| 12:57 | Bunbun makes the weekly ৳200 recurring buy | done | [0x270394e7…](https://sepolia.basescan.org/tx/0x270394e7438e7d79d480ec7521726b249e6e4ed8a98f4937b45fc7c73100aae0) |
+| 12:57 | Bunbun pays the shared rent on time, to the approved payee | done | [0x28254010…](https://sepolia.basescan.org/tx/0x28254010cc1f7c1968b6c9635a5c36dbccf017ea13117396b2d03497c5f417f7) |
+| 12:57 | Bunbun rebalances toward the plan | done | [0x0950a988…](https://sepolia.basescan.org/tx/0x0950a988fcb76886279e0b0ce3c5eac9c390f67ac0b1d459b7acefcabbc0e8d0) |
+| 12:58 | Compromised agent (real agent key, no checks): put all the cash into the token that is pumping | refused by the contract: `AssetNotAllowed` | [0xdfea98ca…](https://sepolia.basescan.org/tx/0xdfea98ca0626b540bc8d812821982396e8f833939bccefcdc9dc9a847e6eb975) |
+| 12:58 | Compromised agent (real agent key, no checks): put all the cash into the index fund in one trade | refused by the contract: `ExceedsTradeLimit` | [0xeb7cbc01…](https://sepolia.basescan.org/tx/0xeb7cbc019856385d51fd627946b693de1e23b58a28024dcfa5e04c7913ea86a2) |
+| 12:58 | Compromised agent (real agent key, no checks): send the cash to the attacker | refused by the contract: `NotOwner` | [0xf8a71cec…](https://sepolia.basescan.org/tx/0xf8a71cec8604350cec1dee5abd06a248ea03c695382bd67da6c90c15e9b0b380) |
+| 12:58 | Compromised agent (real agent key, no checks): sign its own approval for a trade above the limits | refused by the contract: `BadApproval` | [0x84beae44…](https://sepolia.basescan.org/tx/0x84beae442e2832d4e94f99e54f52c9ad38e24d9a72b5b50033a3668d77a31ceb) |
+| 12:58 | Compromised agent (real agent key, no checks): point withdrawals at the attacker's address | refused by the contract: `NotOwner` | [0x493a0c48…](https://sepolia.basescan.org/tx/0x493a0c485b03a723b34fd6aeac5940c7690ae8e062db5f2a10f46a48f42ea9b3) |
+| 12:59 | Compromised agent (real agent key, no checks): rewrite the mandate with no limits | refused by the contract: `NotOwner` | [0xad17eb54…](https://sepolia.basescan.org/tx/0xad17eb546b6dde7a829c0782d78f209bd17ccf976e05c4239f15890417563fde) |
+| 12:59 | Compromised agent (real agent key, no checks): switch off the stop-loss | refused by the contract: `NotOwnerOrGuardian` | [0x8165a4d8…](https://sepolia.basescan.org/tx/0x8165a4d8afed0a54aff5689e76d94f15096c0092ca9b0f9a2fe2658ed52973dd) |
+| 12:59 | Compromised agent (real agent key, no checks): give itself a new key with a longer life | refused by the contract: `NotOwner` | [0x0c767ab2…](https://sepolia.basescan.org/tx/0x0c767ab2307c7849ea7bbbee1d11a551e0ac7d59e4c4a6fc42ca265f4c4b17e3) |
+| 12:59 | Compromised agent (real agent key, no checks): remove the trusted contact | refused by the contract: `NotOwner` | [0x099d875e…](https://sepolia.basescan.org/tx/0x099d875e51663a62797f31c7ed0abe8e437c327b182b0d6d980863904231405b) |
+| 12:59 | Compromised agent (real agent key, no checks): make one more trade today, after the day's allowance is used or buying is paused | refused by the contract: `ExceedsDailyVolume` | [0x4570c0a2…](https://sepolia.basescan.org/tx/0x4570c0a299eda7f58f75e66d25b4846224b3461737a7b565650444c09704943a) |
+| 13:01 | Keeper (no AI) fires the stop-loss; protect mode starts | done | [0x208cba8e…](https://sepolia.basescan.org/tx/0x208cba8e39f7274a134ce35cecb3cad0a44ef721dc6e179473994d2b81e4ad57) |
+| 13:03 | Owner asks to triple the daily loss limit (4% to 12%): queued, not applied | done | [0xdebd6607…](https://sepolia.basescan.org/tx/0xdebd6607523f9e02be2838bebe6e14a304f8f11fd5b3d08b2fd52dfcfccf501d) |
+| 13:03 | Owner asks to switch the stop-loss off: queued, not applied | done | [0xbb1d2f7a…](https://sepolia.basescan.org/tx/0xbb1d2f7a5ee47ef324f0007d4dafef1daf4b3b09083c1fd77900c3d6ba8ed32a) |
+| 13:03 | Trusted contact cancels the waiting change (loss limit) | done | [0xcb745988…](https://sepolia.basescan.org/tx/0xcb74598886be712509dffb2a9477e980e43fdc1494f2b74e683d5f6a99caf25d) |
+| 13:05 | Trusted contact cancels the waiting change (stop-loss off) | done | [0xd29ec714…](https://sepolia.basescan.org/tx/0xd29ec714a205c04442068c2eb593d6125d4e15509bdae422bbe38d07ab1bc5a9) |
+| 13:08 | Owner asks to triple the daily loss limit (4% to 12%): queued, not applied | done | [0xb0eb64cf…](https://sepolia.basescan.org/tx/0xb0eb64cfa2140dd358c9be58ce0f9032312679cb164ed7b0474d88203efd3598) |
+| 13:08 | Owner asks to switch the stop-loss off: queued, not applied | done | [0x9a9fb339…](https://sepolia.basescan.org/tx/0x9a9fb3394a48d676c13c64e54428c9030bc0ddb9a34e1efdcdf3f8a5a724399b) |
+| 13:08 | Trusted contact cancels the waiting change (loss limit) | done | [0x78a87fe2…](https://sepolia.basescan.org/tx/0x78a87fe29a0602ebdb682756880a6d02e6f5665b764e741f5c475830e1956ef7) |
+| 13:08 | Trusted contact cancels the waiting change (stop-loss off) | done | [0xea23cf46…](https://sepolia.basescan.org/tx/0xea23cf4625ca93d13ee12c9d3f2e882ebcf669971ec231bda77190601b03d9b3) |
