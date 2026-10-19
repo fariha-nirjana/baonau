@@ -259,13 +259,13 @@ There are four keys, each with its own role: the owner, the agent (a session key
 
 ### 6.4 What we claim and what we don't
 
-We claim bounded loss, not zero loss. A compromised agent can still make bad trades inside the limits, and the app shows the most that could cost each day (`agentExposure`). We don't claim the AI can't be hacked. We claim that what a hacked AI can do is limited by the contract, and we've measured that limit.
+We bound what the agent is allowed to do, not how far the market can fall. A compromised agent can still make bad trades inside the limits, and the app shows the most that could cost each day (`agentExposure`). The daily loss limit pauses new buying; it doesn't cap how far assets already held can fall. We don't claim the AI can't be hacked. We claim that what a hacked AI can do is limited by the contract, and we've measured that limit.
 
 ---
 
 ## 7. Evaluation
 
-We didn't want to just say it's safe, so we tried to break it four different ways.
+We didn't want to just say it's safe, so we tried to break it four different ways. These experiments test whether the rules are enforced in the scenarios we chose. They don't measure general investment performance, and the real-model checks are small: 16 attacks and 2 genuine requests, 3 runs each.
 
 ### 7.1 Contract testing (`contracts/test/`)
 
@@ -405,6 +405,7 @@ These are the weak spots we know about. The security self-assessment goes throug
 | A different address can open a fresh vault without waiting | We add friction to risk, never custody |
 | Owner and trusted contact keys sit on the server in the pilot app | Demo convenience only; a real deployment signs in their own wallets |
 | The waiting period is two minutes in the demo | A day in the pilot design; the harness used a day |
+| Whether the wait and the trusted contact help real investors decide better is untested | A study with real users is our next step |
 
 ---
 
