@@ -91,7 +91,7 @@ The full design, the algorithms and every number are in the [technical documenta
 
 ### Just want to see it?
 
-Watch the demo video: **[VIDEO LINK]**. It shows the whole story on the public testnet: a goal typed in Bangla, signing, rent paid on time, the hacked-agent attack, a crash, and a risk increase cancelled by the trusted contact. The screenshots near the top of this page show the main screens.
+Watch the demo video (4:46): **[Baonau v1.0 release](https://github.com/fariha-nirjana/baonau/releases/tag/v1.0)**, in 1080p (plays smoothly on any device) or 4K (sharper on newer screens). The same page has the deck and our documents as PDFs. It shows the whole story on the public testnet: a goal typed in Bangla, signing, rent paid on time, the hacked-agent attack, a crash, and a risk increase cancelled by the trusted contact. The screenshots near the top of this page show the main screens.
 
 ### Run it on your own computer
 
